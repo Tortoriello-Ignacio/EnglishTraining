@@ -1,0 +1,15818 @@
+/* ============================================================
+   English Trainer · IELTS Path — app engine
+   ============================================================ */
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9£:]/g, "").trim();
+  const words = (t) => (t.trim().match(/\b[\w'’-]+\b/g) || []);
+  const store = {
+    get(k, d) { try { return JSON.parse(localStorage.getItem("et_" + k)) ?? d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("et_" + k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem("et_" + k); } catch {} }
+  };
+
+  /* ---------- progress ---------- */
+  function today() { return new Date().toISOString().slice(0, 10); }
+  function logActivity() {
+    const days = store.get("days", []);
+    const t = today();
+    if (!days.includes(t)) { days.push(t); store.set("days", days); }
+    store.set("done", (store.get("done", 0)) + 1);
+    renderAccount();
+  }
+  function computeStreak() {
+    const days = new Set(store.get("days", []));
+    let streak = 0; let d = new Date();
+    for (;;) { const key = d.toISOString().slice(0, 10); if (days.has(key)) { streak++; d.setDate(d.getDate() - 1); } else break; }
+    return streak;
+  }
+
+  /* ============================================================
+     ROUTER
+     ============================================================ */
+  function go(name) {
+    document.querySelectorAll(".view").forEach((v) => v.classList.remove("is-active"));
+    const target = $("view-" + name) || $("view-dashboard");
+    target.classList.add("is-active");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (name === "tiempos" && !tensesInit) initTenses();
+    if (name === "listening" && !listeningInit) initListening();
+    if (name === "speaking") renderSpeaking();
+    if (["perfil", "calendario", "racha"].includes(name)) renderAccount();
+  }
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-go]");
+    if (el) { e.preventDefault(); go(el.dataset.go); }
+  });
+
+  /* ---------- theme ---------- */
+  const themeToggle = $("themeToggle");
+  function applyTheme(t) { if (t === "dark") document.documentElement.setAttribute("data-theme", "dark"); else document.documentElement.removeAttribute("data-theme"); }
+  applyTheme(store.get("theme", "light"));
+  themeToggle.addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    store.set("theme", next); applyTheme(next);
+  });
+
+  /* ---------- mini Google Translate launcher ---------- */
+  const translatorToggle = $("translatorToggle");
+  const translatorPanel = $("translatorPanel");
+  const translatorClose = $("translatorClose");
+  const translatorSource = $("translatorSource");
+  const translatorTarget = $("translatorTarget");
+  const translatorText = $("translatorText");
+
+  function setTranslatorOpen(open) {
+    translatorPanel.classList.toggle("hidden", !open);
+    translatorToggle.setAttribute("aria-expanded", String(open));
+    if (open) translatorText.focus();
+  }
+
+  translatorToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setTranslatorOpen(translatorPanel.classList.contains("hidden"));
+  });
+  translatorClose.addEventListener("click", () => setTranslatorOpen(false));
+  $("translatorSwap").addEventListener("click", () => {
+    if (translatorSource.value === "auto") {
+      translatorSource.value = translatorTarget.value;
+      translatorTarget.value = translatorSource.value === "es" ? "en" : "es";
+      return;
+    }
+    const source = translatorSource.value;
+    translatorSource.value = translatorTarget.value;
+    translatorTarget.value = source;
+  });
+  $("translatorSelection").addEventListener("click", () => {
+    const selected = String(window.getSelection?.() || "").trim();
+    if (selected) translatorText.value = selected.slice(0, 1800);
+    translatorText.focus();
+  });
+  $("translatorOpen").addEventListener("click", () => {
+    const text = translatorText.value.trim();
+    if (!text) {
+      translatorText.focus();
+      translatorText.setAttribute("aria-invalid", "true");
+      return;
+    }
+    translatorText.removeAttribute("aria-invalid");
+    const url = new URL("https://translate.google.com/");
+    url.searchParams.set("sl", translatorSource.value);
+    url.searchParams.set("tl", translatorTarget.value);
+    url.searchParams.set("text", text);
+    url.searchParams.set("op", "translate");
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  });
+  document.addEventListener("click", (event) => {
+    if (!translatorPanel.classList.contains("hidden") && !event.target.closest(".translator-shell")) setTranslatorOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !translatorPanel.classList.contains("hidden")) setTranslatorOpen(false);
+  });
+
+  /* ============================================================
+     WRITING DATA — 120 ejercicios originales (3 modalidades)
+     ============================================================ */
+  const ET_WRITING_EXERCISES = [
+    {
+      "id": "wp-01",
+      "modality": "prompt",
+      "format": "informal-letter",
+      "title": "Catching up with a friend abroad",
+      "topic": "relationships",
+      "level": "B2+",
+      "register": "informal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Informal letter",
+      "prompt": "A close friend moved to another country six months ago and you have not written properly since. Write them a friendly letter. In your letter you should: mention how your life has changed lately, ask genuine questions about their new city, and suggest a realistic plan to see each other again.",
+      "audience": "A close friend now living abroad",
+      "purpose": "Reconnect warmly and propose a future meeting",
+      "points": [
+        "How your daily life has changed",
+        "Questions about their new city and routine",
+        "A concrete suggestion for meeting up"
+      ],
+      "vocab": [
+        "it feels like ages since",
+        "settle into",
+        "I keep meaning to",
+        "drop me a line",
+        "count me in",
+        "pencil in a date"
+      ],
+      "model": "Hey Marta,\n\nIt honestly feels like ages since we properly spoke, and I keep meaning to write, so here I finally am. Things at my end have shifted a bit: I switched to working from home three days a week, which sounds relaxing but really just means I talk to my plants more than to actual humans.\n\nHow are you settling into Lisbon? I want the real version, not the postcard one. Have you found a café you'd defend with your life yet? And is your Portuguese still stuck at ordering coffee, or are you arguing with landlords now?\n\nHere's my actual plan: I have a week free in October and cheap flights keep appearing. Could I come over, sleep on your famously uncomfortable sofa, and let you show me around? Pencil in a date and count me in.\n\nWrite back soon, and this time don't disappear for six months.\n\nBig hug,\nElena",
+      "analysis": "Vocabulary: idiomatic, spoken phrasing ('defend with your life', 'the real version, not the postcard one') that signals a genuine friendship. Grammar: contractions and questions dominate, matching informal register; note the conditional 'Could I come over…' softening the request. Structure: opens with reconnection, moves to questions, closes with a concrete plan — a clean three-part shape. Improvements: a weaker answer would list news mechanically; here humour and specific detail carry the warmth an examiner rewards."
+    },
+    {
+      "id": "wp-02",
+      "modality": "prompt",
+      "format": "formal-email",
+      "title": "Requesting a reference from a former manager",
+      "topic": "work",
+      "level": "C1",
+      "register": "formal",
+      "time": "20 min",
+      "length": "160–190 words",
+      "textType": "Formal email",
+      "prompt": "You are applying for a new position and need a professional reference from a manager you worked with two years ago. Write a formal email. You should: remind them briefly of who you are and when you worked together, explain what the reference is for, and make the request easy for them to accept or decline politely.",
+      "audience": "A former line manager you have not contacted recently",
+      "purpose": "Secure a professional reference without imposing",
+      "points": [
+        "A concise reminder of your shared working history",
+        "The role you are applying for and why the reference matters",
+        "A low-pressure, considerate request with a deadline"
+      ],
+      "vocab": [
+        "I hope this email finds you well",
+        "under your supervision",
+        "I would be grateful if",
+        "at your earliest convenience",
+        "should you have the time",
+        "please do not feel obliged"
+      ],
+      "model": "Subject: Reference request — Daniel Ortiz, former Marketing Assistant\n\nDear Ms Whitfield,\n\nI hope this email finds you well. I worked as a Marketing Assistant under your supervision at Brightline between 2022 and 2023, and I still look back on that period as formative for my career.\n\nI am writing because I have reached the final stage of an application for a Content Strategist role, and the employer has asked for a professional reference. Given that you oversaw my work most closely, you would be an ideal person to speak to my strengths.\n\nI would be grateful if you could complete a short reference form, which should take no more than fifteen minutes. The deadline is the 30th of this month. Should your schedule not allow it, please do not feel obliged — a brief note declining is perfectly fine, and I would understand completely.\n\nThank you for considering this. I would be happy to send my updated CV to refresh your memory.\n\nKind regards,\nDaniel Ortiz",
+      "analysis": "Vocabulary: register-appropriate formulas ('I would be grateful if', 'at your earliest convenience') balanced with sincere, non-robotic lines. Grammar: modal-heavy for politeness ('could', 'would', 'should'); the inverted conditional 'Should your schedule not allow it' lifts the register. Structure: identity → purpose → request with an exit clause → thanks. Improvements: many learners forget to give the reader an easy way to say no; the 'please do not feel obliged' clause is what makes the email considerate rather than demanding."
+    },
+    {
+      "id": "wp-03",
+      "modality": "prompt",
+      "format": "complaint",
+      "title": "Complaint about a delayed delivery",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "formal",
+      "time": "20 min",
+      "length": "160–190 words",
+      "textType": "Letter of complaint",
+      "prompt": "You ordered a household appliance online three weeks ago. It was promised within five working days but has still not arrived, and customer service has been unhelpful. Write a formal letter of complaint. You should: state the facts clearly, explain the impact the delay has had, and say precisely what outcome you expect.",
+      "audience": "The customer relations department of an online retailer",
+      "purpose": "Obtain a resolution and hold the company accountable",
+      "points": [
+        "Order details and the exact nature of the problem",
+        "The practical inconvenience caused",
+        "A specific, reasonable remedy and a timeframe"
+      ],
+      "vocab": [
+        "I am writing to express my dissatisfaction",
+        "on the grounds that",
+        "fell short of",
+        "a full refund",
+        "resolve the matter",
+        "within seven working days"
+      ],
+      "model": "Dear Sir or Madam,\n\nI am writing to express my dissatisfaction with order number 48213, placed on the 2nd of this month. A washing machine was advertised for delivery within five working days, yet three weeks later it has not arrived.\n\nMy attempts to resolve this directly have fallen short of any reasonable standard of service. I have contacted your helpline four times; on each occasion I was promised a callback that never came. Meanwhile, I have been left without a working machine and have paid for a laundry service I should not have needed.\n\nGiven that the delay is entirely your responsibility, I expect one of two outcomes: either the appliance is delivered, fully installed, within seven working days, or I receive a full refund together with reimbursement of the £46 I have spent on laundry.\n\nI trust you will treat this matter with the urgency it deserves and reply in writing within seven working days.\n\nYours faithfully,\nRachel Nunn",
+      "analysis": "Vocabulary: firm but controlled complaint language ('fell short of', 'the urgency it deserves') avoids aggression while signalling resolve. Grammar: precise past tenses establish a timeline; the parallel 'either… or…' structures the demand clearly. Structure: facts → impact → specific remedy with a deadline. Improvements: vague complaints ('I'm not happy') get vague replies; naming a figure, a timeframe and two acceptable outcomes gives the company something concrete to act on."
+    },
+    {
+      "id": "wp-04",
+      "modality": "prompt",
+      "format": "request-info",
+      "title": "Enquiry about a language course",
+      "topic": "education",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "18 min",
+      "length": "140–170 words",
+      "textType": "Enquiry email",
+      "prompt": "You are considering enrolling in an intensive English course abroad next summer. Write an email to the school requesting the specific information you need to make a decision. You should: explain your current level and goal, ask focused questions, and request the details that would let you compare this school with others.",
+      "audience": "The admissions office of a language school",
+      "purpose": "Gather precise information to compare options",
+      "points": [
+        "Your level and your reason for studying",
+        "Clear questions about the course itself",
+        "Practical details: cost, accommodation, dates"
+      ],
+      "vocab": [
+        "I am considering enrolling",
+        "with a view to",
+        "I would appreciate details of",
+        "class size",
+        "on average",
+        "whether it is possible to"
+      ],
+      "model": "Dear Admissions Team,\n\nI am considering enrolling in one of your intensive English courses next July, with a view to preparing for a university entrance exam. My current level is upper-intermediate, and my main goal is to improve academic writing and fluency under time pressure.\n\nBefore deciding, I would appreciate details of a few points. First, how many students are there in each class on average, and what proportion of the timetable is devoted to writing? Second, are the teachers qualified specifically for exam preparation, or is the focus more general?\n\nI would also be grateful for practical information: the total cost including materials, whether homestay accommodation can be arranged, and the exact start and end dates of the July sessions.\n\nFinally, is it possible to sit a short placement test online before arrival, so that I am put in the right group from the start?\n\nThank you for your help.\n\nBest regards,\nTomás Reyes",
+      "analysis": "Vocabulary: enquiry-specific phrasing ('I would appreciate details of', 'with a view to') keeps the tone neutral-professional. Grammar: embedded questions ('how many students there are', 'whether homestay can be arranged') are handled correctly — a common B2 stumbling block. Structure: context → course questions → logistics → one forward-looking request. Improvements: a strong enquiry groups questions logically rather than listing them randomly, which makes it easier for the reader to answer fully."
+    },
+    {
+      "id": "wp-05",
+      "modality": "prompt",
+      "format": "work-reply",
+      "title": "Declining extra work without damaging the relationship",
+      "topic": "work",
+      "level": "C1",
+      "register": "neutral",
+      "time": "18 min",
+      "length": "130–160 words",
+      "textType": "Workplace email reply",
+      "prompt": "A colleague has asked you to take on part of a project because they are overloaded. You genuinely cannot help right now without dropping your own deadlines. Write a reply that declines the request. You should: acknowledge their situation, explain your position honestly, and offer some form of realistic support.",
+      "audience": "A colleague you work with regularly and respect",
+      "purpose": "Say no clearly while protecting the working relationship",
+      "points": [
+        "Recognition of their pressure",
+        "An honest, non-defensive reason",
+        "A smaller alternative form of help"
+      ],
+      "vocab": [
+        "I really appreciate you thinking of me",
+        "as things stand",
+        "I wouldn't be able to do it justice",
+        "what I can offer instead",
+        "point you towards",
+        "let me know if that helps"
+      ],
+      "model": "Hi Priya,\n\nThanks for the message, and I really appreciate you thinking of me — I know how stretched you are on the Halden account right now.\n\nI have to be straight with you, though. As things stand, I am already at capacity with two deliverables due on Friday, and if I took on part of your project I wouldn't be able to do it justice. I'd rather tell you that now than let you down halfway through.\n\nWhat I can offer instead is this: I have an hour tomorrow morning to talk through your approach, and I can point you towards the templates I used for a similar client, which should save you a fair bit of time. If it helps, I could also review the final draft before it goes out.\n\nLet me know if that works, and good luck — you've got this.\n\nBest,\nSam",
+      "analysis": "Vocabulary: warm workplace register ('stretched', 'at capacity', 'do it justice') that stays professional without being cold. Grammar: the second conditional ('if I took on… I wouldn't be able to') frames the refusal as a matter of quality, not unwillingness. Structure: empathy → honest no → concrete alternative. Improvements: a flat refusal harms trust; offering a scaled-down form of help ('an hour tomorrow', 'review the final draft') keeps the relationship intact — the real skill being tested here."
+    },
+    {
+      "id": "wp-06",
+      "modality": "prompt",
+      "format": "opinion-essay",
+      "title": "Should university education be free?",
+      "topic": "education",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Opinion essay",
+      "prompt": "Some people argue that university education should be free for all citizens, while others believe students should contribute to the cost. To what extent do you agree or disagree? Give reasons for your answer and include relevant examples.",
+      "audience": "An academic examiner",
+      "purpose": "Present and defend a clear position",
+      "points": [
+        "A clear thesis stating your position",
+        "Two developed reasons with examples",
+        "Acknowledgement of the opposing view",
+        "A conclusion that restates without repeating"
+      ],
+      "vocab": [
+        "a compelling case",
+        "the public purse",
+        "widen access",
+        "at the taxpayer's expense",
+        "a means-tested contribution",
+        "on balance"
+      ],
+      "model": "Whether higher education should be funded entirely by the state or partly by students is a debate with strong arguments on each side. In my view, a fully free system is neither realistic nor fair, and a means-tested contribution is the more sensible approach.\n\nThose who favour free education make a compelling case: it widens access, ensuring that talented students from poorer backgrounds are not deterred by debt. Countries such as Germany, where tuition is largely free, do report high participation rates. This matters because a society that educates its citizens broadly tends to be more productive and more equal.\n\nHowever, funding every student entirely from the public purse creates problems. University places are expensive, and the money must come from somewhere — usually higher taxes borne by people who never attended university, including many on low incomes. It seems questionable to ask a factory worker to pay, at the taxpayer's expense, for the degree of a future lawyer who will out-earn them substantially.\n\nA fairer model asks graduates to contribute once they benefit financially. Income-contingent loans, repaid only above a certain salary, protect those who earn little while ensuring that high earners share the cost of their own advantage. This preserves access without placing the entire burden on the general public.\n\nOn balance, then, while the goal of removing financial barriers is admirable, complete state funding is an inefficient way to achieve it. A contribution scaled to future income strikes a fairer balance between opportunity and responsibility.",
+      "analysis": "Vocabulary: precise policy language ('means-tested', 'income-contingent', 'the public purse') that lifts the essay to a high band. Grammar: controlled subordination and concession ('while the goal… is admirable, complete state funding is…') shows range. Structure: thesis → supporting view → counter → refined position → conclusion. Improvements: weaker essays sit on the fence; this one concedes the opposing view's strength before narrowing to a specific, defensible middle position — clearer than a blunt 'agree' or 'disagree'."
+    },
+    {
+      "id": "wp-07",
+      "modality": "prompt",
+      "format": "advantages-disadvantages",
+      "title": "Remote work: benefits and drawbacks",
+      "topic": "work",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Advantages & disadvantages essay",
+      "prompt": "In many countries, working from home has become far more common. What are the advantages and disadvantages of this development? Support your answer with reasons and examples.",
+      "audience": "An academic examiner",
+      "purpose": "Weigh both sides in a balanced analysis",
+      "points": [
+        "Two clear advantages developed with detail",
+        "Two clear disadvantages developed with detail",
+        "A conclusion that judges the overall balance"
+      ],
+      "vocab": [
+        "a marked shift",
+        "cut out the commute",
+        "blur the line between",
+        "erode",
+        "spontaneous collaboration",
+        "outweigh"
+      ],
+      "model": "The past few years have brought a marked shift towards working from home, a change that carries both clear benefits and real costs.\n\nThe advantages are immediate. Employees who work remotely cut out the daily commute, reclaiming hours that can be spent on rest, family or exercise; this alone tends to improve wellbeing. Flexibility is a second gain: a parent can attend a school event and make up the time later, something a rigid office schedule rarely allows. Employers benefit too, since remote arrangements widen the pool of talent to anyone with an internet connection, regardless of location.\n\nThe drawbacks, however, are just as real. Working from home can blur the line between professional and personal life, and many people find themselves answering messages late into the evening, which slowly erodes the rest that remote work was supposed to protect. There is also a social cost. Offices generate spontaneous collaboration — the quick question across a desk, the idea sparked over coffee — and this is hard to replicate through scheduled video calls. Newer employees, in particular, may struggle to learn from colleagues they never meet in person.\n\nIn conclusion, remote work offers genuine gains in flexibility and time, but these come with risks to boundaries and to the informal learning that offices provide. For me, the benefits outweigh the drawbacks only when companies deliberately protect working hours and create regular chances for teams to meet face to face; without that effort, the costs can quietly cancel out the gains.",
+      "analysis": "Vocabulary: topic-specific collocations ('cut out the commute', 'spontaneous collaboration', 'blur the line') carry the argument efficiently. Grammar: cause-and-effect chains ('this alone tends to improve…', 'which slowly erodes…') link ideas without listing. Structure: two advantages → two disadvantages → a conditional judgement. Improvements: many essays give a bland 'both have pros and cons' ending; here the conclusion sets a condition ('only when companies protect hours'), which is a more thoughtful verdict."
+    },
+    {
+      "id": "wp-08",
+      "modality": "prompt",
+      "format": "problem-solution",
+      "title": "Traffic congestion in growing cities",
+      "topic": "environment",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Problem & solution essay",
+      "prompt": "Many rapidly growing cities suffer from severe traffic congestion. What are the main causes of this problem, and what measures could be taken to address it? Include reasons and examples.",
+      "audience": "An academic examiner",
+      "purpose": "Diagnose causes and propose realistic solutions",
+      "points": [
+        "Two identifiable causes of congestion",
+        "Two workable solutions linked to those causes",
+        "A conclusion on which measure matters most"
+      ],
+      "vocab": [
+        "urban sprawl",
+        "a viable alternative",
+        "gridlock",
+        "disincentivise",
+        "at peak hours",
+        "over the long term"
+      ],
+      "model": "As cities expand, traffic congestion has become one of their most stubborn problems, costing residents time, money and clean air. Its causes are largely structural, but so are its remedies.\n\nTwo factors stand out. The first is urban sprawl: as populations grow, housing spreads outward, forcing people to travel long distances to reach work, and public transport often fails to keep pace. The second is a simple reliance on private cars. Where owning a vehicle is affordable and driving is convenient, roads fill quickly, and at peak hours even short journeys turn into gridlock.\n\nAddressing these causes requires action on both fronts. Investing heavily in reliable public transport — frequent metros and bus lanes that are genuinely faster than driving — gives commuters a viable alternative rather than a slower one. Singapore's extensive rail network shows how sustained investment can shift behaviour over decades. Alongside this, cities can disincentivise unnecessary driving through congestion charges, as London has done, using the revenue to fund the very transport that makes the charge bearable.\n\nSuch measures work best together. Charging drivers without offering a good alternative simply punishes them; improving transport without discouraging cars leaves the roads as crowded as before. Combined, they nudge people towards choices that ease pressure on the whole system.\n\nIn conclusion, congestion stems mainly from sprawl and car dependence, and the most effective response pairs serious investment in public transport with sensible limits on driving. Over the long term, it is this combination, rather than any single scheme, that can keep growing cities moving.",
+      "analysis": "Vocabulary: urban-planning register ('urban sprawl', 'congestion charges', 'disincentivise') that demonstrates precise topic control. Grammar: the parallel diagnosis ('The first is… The second is…') and paired solutions give the essay a tight logical spine. Structure: causes → matched solutions → why they must combine → conclusion. Improvements: strong problem-solution essays link each solution back to a specific cause and explain interaction, rather than listing disconnected fixes."
+    },
+    {
+      "id": "wp-09",
+      "modality": "prompt",
+      "format": "short-article",
+      "title": "A short blog post on a habit worth keeping",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "160–190 words",
+      "textType": "Blog article",
+      "prompt": "You write for a lifestyle blog aimed at busy young professionals. Write a short article recommending one small daily habit that has genuinely improved your life. You should: describe the habit vividly, explain the benefit with a concrete example, and end with a line that encourages readers to try it.",
+      "audience": "Readers of a lifestyle blog",
+      "purpose": "Persuade readers to adopt a habit through a relatable story",
+      "points": [
+        "A vivid description of the habit",
+        "The specific benefit, shown not just stated",
+        "An encouraging, memorable closing line"
+      ],
+      "vocab": [
+        "it sounds trivial, but",
+        "a game-changer",
+        "carve out",
+        "clear your head",
+        "make a dent in",
+        "give it a fortnight"
+      ],
+      "model": "The Ten-Minute Morning Walk That Fixed My Focus\n\nIt sounds trivial, but the single habit that changed my working days is a ten-minute walk before I touch my phone. No podcast, no emails — just me, the pavement and whatever the weather is doing.\n\nFor years I started the day by scrolling, and by the time I reached my desk my head was already full of other people's problems. Now I carve out those ten minutes first. The difference is embarrassingly large. On a recent Monday, a problem that had defeated me on Friday afternoon simply untangled itself somewhere around the corner shop. I hadn't tried to solve it; the walking did it for me.\n\nThe science is real — movement and daylight both sharpen the mind — but you don't need a study to feel it. You just need to notice how much calmer you are when you sit down to work.\n\nSo before you reach for the screen tomorrow, put your shoes on instead. Give it a fortnight. I doubt you'll go back.",
+      "analysis": "Vocabulary: blog-friendly, conversational phrasing ('embarrassingly large', 'whatever the weather is doing') that keeps a neutral-informal tone without slang. Grammar: mixed sentence lengths and a fragment ('No podcast, no emails') create rhythm suited to the genre. Structure: hook title → the habit → a specific story → a direct call to action. Improvements: articles that only assert a benefit ('walking is good') feel empty; the concrete Friday-to-Monday anecdote is what makes the advice believable."
+    },
+    {
+      "id": "wp-10",
+      "modality": "prompt",
+      "format": "formal-letter",
+      "title": "Applying for a volunteer position",
+      "topic": "culture",
+      "level": "B2+",
+      "register": "formal",
+      "time": "22 min",
+      "length": "170–200 words",
+      "textType": "Application letter",
+      "prompt": "A local museum has advertised for weekend volunteer guides. Write a letter applying for the position. You should: explain why the role appeals to you, describe any relevant experience or qualities, and state your availability clearly.",
+      "audience": "The volunteer coordinator of a museum",
+      "purpose": "Present yourself as a suitable and committed candidate",
+      "points": [
+        "Genuine motivation for the specific role",
+        "Relevant experience, skills or personal qualities",
+        "Clear, honest availability"
+      ],
+      "vocab": [
+        "I am writing to apply for",
+        "a keen interest in",
+        "I pride myself on",
+        "put visitors at ease",
+        "on alternate weekends",
+        "at your convenience for an interview"
+      ],
+      "model": "Dear Volunteer Coordinator,\n\nI am writing to apply for the weekend volunteer guide position advertised on your website. As a lifelong resident of the city with a keen interest in its history, I would welcome the chance to share that enthusiasm with visitors.\n\nAlthough I have not worked as a guide before, I believe I bring qualities the role calls for. In my current job in customer service, I speak with people from many backgrounds every day, and I pride myself on being able to put visitors at ease and explain things clearly. I read widely on local history as a hobby, so the subject matter is one I genuinely enjoy rather than merely tolerate.\n\nRegarding availability, I could commit to Saturday mornings every week and to Sunday afternoons on alternate weekends. I am happy to attend any training required and would treat the commitment seriously.\n\nI would be delighted to discuss my application further and am available at your convenience for an interview. Thank you for considering me.\n\nYours faithfully,\nLeila Haddad",
+      "analysis": "Vocabulary: application register ('I would welcome the chance', 'I pride myself on') paired with role-specific detail ('put visitors at ease'). Grammar: concession ('Although I have not worked as a guide before, I believe…') turns a lack of experience into transferable qualities. Structure: motivation → qualities → availability → interview offer. Improvements: honesty about availability ('every week' vs 'alternate weekends') reads as more reliable than vague enthusiasm, and matters for a rota-based role."
+    },
+    {
+      "id": "wp-11",
+      "modality": "prompt",
+      "format": "opinion-essay",
+      "title": "Are social media influencers a positive role model?",
+      "topic": "culture",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Opinion essay",
+      "prompt": "Some people believe that social media influencers set a harmful example for young people, while others see them as a positive force. Discuss both views and give your own opinion, with reasons and examples.",
+      "audience": "An academic examiner",
+      "purpose": "Discuss two views and reach a reasoned opinion",
+      "points": [
+        "The case that influencers are harmful",
+        "The case that they can be positive",
+        "Your own opinion, clearly justified"
+      ],
+      "vocab": [
+        "a distorted image",
+        "aspirational",
+        "vet",
+        "shallow comparison",
+        "hold to account",
+        "in the right hands"
+      ],
+      "model": "Few figures divide opinion like the social media influencer. To some they model shallow values; to others they are simply the entrepreneurs of a new medium. Both readings contain truth.\n\nThe critical view is easy to understand. Many influencers present a carefully edited, distorted image of life — flawless bodies, constant holidays, endless success — that invites shallow comparison among impressionable teenagers. When self-worth becomes tied to likes, and when products are promoted without being properly vetted, the influence is plainly unhealthy.\n\nYet the opposite case is equally real. In the right hands, the same platforms can be genuinely aspirational. There are influencers who teach coding, demystify science, or speak openly about mental health, reaching audiences that traditional institutions never touched. A teenager discouraged from studying by a distant school system might be re-inspired by a creator who makes the subject feel alive. The medium itself is neutral; what fills it is not.\n\nMy own view is that the label 'influencer' is too broad to judge as a whole. The problem is not the role but the lack of accountability around it. We readily hold traditional advertisers to account for misleading claims, yet we have been slow to apply the same standards online.\n\nIn conclusion, influencers are neither villains nor heroes by default. Whether their effect is positive depends on honesty and responsibility, and the sensible response is not to dismiss them but to hold them to the same standards we expect of anyone with a public voice.",
+      "analysis": "Vocabulary: evaluative language ('distorted image', 'hold to account', 'aspirational') supports a nuanced position. Grammar: balanced concessive structures ('To some… to others…', 'Yet the opposite case…') signpost the two-sided discussion. Structure: view one → view two → reframed opinion → conclusion. Improvements: instead of picking a side, the essay reframes the question ('the problem is not the role but the lack of accountability'), which is a more sophisticated move than a flat verdict."
+    },
+    {
+      "id": "wp-12",
+      "modality": "prompt",
+      "format": "complaint",
+      "title": "Complaint to a neighbour about noise",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "18 min",
+      "length": "140–170 words",
+      "textType": "Semi-formal note/letter",
+      "prompt": "A neighbour has been playing loud music late at night for several weeks, and it is affecting your sleep. You want to raise the issue without starting a feud. Write a polite but firm note. You should: describe the problem factually, explain its effect on you, and propose a reasonable way forward.",
+      "audience": "A next-door neighbour you barely know",
+      "purpose": "Resolve a nuisance while keeping relations civil",
+      "points": [
+        "A calm, factual account of the noise",
+        "The concrete impact on your daily life",
+        "A friendly, specific request"
+      ],
+      "vocab": [
+        "I hope you won't mind me mentioning",
+        "carries through the wall",
+        "I'm sure it's not intentional",
+        "get to sleep",
+        "meet halfway",
+        "no hard feelings"
+      ],
+      "model": "Dear neighbour,\n\nI hope you won't mind me leaving a note rather than knocking — I always seem to miss you. I wanted to raise something gently.\n\nOver the past few weeks, music from your flat has been playing quite loudly after about eleven at night, and it carries through the wall more than you might realise. I'm sure it's not intentional, but I have an early start most mornings and I've been finding it genuinely hard to get to sleep.\n\nWould it be possible to turn things down a little after eleven on weeknights? I completely understand wanting to unwind after work — I'm not asking for silence, just for the volume to come down when it's late. Weekends I honestly don't mind so much.\n\nIf there's ever noise from my side bothering you, please tell me too. I'd much rather we sort these things out directly, with no hard feelings.\n\nThanks so much,\nFlat 3B",
+      "analysis": "Vocabulary: de-escalating phrases ('I'm sure it's not intentional', 'no hard feelings') keep the tone neighbourly. Grammar: hedged requests ('Would it be possible to…') soften the demand; the offer 'if there's ever noise from my side' uses reciprocity to disarm defensiveness. Structure: soft opening → factual problem → specific request → olive branch. Improvements: complaints between neighbours fail when they sound accusatory; naming a precise, limited request ('after eleven on weeknights') is far easier to agree to than 'be quieter'."
+    },
+    {
+      "id": "wp-13",
+      "modality": "prompt",
+      "format": "work-reply",
+      "title": "Responding to critical feedback from a boss",
+      "topic": "work",
+      "level": "C1",
+      "register": "formal",
+      "time": "18 min",
+      "length": "140–170 words",
+      "textType": "Workplace email reply",
+      "prompt": "Your manager has sent you an email pointing out mistakes in a report you submitted, some of which you feel were caused by unclear instructions. Write a professional reply. You should: accept genuine responsibility, address the misunderstanding without sounding defensive, and set out how you will put it right.",
+      "audience": "Your line manager",
+      "purpose": "Respond maturely to criticism and rebuild confidence",
+      "points": [
+        "Sincere acknowledgement of the valid points",
+        "A calm clarification of the misunderstanding",
+        "A clear plan to correct the work"
+      ],
+      "vocab": [
+        "thank you for the honest feedback",
+        "take on board",
+        "with hindsight",
+        "I should have clarified",
+        "going forward",
+        "by the end of the week"
+      ],
+      "model": "Dear Amir,\n\nThank you for the honest feedback on the quarterly report. You are right that the figures in section three were inconsistent, and I take full responsibility for not checking them more carefully before submitting.\n\nI would like to add one point, not as an excuse but so we avoid a repeat. I had understood the report was to cover only the domestic branches, which is why the overseas data was missing. With hindsight, I should have clarified the scope with you at the outset rather than assuming, and that is on me.\n\nGoing forward, I will confirm the exact requirements in writing before starting any report of this kind. For now, I will correct the figures and add the missing section, and I can have a revised version with you by the end of the week — sooner if it is urgent.\n\nThanks again for flagging it directly; I would always rather know.\n\nBest regards,\nNora",
+      "analysis": "Vocabulary: accountable, non-defensive register ('I take full responsibility', 'that is on me') that raises rather than lowers the writer's standing. Grammar: the framing 'not as an excuse but so we avoid a repeat' pre-empts the reader's suspicion; future forms lay out the fix. Structure: accept fault → clarify carefully → concrete plan → gratitude. Improvements: the trap here is sounding defensive; owning the shared misunderstanding ('I should have clarified') is what turns criticism into a display of maturity."
+    },
+    {
+      "id": "wp-14",
+      "modality": "prompt",
+      "format": "informal-letter",
+      "title": "Persuading a reluctant friend to travel with you",
+      "topic": "travel",
+      "level": "B2+",
+      "register": "informal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Informal letter/message",
+      "prompt": "You are planning a trip and want a hesitant friend to join you. They are worried about the cost and about taking time off. Write a message that gently persuades them. You should: address their specific worries, paint an appealing picture of the trip, and make saying yes feel easy.",
+      "audience": "A cautious friend who is tempted but nervous",
+      "purpose": "Persuade without pressuring",
+      "points": [
+        "A direct answer to their money and time worries",
+        "A vivid, tempting picture of the trip",
+        "A low-commitment next step"
+      ],
+      "vocab": [
+        "hear me out",
+        "it needn't cost the earth",
+        "worst case",
+        "we'd regret not going",
+        "no pressure",
+        "just say maybe"
+      ],
+      "model": "Okay, hear me out before you say no.\n\nI know the money worries you, but it needn't cost the earth. If we book the flights this week and split a cheap apartment instead of a hotel, the whole thing comes to less than you'd spend on a normal weekend at home. I've done the maths — I'll send you the spreadsheet, because apparently I'm that person now.\n\nAs for time off, it's only four days, two of them a weekend. Worst case, you come back a little tired. Best case, we're eating too much and getting gloriously lost in a city neither of us has seen, with photos we'll be boring people with for years.\n\nHonestly, I think we'd regret not going more than we'd regret going. But there's no pressure. You don't have to decide tonight — just say maybe, and let me hold a flight for twenty-four hours.\n\nCome on. You know you want to.\n\nX",
+      "analysis": "Vocabulary: persuasive-informal register ('hear me out', 'it needn't cost the earth', 'gloriously lost') that feels like a real friend, not a brochure. Grammar: the 'worst case… best case…' contrast reframes risk; imperatives ('just say maybe') lower the barrier to yes. Structure: pre-empt objection → tackle both worries → paint the picture → tiny ask. Improvements: pushy persuasion backfires; offering a low-commitment step ('just say maybe') respects the friend's caution while still nudging."
+    },
+    {
+      "id": "wp-15",
+      "modality": "prompt",
+      "format": "problem-solution",
+      "title": "The decline of reading among young people",
+      "topic": "education",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Problem & solution essay",
+      "prompt": "In many countries, young people read fewer books for pleasure than in the past. Why might this be happening, and what could parents and schools do to reverse the trend? Give reasons and examples.",
+      "audience": "An academic examiner",
+      "purpose": "Explain causes and propose targeted solutions",
+      "points": [
+        "Two plausible causes of declining reading",
+        "Solutions aimed at parents and at schools",
+        "A conclusion on what matters most"
+      ],
+      "vocab": [
+        "compete for attention",
+        "instant gratification",
+        "a lifelong habit",
+        "lead by example",
+        "reading for its own sake",
+        "foster"
+      ],
+      "model": "Reading for pleasure appears to be in retreat among the young, and while the trend is worrying, its causes are understandable and its remedies within reach.\n\nTwo explanations seem central. The first is competition for attention. Books now sit alongside streaming, gaming and endless short videos, all engineered for instant gratification, and a novel that rewards patience struggles to compete. The second is how reading is presented at school. When books arrive chiefly as set texts to be analysed for an exam, reading becomes a chore associated with pressure rather than pleasure, and the habit withers.\n\nParents and schools can respond differently but in parallel. At home, the most powerful tool is example: children who see adults reading, and who are read to when young, tend to absorb the habit naturally, so parents leading by example matters more than any lecture. Schools, meanwhile, could protect time for reading for its own sake — quiet reading periods with free choice of book, no test attached — allowing pupils to rediscover that stories can be enjoyed rather than dissected.\n\nAccess matters too. Well-stocked libraries and letting young readers choose genres adults might dismiss, from graphic novels to fantasy, foster engagement far better than a prescribed list ever could.\n\nIn conclusion, the decline stems mainly from fierce competition for attention and from reading being framed as work. The most effective response is to make reading feel like a pleasure again — through example at home and freedom at school — rather than simply demanding that children read more.",
+      "analysis": "Vocabulary: education-and-media collocations ('compete for attention', 'instant gratification', 'reading for its own sake') that frame the argument sharply. Grammar: paired subjects ('Parents and schools can respond differently but in parallel') organise the solution paragraph; the em-dash asides add controlled complexity. Structure: two causes → parallel solutions → access point → conclusion. Improvements: the essay resists 'children should read more' as a solution and instead attacks the framing of reading as work — addressing the cause, not the symptom."
+    },
+    {
+      "id": "wp-16",
+      "modality": "prompt",
+      "format": "request-info",
+      "title": "Enquiry about renting a flat from abroad",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "formal",
+      "time": "18 min",
+      "length": "150–180 words",
+      "textType": "Enquiry email",
+      "prompt": "You will move to a new city for work and want to rent a flat you have seen advertised online, but you cannot visit in person beforehand. Write an email to the landlord or agency. You should: express your interest, ask the questions that matter most when renting unseen, and explain your situation to reassure them you are a serious tenant.",
+      "audience": "A letting agent or landlord",
+      "purpose": "Gather key information and present yourself as reliable",
+      "points": [
+        "Clear interest in the specific property",
+        "Practical questions important for renting remotely",
+        "Reassurance about your reliability as a tenant"
+      ],
+      "vocab": [
+        "I came across your listing",
+        "given that I cannot view it in person",
+        "bills included",
+        "a virtual viewing",
+        "references and proof of employment",
+        "at short notice"
+      ],
+      "model": "Dear Ms Okafor,\n\nI came across your listing for the two-bedroom flat on Ashgrove Road and would like to express my strong interest. I am relocating to Bristol next month to start a new job, so a swift, straightforward move would suit me well.\n\nGiven that I cannot view the flat in person, I would be grateful for clarification on a few points. Are the bills included in the advertised rent, or charged separately? Is the flat furnished, and what is the minimum tenancy length? Finally, would you be able to arrange a video call so I can see the rooms and the surrounding street?\n\nTo reassure you, I am in stable, full-time employment and can provide references from a previous landlord along with proof of employment and a deposit at short notice. I understand that renting to someone sight unseen involves some trust, and I am happy to supply whatever documentation you need.\n\nI look forward to hearing from you.\n\nKind regards,\nHugo Bianchi",
+      "analysis": "Vocabulary: tenancy-specific terms ('bills included', 'minimum tenancy', 'references and proof of employment') show topic command. Grammar: the causal opener ('Given that I cannot view it in person') justifies each question; conditional offers ('would you be able to…') stay polite. Structure: interest → questions → reassurance. Improvements: renting remotely requires trust; volunteering references and acknowledging the landlord's risk ('renting to someone sight unseen involves some trust') is what separates a serious enquiry from a casual one."
+    },
+    {
+      "id": "wp-17",
+      "modality": "prompt",
+      "format": "opinion-essay",
+      "title": "Should governments invest in space exploration?",
+      "topic": "science",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Opinion essay",
+      "prompt": "Some people think governments should spend money on space exploration, while others believe those funds would be better used solving problems on Earth. To what extent do you agree or disagree? Support your view with reasons and examples.",
+      "audience": "An academic examiner",
+      "purpose": "Argue a position on public spending priorities",
+      "points": [
+        "A clear stance on the trade-off",
+        "Reasons and examples for your view",
+        "Engagement with the opposing argument",
+        "A conclusion that does not merely repeat"
+      ],
+      "vocab": [
+        "a false choice",
+        "spin-off technologies",
+        "pressing needs",
+        "in the long run",
+        "misplaced priorities",
+        "reap the benefits"
+      ],
+      "model": "Whenever a rocket launches, someone asks whether the money might have fed the hungry instead. It is a fair question, but I believe it rests on a false choice, and that space exploration deserves continued public funding.\n\nCritics have a serious point. Poverty, disease and failing hospitals are pressing needs, and it can seem like misplaced priorities to fund distant missions while people struggle at home. Space budgets are large and their rewards often invisible to ordinary taxpayers.\n\nYet the argument that we must choose one or the other does not hold. National budgets are vast, and space spending typically forms a tiny fraction of them; cutting it would barely dent social programmes while sacrificing considerable long-term value. Much of that value is practical. Satellite technology, developed for exploration, now underpins weather forecasting, disaster response and global communication — spin-off technologies that save lives on Earth every day. Space research has also driven advances in materials and medicine that no one anticipated at launch.\n\nThere is a further, less measurable benefit. Ambitious scientific goals inspire young people towards engineering and research, strengthening the very workforce a country needs to solve its earthly problems in the long run.\n\nIn conclusion, while the compassion behind the objection is understandable, the choice it assumes is largely illusory. Space exploration is not a distraction from human needs but, through its technologies and the talent it inspires, a contributor to meeting them. A wise government funds both, recognising that investment in knowledge tends to repay itself in ways we cannot always foresee.",
+      "analysis": "Vocabulary: argumentation vocabulary ('a false choice', 'spin-off technologies', 'misplaced priorities') that directly engages the prompt's tension. Grammar: concession followed by rebuttal ('Yet the argument… does not hold') drives the logic. Structure: reframing thesis → opposing view → rebuttal with examples → inspirational point → conclusion. Improvements: rather than saying 'space is important', the essay dismantles the either/or premise — a stronger rhetorical move that examiners reward."
+    },
+    {
+      "id": "wp-18",
+      "modality": "prompt",
+      "format": "short-article",
+      "title": "A community newsletter piece",
+      "topic": "culture",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "170–200 words",
+      "textType": "Newsletter article",
+      "prompt": "Your neighbourhood is starting a monthly community newsletter, and you have been asked to write a short piece encouraging residents to attend a new weekly market. Write the article. You should: describe what the market offers, explain why it matters for the community, and warmly invite readers to come.",
+      "audience": "Local residents of all ages",
+      "purpose": "Inform and encourage attendance at a community event",
+      "points": [
+        "What visitors will find at the market",
+        "The wider benefit to the neighbourhood",
+        "A warm, inclusive invitation"
+      ],
+      "vocab": [
+        "right on our doorstep",
+        "locally sourced",
+        "a friendly face",
+        "breathe life into",
+        "all are welcome",
+        "why not pop along"
+      ],
+      "model": "A New Saturday Tradition Right on Our Doorstep\n\nStarting this month, the square by the old library will host a weekly market every Saturday morning, and it promises to become the highlight of the neighbourhood's week.\n\nExpect a genuine mix. There will be stalls selling locally sourced vegetables, fresh bread from the bakery two streets over, homemade preserves, and crafts made by residents you may already know by sight if not by name. A small coffee cart will keep everyone warm, and there are plans for live music once the weather improves.\n\nBut the market is about more than shopping. In a time when many of us barely know our neighbours, a regular gathering breathes life into a community. It gives us a reason to step outside, see a friendly face, and support the small producers who keep our high street alive rather than the faceless chains.\n\nSo whether you come to fill your basket or simply to say hello, all are welcome. Why not pop along this Saturday from nine until one? Bring a bag, bring a friend, and let's make this a tradition worth keeping.",
+      "analysis": "Vocabulary: community-warmth phrasing ('right on our doorstep', 'a friendly face', 'breathe life into') suited to a neighbourhood newsletter. Grammar: the pivot 'But the market is about more than shopping' shifts from description to meaning; imperatives close with energy. Structure: what it offers → why it matters → inclusive invitation. Improvements: event write-ups that only list stalls feel like flyers; grounding the market in a shared value ('barely know our neighbours') gives readers a reason to care, not just to attend."
+    },
+    {
+      "id": "wp-19",
+      "modality": "prompt",
+      "format": "advantages-disadvantages",
+      "title": "Living in a big city versus the countryside",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "formal",
+      "time": "35 min",
+      "length": "250–280 words",
+      "textType": "Advantages & disadvantages essay",
+      "prompt": "More people than ever choose to live in large cities rather than the countryside. What are the advantages and disadvantages of city life compared with rural life? Support your answer with reasons and examples.",
+      "audience": "An academic examiner",
+      "purpose": "Compare two ways of living in a balanced essay",
+      "points": [
+        "Advantages of city life with reasons",
+        "Disadvantages of city life with reasons",
+        "A balanced concluding judgement"
+      ],
+      "vocab": [
+        "a wealth of opportunity",
+        "the pace of life",
+        "the cost of living",
+        "a tight-knit community",
+        "trade-off",
+        "suit different people at different stages"
+      ],
+      "model": "The steady drift of people towards large cities suggests urban life holds real attractions, yet those who stay in the countryside have their reasons too. City living involves a clear trade-off.\n\nThe advantages are substantial. Cities offer a wealth of opportunity: more jobs, better-paid careers and easier access to universities and specialist training. They also provide services and culture that rural areas cannot match — hospitals, theatres, restaurants and public transport that runs late into the night. For a young person building a career or seeking new experiences, the city is hard to beat.\n\nThese benefits, however, carry costs. The pace of life can be exhausting, with crowded commutes and constant noise wearing people down over time. The cost of living is another burden; rents in major cities often swallow a large share of income, so a comfortable rural home may be impossible in the centre of town. Cities can also feel anonymous, lacking the tight-knit community that smaller places often preserve.\n\nRural life reverses this picture: quieter, cheaper and more neighbourly, but with fewer jobs and long journeys to reach services.\n\nIn conclusion, city life offers opportunity and convenience at the price of stress, expense and a degree of isolation. Neither option is simply better; rather, the two suit different people at different stages of life. A person's ideal home depends less on which is superior than on what they most value at that moment — ambition and variety, or peace and belonging.",
+      "analysis": "Vocabulary: lifestyle-comparison collocations ('a wealth of opportunity', 'the cost of living', 'a tight-knit community') keep the two sides vivid. Grammar: the framing noun 'trade-off' organises the whole essay; comparatives run throughout ('quieter, cheaper and more neighbourly'). Structure: advantages → disadvantages → the rural mirror → 'it depends' verdict. Improvements: a mature conclusion resists declaring a winner and instead ties the choice to life stage and values, which reads as more thoughtful than a forced preference."
+    },
+    {
+      "id": "wp-20",
+      "modality": "prompt",
+      "format": "formal-email",
+      "title": "Proposing an idea to your manager",
+      "topic": "work",
+      "level": "C1",
+      "register": "formal",
+      "time": "20 min",
+      "length": "160–190 words",
+      "textType": "Proposal email",
+      "prompt": "You have an idea that could improve how your team works — for example, a change to meetings, tools or processes. Write an email to your manager proposing it. You should: describe the current problem briefly, explain your idea and its benefit, and suggest a small first step rather than demanding a full change.",
+      "audience": "Your manager, who is busy and results-focused",
+      "purpose": "Win support for an idea by making it easy to try",
+      "points": [
+        "The current pain point, stated concisely",
+        "Your proposal and its concrete benefit",
+        "A low-risk trial rather than a full rollout"
+      ],
+      "vocab": [
+        "I've been giving some thought to",
+        "eat into",
+        "a modest change",
+        "free up",
+        "on a trial basis",
+        "review how it went"
+      ],
+      "model": "Subject: A small idea to make our weekly meetings more useful\n\nDear Chloe,\n\nI've been giving some thought to our Monday team meetings, and I wanted to share an idea that might make them more effective.\n\nAt the moment, the meeting often runs to a full hour, much of it spent on status updates that eat into time we could use for actual problem-solving. People sometimes leave without the discussion they came for.\n\nMy suggestion is a modest change rather than an overhaul: we share written status updates in a shared document beforehand, and reserve the meeting itself for the two or three issues that genuinely need a group. That would likely free up twenty minutes a week and make the time we do spend together far more focused.\n\nRather than committing to this permanently, could we try it for the next three meetings on a trial basis, then review how it went? If it does not help, we simply return to the current format, having lost nothing.\n\nI'd be glad to set up the shared document if you think it is worth a go.\n\nBest regards,\nMarcus",
+      "analysis": "Vocabulary: workplace-proposal phrasing ('give some thought to', 'on a trial basis', 'an overhaul') that sounds collaborative rather than critical. Grammar: hedging and conditionals ('might make', 'would likely free up', 'if it does not help') lower the perceived risk. Structure: problem → idea and benefit → low-stakes trial. Improvements: proposals fail when they demand big commitment; framing it as a reversible three-week experiment ('having lost nothing') makes 'yes' the easy answer for a cautious manager."
+    },
+    {
+      "id": "wp-21",
+      "modality": "prompt",
+      "format": "opinion-essay",
+      "title": "Is it better to be a specialist or a generalist?",
+      "topic": "work",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Opinion essay",
+      "prompt": "In today's job market, some argue it is wiser to become a highly specialised expert, while others believe having a broad range of skills is more valuable. Discuss both views and give your own opinion, with examples.",
+      "audience": "An academic examiner",
+      "purpose": "Weigh two career philosophies and take a position",
+      "points": [
+        "The case for deep specialisation",
+        "The case for broad, adaptable skills",
+        "Your reasoned opinion"
+      ],
+      "vocab": [
+        "command a premium",
+        "pigeonhole",
+        "adapt on the fly",
+        "a shifting landscape",
+        "the best of both worlds",
+        "hedge against"
+      ],
+      "model": "Should a professional dig deep into one field or spread their skills widely? The question has become sharper as technology reshapes careers, and both answers have merit.\n\nSpecialists make a strong case. Genuine expertise is scarce, so it tends to command a premium: a surgeon or a niche software engineer is hard to replace and well paid for it. Deep knowledge also allows work that generalists simply cannot do, and in fields like medicine or law, there is no substitute for years of focused study.\n\nGeneralists reply that the modern world rewards flexibility. As industries shift and whole roles disappear, someone with a broad toolkit can adapt on the fly, moving between tasks and even careers as the landscape changes. A person who can write, analyse data and manage people may thrive precisely because they are not pigeonholed into a single, vulnerable specialism.\n\nMy own view is that this is not a binary choice. The most resilient professionals cultivate what is sometimes called a 'T-shape': real depth in one area, supported by a broad base of transferable skills. The depth makes them valuable now; the breadth hedges against an uncertain future and lets them collaborate across fields.\n\nIn conclusion, while pure specialisation offers reward and pure versatility offers safety, the wisest path combines them. Master something genuinely, but keep learning widely enough to move when the ground shifts — that, to me, is the best of both worlds.",
+      "analysis": "Vocabulary: career-strategy idiom ('command a premium', 'pigeonhole', 'hedge against') keeps the discussion precise. Grammar: the two views are handled with clean topic sentences; the 'T-shape' image compresses a complex idea. Structure: view one → view two → synthesis → conclusion. Improvements: rather than choosing a side, the essay proposes an integrating concept, which examiners value more than a simple preference."
+    },
+    {
+      "id": "wp-22",
+      "modality": "prompt",
+      "format": "informal-letter",
+      "title": "Apologising to a friend after an argument",
+      "topic": "relationships",
+      "level": "B2+",
+      "register": "informal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Informal letter/message",
+      "prompt": "You and a good friend had a disagreement last week and things were said that you regret. You want to repair the friendship. Write them a message. You should: acknowledge your part honestly, avoid making excuses, and suggest how to move forward.",
+      "audience": "A good friend you hurt in an argument",
+      "purpose": "Apologise sincerely and rebuild trust",
+      "points": [
+        "An honest acknowledgement of what you did",
+        "No excuses or blame-shifting",
+        "A genuine step towards reconciliation"
+      ],
+      "vocab": [
+        "I've been meaning to say",
+        "I was out of line",
+        "it's been sitting with me",
+        "I value our friendship",
+        "clear the air",
+        "whenever you're ready"
+      ],
+      "model": "Hey,\n\nI've been meaning to say this properly rather than let it fester over text, but I couldn't wait any longer.\n\nI'm sorry about last week. I was out of line — the things I said were unfair, and I said them because I was frustrated, not because they were true. That's on me, and I'm not going to dress it up as anything else. It's been sitting with me all week, honestly.\n\nI'm not writing to relitigate who was right; I don't actually care about that anymore. I just know that I value our friendship far more than winning some argument I can barely remember the start of.\n\nCould we maybe grab a coffee and clear the air? No agenda, no rehashing everything — just the two of us, like normal. Whenever you're ready; I'll fit around you.\n\nAnd if you need a bit more time, I understand completely. I'll be here either way.\n\nSorry again.\nMe",
+      "analysis": "Vocabulary: sincere-apology register ('I was out of line', 'that's on me', 'clear the air') that owns the fault plainly. Grammar: the explicit refusal to make excuses ('not because they were true', 'I'm not going to dress it up') strengthens the apology. Structure: acknowledgement → no excuses → reconciliation offer → space to breathe. Improvements: apologies collapse when they smuggle in blame ('I'm sorry you felt…'); this one takes clean responsibility and prioritises the relationship over being right."
+    },
+    {
+      "id": "wp-23",
+      "modality": "prompt",
+      "format": "complaint",
+      "title": "Complaint about a disappointing holiday",
+      "topic": "travel",
+      "level": "C1",
+      "register": "formal",
+      "time": "22 min",
+      "length": "180–210 words",
+      "textType": "Letter of complaint",
+      "prompt": "You booked a package holiday through a travel company, but the hotel and services fell far short of what was advertised. Write a formal letter of complaint. You should: contrast the promises with the reality, describe the effect on your trip, and state clearly what compensation you seek.",
+      "audience": "The complaints department of a travel company",
+      "purpose": "Obtain fair compensation for a misrepresented holiday",
+      "points": [
+        "Specific gaps between advert and reality",
+        "The impact on your experience",
+        "A clear, justified compensation claim"
+      ],
+      "vocab": [
+        "I am writing to lodge a formal complaint",
+        "bore no resemblance to",
+        "out of pocket",
+        "detract from",
+        "in breach of",
+        "a partial refund"
+      ],
+      "model": "Dear Complaints Department,\n\nI am writing to lodge a formal complaint about the package holiday I booked with your company (reference TH-77140), which bore little resemblance to what was advertised.\n\nYour brochure promised a four-star hotel with a sea view, an on-site pool and a shuttle to the town centre. In reality, our room overlooked a car park, the pool was closed for the entire week with no prior warning, and the promised shuttle did not exist, leaving us to pay for taxis daily. These were not minor discrepancies; they were, in effect, in breach of what we paid for.\n\nThe impact was considerable. We had chosen this package precisely for the facilities described, and their absence detracted seriously from a holiday we had saved for all year. Being repeatedly out of pocket for transport we should not have needed only added to the frustration.\n\nGiven the gap between promise and reality, I am seeking a partial refund of 40 per cent of the total cost, together with reimbursement of the £120 spent on taxis. I trust you will investigate and respond within fourteen days.\n\nYours faithfully,\nDelphine Roy",
+      "analysis": "Vocabulary: complaint-with-teeth phrasing ('bore little resemblance to', 'in breach of', 'out of pocket') that documents rather than merely vents. Grammar: the advert-versus-reality contrast is built into parallel clauses; the quantified claim ('40 per cent', '£120') is precise. Structure: promise vs reality → impact → specific claim with deadline. Improvements: naming exact figures and a percentage makes the demand actionable and signals a writer who knows their rights."
+    },
+    {
+      "id": "wp-24",
+      "modality": "prompt",
+      "format": "problem-solution",
+      "title": "Loneliness among elderly people",
+      "topic": "health",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Problem & solution essay",
+      "prompt": "In many societies, loneliness among elderly people is a growing problem. What are the causes of this issue, and what can communities and families do to reduce it? Give reasons and examples.",
+      "audience": "An academic examiner",
+      "purpose": "Analyse a social problem and propose humane solutions",
+      "points": [
+        "Causes of elderly loneliness",
+        "Solutions from communities and from families",
+        "A conclusion on the most important response"
+      ],
+      "vocab": [
+        "a shrinking social circle",
+        "fall through the cracks",
+        "intergenerational",
+        "check in on",
+        "a sense of purpose",
+        "with relatively little cost"
+      ],
+      "model": "Loneliness in old age is quietly becoming one of the defining social problems of ageing societies, and its consequences for health are as serious as its causes are avoidable.\n\nSeveral factors combine. As people age, their social circle shrinks: friends pass away, and grown children often move to distant cities for work, so regular contact fades. Retirement removes the daily interaction a workplace once provided, and reduced mobility can leave older people effectively housebound, unable to reach the places where they might meet others. Isolated in this way, many simply fall through the cracks.\n\nBoth communities and families can respond. At the community level, initiatives that create regular contact are powerful: lunch clubs, volunteer visiting schemes and intergenerational projects, where schoolchildren visit care homes, give older people a sense of purpose and connection, often with relatively little cost. Local libraries and community centres can become hubs where no one is turned away.\n\nFamilies, meanwhile, can make a difference through small, consistent habits rather than grand gestures. A weekly phone call, a shared meal, or simply teaching a parent to use video calls can transform someone's week. The point is regularity: it is far better to check in on a relative briefly but often than to visit lavishly once a year.\n\nIn conclusion, elderly loneliness stems mainly from shrinking contact and reduced mobility, and the remedy lies in weaving older people back into daily life. Of all the measures available, consistent human contact — from both community schemes and families — is the one that matters most.",
+      "analysis": "Vocabulary: compassionate-analytical register ('a shrinking social circle', 'fall through the cracks', 'a sense of purpose') that treats a human topic with care. Grammar: cumulative causes ('friends pass away, and grown children often move…') build the picture; the contrast 'briefly but often than lavishly once a year' sharpens the advice. Structure: causes → community solutions → family solutions → conclusion. Improvements: the essay stresses regularity over grandeur, a specific and realistic insight that beats generic 'people should care more' conclusions."
+    },
+    {
+      "id": "wp-25",
+      "modality": "prompt",
+      "format": "work-reply",
+      "title": "Negotiating a deadline extension",
+      "topic": "work",
+      "level": "C1",
+      "register": "formal",
+      "time": "18 min",
+      "length": "140–170 words",
+      "textType": "Workplace email",
+      "prompt": "You have been assigned a task with a deadline you realistically cannot meet without the quality suffering. Write an email to the person who set it, asking for more time. You should: raise it early and honestly, explain why the current deadline is a risk, and propose a specific alternative that shows you are still committed.",
+      "audience": "A client or senior colleague who set the deadline",
+      "purpose": "Renegotiate a deadline while protecting your credibility",
+      "points": [
+        "Early, honest flagging of the issue",
+        "A clear reason focused on quality, not complaint",
+        "A specific proposed alternative"
+      ],
+      "vocab": [
+        "I wanted to flag this early",
+        "do it properly",
+        "rather than rush and risk",
+        "a realistic timeline",
+        "keep you posted",
+        "does that work on your end"
+      ],
+      "model": "Dear Mr Feldman,\n\nI wanted to flag this early rather than at the last minute. Having scoped out the full analysis you requested, I am concerned that Friday's deadline may not allow me to do it properly.\n\nThe dataset turned out to be larger and messier than expected, and cleaning it thoroughly before the analysis will take longer than first estimated. I could still deliver something by Friday, but I would be rushing the checks that ensure the figures are reliable — and I would rather not hand you numbers I am not fully confident in.\n\nWhat I would propose instead is delivering the completed, verified report by Tuesday midday. That gives me the time to do it right without dragging on. If Friday is genuinely fixed, I can send you the headline findings then and the full report on Tuesday.\n\nEither way, I will keep you posted on progress. Does that work on your end?\n\nBest regards,\nIsabel",
+      "analysis": "Vocabulary: professional-negotiation phrasing ('flag this early', 'do it properly', 'a realistic timeline') that frames the ask around quality. Grammar: the contrast 'I could still deliver… but I would be rushing…' presents the trade-off honestly; the fallback offer shows flexibility. Structure: early flag → reason → specific new date → a compromise → open question. Improvements: asking for more time reads as reliable, not weak, when it is raised early and paired with a concrete alternative rather than a vague 'I need longer'."
+    },
+    {
+      "id": "wp-26",
+      "modality": "prompt",
+      "format": "opinion-essay",
+      "title": "Should zoos be banned?",
+      "topic": "environment",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "260–290 words",
+      "textType": "Opinion essay",
+      "prompt": "Some people believe that keeping animals in zoos is cruel and that zoos should be banned. Others argue that zoos play an important role in conservation and education. Discuss both views and give your own opinion.",
+      "audience": "An academic examiner",
+      "purpose": "Discuss an ethical debate and reach a qualified view",
+      "points": [
+        "The ethical case against zoos",
+        "The conservation and education case for them",
+        "A nuanced personal position"
+      ],
+      "vocab": [
+        "confinement",
+        "captive breeding",
+        "a last refuge",
+        "welfare standards",
+        "instil",
+        "under the right conditions"
+      ],
+      "model": "Whether zoos are cruel prisons or vital sanctuaries is a debate that stirs strong feelings, and honesty requires acknowledging the force of both sides.\n\nThose who would ban zoos raise a genuine moral concern. Confining wild animals, especially large or far-ranging species, in enclosures a fraction of their natural range can cause visible distress and abnormal behaviour. Where zoos exist merely to entertain, keeping intelligent creatures behind glass for our amusement is difficult to justify ethically.\n\nYet the case for zoos is also serious. The best of them run captive breeding programmes that have saved species from extinction, sometimes acting as a last refuge when habitats are destroyed. They also instil in millions of visitors, particularly children, a connection to wildlife that a screen cannot replicate, and this can nurture the conservationists and voters of the future. Modern zoos increasingly fund fieldwork that protects animals in the wild.\n\nMy own view is that the answer lies not in banning zoos but in raising standards. A blanket ban would sweep away the good institutions along with the bad and abandon endangered species that now depend on captive programmes. What we should insist on is high welfare standards, a genuine conservation purpose, and an end to keeping species that cannot thrive in captivity.\n\nIn conclusion, while the cruelty objection rightly condemns poor zoos, it does not justify abolishing all of them. Under the right conditions — spacious, welfare-focused and conservation-driven — zoos can do far more good than harm, and reform, not prohibition, is the responsible path.",
+      "analysis": "Vocabulary: ethics-and-conservation lexis ('confinement', 'captive breeding', 'welfare standards') that engages the debate precisely. Grammar: concessive framing throughout ('Yet the case for zoos is also serious') balances the two views before the pivot. Structure: against → for → 'reform not ban' position → conclusion. Improvements: the essay rejects the extreme binary of the prompt and argues for a middle path with named conditions — more defensible than a simple yes or no."
+    },
+    {
+      "id": "wp-27",
+      "modality": "prompt",
+      "format": "formal-email",
+      "title": "Requesting information as a first-year student",
+      "topic": "education",
+      "level": "B2+",
+      "register": "formal",
+      "time": "18 min",
+      "length": "140–170 words",
+      "textType": "Formal email",
+      "prompt": "You have just started university and are confused about how to choose optional modules for next term. Write an email to your academic adviser. You should: explain your situation politely, ask specific questions about your options, and request a meeting if helpful.",
+      "audience": "Your academic adviser at university",
+      "purpose": "Get clear guidance on an academic decision",
+      "points": [
+        "A brief, clear account of your confusion",
+        "Focused questions about module choices",
+        "A request for further help if needed"
+      ],
+      "vocab": [
+        "I am in my first term",
+        "I would welcome your guidance",
+        "count towards",
+        "prerequisites",
+        "make an informed choice",
+        "if it would be easier to discuss in person"
+      ],
+      "model": "Dear Dr Amenta,\n\nI hope you are well. I am in my first term studying Economics, and I am finding the process of choosing optional modules for next term rather confusing, so I would welcome your guidance.\n\nThere are a few points I am unsure about. First, do any of the optional modules count towards specific future specialisations, or are they all treated equally when I choose a pathway in second year? Second, are there prerequisites I should be aware of — modules I must take now to keep certain options open later?\n\nI would like to make an informed choice rather than pick modules at random and regret it, particularly as I am still deciding between a finance-focused and a policy-focused route.\n\nIf it would be easier to discuss this in person, I would be very grateful for a short meeting at whatever time suits you. Otherwise, any advice by email would help enormously.\n\nThank you for your time.\n\nBest regards,\nWei Chen",
+      "analysis": "Vocabulary: student-to-adviser register ('I would welcome your guidance', 'make an informed choice', 'prerequisites') that is polite and specific. Grammar: the embedded questions ('do any modules count towards…', 'are there prerequisites I should be aware of') are correctly formed. Structure: situation → two focused questions → the decision at stake → meeting offer. Improvements: giving the adviser context ('deciding between finance and policy') lets them answer usefully rather than generically — a small detail that makes the email effective."
+    },
+    {
+      "id": "wp-28",
+      "modality": "prompt",
+      "format": "advantages-disadvantages",
+      "title": "Learning a language through apps",
+      "topic": "technology",
+      "level": "B2+",
+      "register": "formal",
+      "time": "32 min",
+      "length": "250–280 words",
+      "textType": "Advantages & disadvantages essay",
+      "prompt": "Language-learning apps have become extremely popular. What are the advantages and disadvantages of learning a language mainly through an app rather than with a teacher? Support your answer with examples.",
+      "audience": "An academic examiner",
+      "purpose": "Evaluate a modern learning method",
+      "points": [
+        "Advantages of app-based learning",
+        "Disadvantages compared with a teacher",
+        "A balanced conclusion"
+      ],
+      "vocab": [
+        "at your own pace",
+        "bite-sized",
+        "gamified",
+        "tailored feedback",
+        "plateau",
+        "complement rather than replace"
+      ],
+      "model": "Language apps have transformed how millions begin a new language, and their popularity is easy to understand. Yet learning through an app alone brings both clear benefits and real limitations.\n\nThe advantages start with access. Apps are cheap or free, available anywhere, and let learners study at their own pace in bite-sized sessions that fit around a busy life. Their gamified design — streaks, points and levels — keeps motivation alive in a way a weekly class sometimes cannot, and they are patient, allowing endless repetition without embarrassment. For building early vocabulary and basic grammar, they are genuinely effective.\n\nThe disadvantages appear later. Most apps drill recognition and single sentences, but they struggle to develop real conversation, where a human must respond unpredictably. A teacher gives tailored feedback on pronunciation and errors that an algorithm often misses, and can explain the reasoning behind a rule when a learner is confused. Many app users also hit a plateau: they can complete exercises confidently yet freeze when a real person speaks to them, because the app never demanded spontaneous speech.\n\nIn conclusion, apps are excellent for starting a language and maintaining daily contact with it, offering convenience and motivation that traditional lessons lack. However, they are weaker precisely where communication matters most — in unscripted, human interaction. The most effective approach, in my view, is to let apps complement rather than replace human teaching, using the app for daily practice and a teacher or conversation partner for the speaking skills no algorithm can yet provide.",
+      "analysis": "Vocabulary: ed-tech collocations ('at your own pace', 'gamified', 'tailored feedback', 'plateau') that show command of the topic. Grammar: the temporal contrast 'The advantages start with access… The disadvantages appear later' organises the two sides elegantly. Structure: advantages → disadvantages → 'complement not replace' verdict. Improvements: the conclusion does not crown a winner but assigns each method its proper role, which is more realistic and better-scored than 'apps are better/worse'."
+    },
+    {
+      "id": "wp-29",
+      "modality": "prompt",
+      "format": "informal-letter",
+      "title": "Congratulating a friend on good news",
+      "topic": "relationships",
+      "level": "B2+",
+      "register": "informal",
+      "time": "18 min",
+      "length": "140–160 words",
+      "textType": "Informal letter/message",
+      "prompt": "A close friend has just told you they got a job they really wanted after a long, difficult search. Write them a message. You should: react with genuine warmth, recall the effort it took them, and suggest a way to celebrate together.",
+      "audience": "A close friend who has just had a breakthrough",
+      "purpose": "Celebrate their success sincerely",
+      "points": [
+        "A warm, genuine reaction",
+        "Recognition of the struggle behind the success",
+        "A concrete plan to celebrate"
+      ],
+      "vocab": [
+        "over the moon for you",
+        "you've earned this",
+        "stuck it out",
+        "against the odds",
+        "the drinks are on me",
+        "we have to celebrate"
+      ],
+      "model": "You got it!!\n\nHonestly, I read your message three times just grinning. I am absolutely over the moon for you — this is the best news I've had all week, and it isn't even my job.\n\nAnd don't you dare downplay it. I know how long and brutal this search was. All those rejections, the interviews that went nowhere, the evenings you nearly gave up — you stuck it out and you got there against the odds. This isn't luck. You earned this, every bit of it, and I hope you let yourself feel that.\n\nSo, we absolutely have to celebrate. Are you free this weekend? Dinner somewhere ridiculous, and the drinks are firmly on me — no arguments. I want to hear everything: how they told you, what the role's actually like, all of it.\n\nSo proud of you. Genuinely.\n\nText me your free evenings!\nX",
+      "analysis": "Vocabulary: celebratory-informal register ('over the moon', 'you've earned this', 'the drinks are on me') that conveys real warmth. Grammar: exclamatives and the imperative 'don't you dare downplay it' capture excited speech; the repeated 'you' keeps the focus on the friend. Structure: reaction → honouring the struggle → celebration plan. Improvements: recalling the specific hardship ('all those rejections') turns a generic 'congrats' into something personal and moving — the difference between polite and heartfelt."
+    },
+    {
+      "id": "wp-30",
+      "modality": "prompt",
+      "format": "short-article",
+      "title": "An opinion piece for a student magazine",
+      "topic": "technology",
+      "level": "C1",
+      "register": "neutral",
+      "time": "25 min",
+      "length": "200–230 words",
+      "textType": "Opinion article",
+      "prompt": "You write for a student magazine. Write a short opinion piece arguing that students should be more careful about how much they rely on artificial intelligence for their studies. You should: state your position clearly, give balanced reasons, and end with practical advice rather than a lecture.",
+      "audience": "Fellow university students",
+      "purpose": "Persuade peers to use AI thoughtfully",
+      "points": [
+        "A clear, non-preachy position",
+        "Balanced acknowledgement of AI's usefulness",
+        "Practical, respectful advice"
+      ],
+      "vocab": [
+        "a double-edged sword",
+        "outsource your thinking",
+        "for what it's worth",
+        "the heavy lifting",
+        "atrophy",
+        "use it, don't lean on it"
+      ],
+      "model": "Think Before You Prompt\n\nLet me be clear from the start: I use AI tools, and I'm not about to tell you to delete them. They're a double-edged sword, and pretending otherwise would be dishonest. But I do think many of us, myself included, should be more careful about how far we lean on them.\n\nThe usefulness is obvious. AI can explain a tricky concept three different ways, summarise a dense reading, or unstick you at two in the morning when no tutor is awake. Used like that, it's a brilliant study partner.\n\nThe danger is subtler. When we let it do the heavy lifting — writing the essay, solving the problem, forming the argument — we quietly outsource the very thinking that university is supposed to build. Skills you never use tend to atrophy, and the struggle you skip is often the struggle that actually teaches you.\n\nSo, for what it's worth, here's my rule of thumb: use it to understand, not to avoid understanding. Ask it to explain, then do the task yourself. Let it check your work, not replace it. Treat it like a knowledgeable friend, not a ghostwriter.\n\nUse it, in short — just don't lean on it. Your future self, sitting an exam with no app in sight, will thank you.",
+      "analysis": "Vocabulary: opinion-column phrasing ('a double-edged sword', 'outsource your thinking', 'a rule of thumb') that persuades without preaching. Grammar: the concessive opener ('I use AI tools, and I'm not about to tell you to delete them') builds credibility before the argument. Structure: honest position → usefulness → subtle danger → practical rule → memorable close. Improvements: peer persuasion works better as shared advice than as a lecture; the 'here's my rule of thumb' framing keeps the writer on the reader's side."
+    },
+    {
+      "id": "wp-31",
+      "modality": "prompt",
+      "format": "formal-email",
+      "title": "Requesting repairs in a rented flat",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "formal",
+      "time": "22 min",
+      "length": "170–210 words",
+      "textType": "Formal email",
+      "prompt": "You rent a flat where the heating has failed for the second time this winter. Write to the property manager. State when the problem began, describe the effect on the household, refer to the earlier repair, and request a specific solution and timeframe. Keep the tone firm but professional.",
+      "audience": "A property manager",
+      "purpose": "Obtain an urgent and documented repair",
+      "points": [
+        "Give a clear timeline",
+        "Explain the practical impact",
+        "Mention the previous failed repair",
+        "Request a dated solution"
+      ],
+      "vocab": [
+        "the heating system has failed",
+        "a recurring fault",
+        "temporary accommodation",
+        "within forty-eight hours",
+        "please confirm in writing",
+        "urgent attention"
+      ],
+      "model": "Subject: Urgent repair required — heating failure at Flat 3B\n\nDear Ms Coleman,\n\nI am writing about the heating system at Flat 3B, which stopped working on Monday evening. The temperature inside has fallen considerably, and the problem is particularly difficult because my six-year-old daughter is currently recovering from a chest infection.\n\nThis is the second failure this winter. An engineer attended in December and replaced a valve, but the same warning light has now returned. I reported the fault by telephone yesterday morning and was told that someone would contact me; so far, I have received no appointment.\n\nPlease arrange a qualified engineer within forty-eight hours and confirm the visit in writing. If the system cannot be restored promptly, I would ask you to provide safe temporary heaters or suitable accommodation until the flat is habitable again.\n\nI appreciate that repairs require coordination, but the absence of heating in these conditions needs urgent attention. I look forward to your confirmation today.\n\nYours sincerely,\nMaya Ahmed",
+      "analysis": "The email separates facts, impact, repair history and remedy. Its firm requests are softened by professional phrasing rather than weakened by vague language."
+    },
+    {
+      "id": "wp-32",
+      "modality": "prompt",
+      "format": "informal-letter",
+      "title": "Advice for a cousin starting university",
+      "topic": "relationships",
+      "level": "B2+",
+      "register": "informal",
+      "time": "20 min",
+      "length": "170–210 words",
+      "textType": "Informal letter",
+      "prompt": "Your younger cousin will start university in another city next month and is anxious about living away from home. Write a supportive letter. Share one mistake you made, give practical advice about study and friendships, and reassure them without pretending that everything will be easy.",
+      "audience": "A younger cousin",
+      "purpose": "Reassure and advise someone leaving home",
+      "points": [
+        "Include a personal mistake",
+        "Give practical study advice",
+        "Discuss meeting people",
+        "Offer realistic reassurance"
+      ],
+      "vocab": [
+        "I remember feeling",
+        "find your feet",
+        "leave room for",
+        "you do not have to",
+        "give yourself time",
+        "call me whenever"
+      ],
+      "model": "Hi Nico,\n\nYour message took me straight back to my first week at university. I was excited, but I also felt as though everyone else had received instructions that I had somehow missed. The mistake I made was trying to look completely confident, so I said yes to every invitation and then fell behind with basic work.\n\nMy best advice is to build a simple routine before the semester becomes busy. Put classes and deadlines in one calendar, choose two regular study periods, and leave room for rest. You do not need a perfect system; you only need one that helps you notice problems early.\n\nAs for friends, avoid deciding in the first three days who “your people” are. Talk to the quiet person beside you, join one activity you genuinely like, and give relationships time to grow. Most students are nervous even when they look relaxed.\n\nThere will be awkward evenings and difficult assignments, but that does not mean you chose badly. You will find your feet. Call me whenever you need to complain, celebrate or ask how to cook something without setting off the alarm.\n\nBig hug,\nVale",
+      "analysis": "The letter uses a personal anecdote, practical advice and honest reassurance. Humour appears only at the end, after the concern has been taken seriously."
+    },
+    {
+      "id": "wp-33",
+      "modality": "prompt",
+      "format": "proposal-letter",
+      "title": "A quiet evening study space for the neighbourhood",
+      "topic": "education",
+      "level": "C1",
+      "register": "formal",
+      "time": "30 min",
+      "length": "220–260 words",
+      "textType": "Proposal letter",
+      "prompt": "Your local library closes at 5 p.m., although many students and remote workers need a quiet place in the evening. Write to the local council proposing a six-month late-opening trial. Explain the need, outline how the trial could operate, address cost or safety concerns, and state how success should be measured.",
+      "audience": "The local council",
+      "purpose": "Propose a measurable public-service pilot",
+      "points": [
+        "Define the local need",
+        "Describe a realistic pilot",
+        "Address cost and safety",
+        "Suggest measurable outcomes"
+      ],
+      "vocab": [
+        "a six-month pilot",
+        "staffed closing time",
+        "access control",
+        "modest operating cost",
+        "usage data",
+        "review the scheme"
+      ],
+      "model": "Dear Councillor Hughes,\n\nI am writing to propose a six-month trial in which Riverside Library remains open until 9 p.m. on three weekdays. At present, the building closes at 5 p.m., precisely when many secondary students, adult learners and remote workers become available to use it. Nearby cafés are expensive and unsuitable for sustained study, while not every home provides a quiet desk or reliable internet.\n\nThe pilot could begin on Tuesdays, Wednesdays and Thursdays, using only the ground floor to limit staffing and energy costs. Entry after 6 p.m. could require a library card, and one librarian could be supported by an evening security officer. Existing meeting rooms might also be reserved online, reducing congestion and allowing staff to monitor demand.\n\nI recognise that longer hours create additional expense. However, restricting the trial to one floor and three evenings would keep the commitment modest. A partnership with the local college could provide supervised student volunteers for basic reception tasks, without replacing professional staff.\n\nSuccess should be assessed through hourly visitor numbers, room bookings, user surveys and incident reports. If demand remains low, the council could end the scheme without permanent expenditure; if it is strong, the evidence would support a carefully planned extension.\n\nYours sincerely,\nLeila Morgan",
+      "analysis": "The proposal treats objections as design constraints. It gives a limited pilot, operational detail and measurable criteria instead of merely asking the council to “do more.”"
+    },
+    {
+      "id": "wp-34",
+      "modality": "prompt",
+      "format": "opinion-essay",
+      "title": "Artificial intelligence in medical diagnosis",
+      "topic": "technology",
+      "level": "C1",
+      "register": "formal",
+      "time": "40 min",
+      "length": "270–310 words",
+      "textType": "Opinion essay",
+      "prompt": "Artificial intelligence can identify patterns in medical images and patient records that humans may miss. Some people believe diagnostic decisions should increasingly be delegated to such systems. To what extent do you agree? Discuss accuracy, responsibility and the role of human judgement, then state a clear position.",
+      "audience": "An academic examiner",
+      "purpose": "Defend a qualified position on medical AI",
+      "points": [
+        "State a precise position",
+        "Consider potential accuracy gains",
+        "Address accountability",
+        "Define the continuing human role"
+      ],
+      "vocab": [
+        "clinical judgement",
+        "detect subtle patterns",
+        "false reassurance",
+        "accountability cannot be outsourced",
+        "decision-support tool",
+        "informed consent"
+      ],
+      "model": "Artificial intelligence should play a major role in medical diagnosis, but it should not become the final decision-maker. Its greatest value lies in extending clinical attention: a system can compare an image with millions of previous cases, flag unusual patterns and remain consistent when a human reader is tired.\n\nThat capacity can improve safety. In screening programmes, even a small rise in early detection may affect thousands of patients, and automated checks can draw attention to abnormalities that deserve a second look. AI can also combine laboratory results, medication history and symptoms more quickly than any individual clinician. Used well, it becomes a powerful decision-support tool.\n\nDelegation, however, creates serious problems. A model may perform poorly on populations under-represented in its training data, and its output can produce false reassurance simply because it appears mathematical. More importantly, accountability cannot be outsourced. When evidence conflicts, someone must explain the options, consider the patient's circumstances and accept responsibility for the recommendation.\n\nHuman judgement is not flawless, but medicine is more than classification. It includes uncertainty, informed consent and values that cannot be read directly from a scan. Doctors should therefore remain responsible for diagnosis while being required to understand when an automated system is reliable and when it is not.\n\nThe sensible goal is neither to resist AI nor to obey it. Diagnostic systems should function as demanding second readers, with transparent evaluation and human review at every consequential stage.",
+      "analysis": "The essay avoids a simple pro- or anti-technology stance. It defines AI as a second reader and links accuracy to bias, explanation and responsibility."
+    },
+    {
+      "id": "wp-35",
+      "modality": "prompt",
+      "format": "discussion-essay",
+      "title": "Historic buildings or new housing?",
+      "topic": "culture",
+      "level": "C1",
+      "register": "formal",
+      "time": "40 min",
+      "length": "280–320 words",
+      "textType": "Discussion essay",
+      "prompt": "In growing cities, some people argue that old buildings should be protected because they preserve identity and history. Others believe land should be used for modern housing and infrastructure. Discuss both views and give your own opinion. Use specific criteria rather than treating every old or new building alike.",
+      "audience": "An academic examiner",
+      "purpose": "Compare preservation and development priorities",
+      "points": [
+        "Explain the preservation case",
+        "Explain the development case",
+        "Use criteria or distinctions",
+        "Give a justified opinion"
+      ],
+      "vocab": [
+        "architectural significance",
+        "adaptive reuse",
+        "housing shortage",
+        "structurally unsound",
+        "public value",
+        "case-by-case assessment"
+      ],
+      "model": "Arguments about historic buildings are often framed as a choice between memory and progress. Preservationists emphasise that streets, workshops, theatres and homes provide a physical record of how a city developed. Once demolished, this evidence cannot be reconstructed convincingly, and the resulting neighbourhood may lose the character that supports tourism and local attachment.\n\nThe opposing case is powerful where housing is scarce. A protected warehouse that remains empty while families face rising rents imposes a real social cost. Some structures are also unsafe, inaccessible or so extensively damaged that restoration consumes public money without creating equivalent public value. Cities cannot operate as museums in which every past use prevents a necessary future one.\n\nNevertheless, demolition should not be the automatic answer. Adaptive reuse can turn factories into apartments, offices or schools while retaining significant façades and internal features. New development can also be concentrated on low-quality sites rather than buildings with genuine architectural or cultural importance.\n\nMy view is that protection should depend on clear criteria: rarity, historical association, architectural quality, condition and the feasibility of reuse. A modest old building that tells an important local story may deserve more care than a grand but ordinary imitation. Conversely, age alone should not grant permanent immunity from change.\n\nA case-by-case assessment is slower than a blanket rule, but cities need both continuity and room to adapt. Good planning makes those goals negotiate with each other rather than allowing either to win automatically.",
+      "analysis": "The response distinguishes age from significance and introduces adaptive reuse as a practical middle path. Each view is developed before the position is stated."
+    },
+    {
+      "id": "wp-36",
+      "modality": "prompt",
+      "format": "complaint",
+      "title": "Cancelling a gym membership after repeated closures",
+      "topic": "health",
+      "level": "B2+",
+      "register": "formal",
+      "time": "22 min",
+      "length": "170–210 words",
+      "textType": "Letter of complaint",
+      "prompt": "Your gym has repeatedly closed the swimming pool and changing rooms without notice, although these facilities were the main reason you joined. Write to the manager requesting cancellation without a penalty. Give dates or examples, explain why the service no longer matches the contract, and state the outcome you expect.",
+      "audience": "A gym manager",
+      "purpose": "End a contract without an unfair fee",
+      "points": [
+        "Mention specific disruptions",
+        "Connect the facilities to your decision to join",
+        "Explain why the contract is not being met",
+        "Request cancellation and confirmation"
+      ],
+      "vocab": [
+        "without prior notice",
+        "a material part of the service",
+        "monthly fee",
+        "early-cancellation charge",
+        "effective immediately",
+        "written confirmation"
+      ],
+      "model": "Dear Manager,\n\nI am writing to request cancellation of membership 84192 without the usual early-cancellation charge. I joined Northgate Fitness in January primarily because the membership included access to the swimming pool before work.\n\nDuring the past six weeks, the pool has been closed on nine mornings, including 4, 7 and 12 May, without prior notice. The changing rooms were also unavailable for an entire weekend. On several occasions, I travelled to the centre only to discover a handwritten sign at reception. Staff have been polite, but they have not been able to provide a reliable reopening schedule.\n\nThese facilities are a material part of the service advertised when I signed the twelve-month agreement. General access to exercise machines is not an equivalent replacement, since I joined specifically to continue rehabilitation through swimming.\n\nI therefore ask that my membership be cancelled effective immediately, that no further monthly fee be taken, and that you send written confirmation within five working days. I would prefer to resolve the matter directly, but I will refer to the membership terms if a penalty is applied.\n\nYours faithfully,\nOwen Price",
+      "analysis": "The complaint is evidence-led: it names dates, explains why substitutes are inadequate and states the requested remedy precisely."
+    },
+    {
+      "id": "wp-37",
+      "modality": "prompt",
+      "format": "short-article",
+      "title": "A realistic digital detox",
+      "topic": "technology",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "30 min",
+      "length": "220–260 words",
+      "textType": "Magazine article",
+      "prompt": "Write an article for a student magazine titled “A Digital Detox That People Might Actually Keep”. Explain why extreme bans often fail, describe two realistic changes, and include a brief example showing how one change could improve daily life. End with a practical challenge for the reader.",
+      "audience": "Student magazine readers",
+      "purpose": "Recommend sustainable changes to phone use",
+      "points": [
+        "Use an engaging title and opening",
+        "Explain why extreme approaches fail",
+        "Develop two realistic changes",
+        "End with a specific challenge"
+      ],
+      "vocab": [
+        "all-or-nothing rule",
+        "frictionless habit",
+        "notification settings",
+        "phone-free window",
+        "replace rather than remove",
+        "try it for seven days"
+      ],
+      "model": "A Digital Detox That People Might Actually Keep\n\nDeleting every app and disappearing into the mountains may sound impressive, but most digital detoxes fail because they are designed for a different life. Students still need maps, group chats, banking and course platforms. An all-or-nothing rule turns one necessary login into a reason to abandon the entire plan.\n\nA better approach is to create small phone-free windows. Keep the first twenty minutes after waking and the final thirty minutes before sleep free from scrolling. The rule is easy to remember, and it protects two moments when attention is especially vulnerable. A separate alarm clock makes the evening boundary much easier.\n\nThe second change is to add friction to automatic use. Remove social apps from the home screen, disable non-human notifications and sign out after each session. One student in our class did this during exam month. She still answered messages, but opening a platform became a decision rather than a reflex, and she recovered almost an hour each day.\n\nA useful detox replaces rather than merely removes. Put a book beside the bed, arrange a walk with someone or download music before leaving home. Empty time will otherwise invite the old habit back.\n\nHere is the challenge: choose one daily phone-free window and one source of digital friction, then keep both for seven days. Notice what changes before deciding whether you need anything more dramatic.",
+      "analysis": "The article uses direct address and a concrete challenge, but its reasoning remains developed. The two strategies are distinct: protected time and added friction."
+    },
+    {
+      "id": "wp-38",
+      "modality": "prompt",
+      "format": "informal-message",
+      "title": "Declining a destination wedding invitation",
+      "topic": "relationships",
+      "level": "B2+",
+      "register": "informal",
+      "time": "18 min",
+      "length": "140–180 words",
+      "textType": "Informal message",
+      "prompt": "A close friend has invited you to a destination wedding, but the trip is beyond your current budget. Write a warm message declining the invitation. Show genuine happiness, explain the reason without sounding defensive, and suggest a meaningful way to celebrate together later.",
+      "audience": "A close friend",
+      "purpose": "Decline an expensive invitation without harming the friendship",
+      "points": [
+        "Celebrate the news sincerely",
+        "Decline clearly",
+        "Give a brief honest reason",
+        "Suggest another celebration"
+      ],
+      "vocab": [
+        "I am genuinely thrilled",
+        "I have looked at every option",
+        "I cannot make the numbers work",
+        "I hate missing it",
+        "make a proper evening of it",
+        "send you something for the day"
+      ],
+      "model": "Hey Lara,\n\nI have been smiling since I opened the invitation. The place looks beautiful, and I am genuinely thrilled that you and Ben are finally having the celebration you have talked about for years.\n\nI have looked at every option, including cheaper flights and sharing accommodation, but I cannot make the numbers work without taking on debt. I hate missing such an important day, and I wanted to tell you honestly rather than delay and hope the problem somehow disappeared.\n\nPlease know that this is about the cost of the trip, not how much I care. I would love to send you something for the day, and when you are back, could we make a proper evening of it? Dinner is on me, and I want the full version of every story and photograph.\n\nThank you for including me. I am so happy for you both, even from a distance.\n\nLove,\nSofia",
+      "analysis": "The refusal is unambiguous but affectionate. It avoids over-explaining the budget and replaces absence with a specific later celebration."
+    },
+    {
+      "id": "wp-39",
+      "modality": "prompt",
+      "format": "problem-solution",
+      "title": "Shortage of doctors in rural areas",
+      "topic": "health",
+      "level": "C1",
+      "register": "formal",
+      "time": "40 min",
+      "length": "280–320 words",
+      "textType": "Problem and solution essay",
+      "prompt": "Many rural communities struggle to recruit and retain doctors, while major cities attract a high concentration of medical professionals. What causes this imbalance, and what measures could improve access without lowering the quality of care? Develop both causes and solutions.",
+      "audience": "An academic examiner",
+      "purpose": "Explain and solve unequal access to medical care",
+      "points": [
+        "Explain at least two causes",
+        "Avoid blaming individual doctors",
+        "Propose connected solutions",
+        "Address quality and retention"
+      ],
+      "vocab": [
+        "professional isolation",
+        "training pathway",
+        "financial incentive",
+        "telemedicine network",
+        "supported placement",
+        "long-term retention"
+      ],
+      "model": "The shortage of rural doctors is often described as a simple unwillingness to live outside cities, but the imbalance is produced by a wider professional system. Medical training, specialist hospitals and research opportunities are concentrated in metropolitan centres. A young doctor who moves away may fear professional isolation, fewer jobs for a partner and limited schooling options for children.\n\nTemporary financial bonuses address only one part of the decision. They can attract applicants for a year or two, yet retention remains weak if doctors work excessive hours without specialist support. Rural practice can also involve broader responsibility and fewer opportunities for continuing education, making an already demanding role feel professionally risky.\n\nA stronger response would begin during training. Medical schools could recruit more students from regional communities, place trainees in well-supported rural clinics and create recognised career pathways in rural medicine. Experience is more likely to change preferences when the placement includes supervision, decent housing and a realistic workload rather than treating students as cheap labour.\n\nTechnology should complement, not replace, local clinicians. Telemedicine networks can connect rural doctors with specialists, while rotating teams can provide scheduled services in areas unable to sustain every specialty permanently. Governments should also fund partner-employment support, professional development and reliable leave cover.\n\nThe objective is long-term retention, not merely filling vacancies on paper. Doctors are more likely to stay where they can practise safely, develop professionally and build a life. Combining training reform, team support and targeted incentives addresses those conditions without accepting lower-quality care.",
+      "analysis": "The essay treats recruitment as a system problem. Solutions correspond to the causes: training location, isolation, workload and family considerations."
+    },
+    {
+      "id": "wp-40",
+      "modality": "prompt",
+      "format": "recommendation-report",
+      "title": "Improving first-year student orientation",
+      "topic": "education",
+      "level": "C1",
+      "register": "formal",
+      "time": "35 min",
+      "length": "240–280 words",
+      "textType": "Recommendation report",
+      "prompt": "Your college asked students to evaluate its first-year orientation week. Write a short report recommending improvements. Identify two weaknesses in the current programme, propose practical changes, and explain how the college could assess whether those changes worked. Use headings and a formal, concise style.",
+      "audience": "College administrators",
+      "purpose": "Recommend measurable improvements to orientation",
+      "points": [
+        "Use report headings",
+        "Identify two concrete weaknesses",
+        "Recommend feasible changes",
+        "Include evaluation methods"
+      ],
+      "vocab": [
+        "current provision",
+        "information overload",
+        "peer mentor",
+        "staggered sessions",
+        "attendance data",
+        "follow-up survey"
+      ],
+      "model": "Report: Improving First-Year Orientation\n\nCurrent weaknesses\nThe existing programme provides useful information, but too much is delivered in long presentations during the first two days. Students receive details about assessment, wellbeing, clubs and digital systems before they have enough context to understand which information matters. In addition, most social activities are large evening events, which can exclude commuters, older students and those uncomfortable in crowded settings.\n\nRecommendations\nEssential administrative sessions should be staggered across the first month and supported by a searchable online checklist. Each new student should also be assigned a trained second-year peer mentor who can answer routine questions and direct concerns to staff. Social options should include small daytime activities, campus walks and subject-based lunches as well as major evening events.\n\nEvaluation\nThe college should compare attendance across different activity types and monitor whether basic support enquiries decline after the first month. A short survey in week two would capture immediate reactions, while a second survey after six weeks would show which information students actually remembered and used. Peer mentors should also submit anonymised summaries of recurring problems.\n\nConclusion\nA longer, more varied orientation would reduce information overload and make participation easier for a wider range of students. The proposed measures are modest, measurable and compatible with current staffing if sessions are redistributed rather than simply added.",
+      "analysis": "The report uses headings, prioritises two weaknesses and links each recommendation to an evaluation method. Its tone is concise rather than essay-like."
+    },
+    {
+      "id": "rr-01",
+      "modality": "read",
+      "format": "summarise",
+      "title": "The four-day week experiment",
+      "topic": "work",
+      "level": "C1",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "90–110 words",
+      "textType": "Summary",
+      "passage": "The idea of reducing the standard working week has moved from a fringe proposal to a serious management experiment. Advocates claim that modern offices waste enough time to produce the same results in fewer days, while sceptics fear that compressed schedules simply hide longer and more stressful shifts.\n\nWhen a large trial in the United Kingdom asked companies to move to a four-day working week with no cut in pay, the results surprised many sceptics. Across the participating firms, revenue held steady and in some cases rose, while reported stress and burnout fell sharply.\n\nEmployees, given an extra day off, tended not to waste the remaining four; instead, they cut unnecessary meetings and worked more intensely. Not every business found it easy — those with round-the-clock customer demands struggled to cover the gap — but a clear majority chose to keep the shorter week after the trial ended.\n\nThe trial therefore did not prove that one timetable suits every workplace. It showed instead that hours and output are not identical measures, and that success depends on redesigning work rather than squeezing five days of habits into four. Customer-facing organisations, hospitals and small teams may need staggered rotas or different solutions altogether.",
+      "task": "Read every paragraph before answering. Summarise the main findings of the passage in your own words. Do not copy phrases directly; capture the key points concisely. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Write a concise summary of the passage's main findings in your own words (roughly 90–110 words).",
+      "audience": "A reader who has not seen the original text",
+      "purpose": "Condense the key findings accurately and in your own words",
+      "points": [
+        "The headline result (productivity/revenue)",
+        "The effect on employee wellbeing",
+        "The main limitation and the outcome"
+      ],
+      "vocab": [
+        "a trial found that",
+        "contrary to expectations",
+        "productivity was maintained",
+        "a notable drop in",
+        "less suited to",
+        "opted to continue"
+      ],
+      "model": "A UK trial of a four-day week without any reduction in pay produced results that challenged common assumptions. Rather than falling, company output was largely maintained, and several firms even saw revenue increase. At the same time, workers reported markedly lower levels of stress and exhaustion, partly because they cut wasteful meetings and focused their remaining hours more effectively. The scheme suited some sectors better than others: businesses needing constant availability found the shorter week harder to manage. Even so, most of the companies that took part decided to keep the four-day model once the trial had finished.",
+      "analysis": "Vocabulary: reporting language ('a trial found', 'contrary to expectations', 'opted to continue') that signals a faithful summary. Grammar: nominalisation and passive ('output was largely maintained') keep the summary objective; the concessive 'Even so' preserves the original's balance. Structure: result → wellbeing → limitation → outcome, matching the source without copying it. Improvements: a good summary reworks wording entirely and keeps proportion — here the limitation gets a sentence, not a paragraph, reflecting its weight in the original."
+    },
+    {
+      "id": "rr-02",
+      "modality": "read",
+      "format": "opinion",
+      "title": "Should tipping be abolished?",
+      "topic": "culture",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Reasoned opinion",
+      "passage": "A tip can look like a small gesture of gratitude, but in many service industries it forms a significant part of a worker's income. This makes the custom more than a question of manners: it affects wages, menu prices, customer expectations and the balance of power between employers and staff.\n\nIn some countries, tipping is a deeply ingrained custom: diners are expected to add ten to twenty per cent to a bill, and staff wages are set low on the assumption that tips will make up the difference. Critics argue this system is unfair, since a worker's income depends on the mood and generosity of strangers rather than on a reliable wage, and it can allow employers to underpay.\n\nDefenders counter that tipping rewards good service and gives staff a direct incentive to treat customers well. A few restaurants have experimented with a 'no-tipping' model, raising menu prices and paying higher fixed salaries instead.\n\nExperiments with service-inclusive pricing have produced mixed reactions. Some customers welcome knowing the true cost in advance, whereas others miss the freedom to reward exceptional service. For workers, the central issue is predictability: a busy Friday may be profitable, but illness, quiet seasons or biased customers can make income unstable.",
+      "task": "Read every paragraph before answering. Do you think tipping should be replaced with higher fixed wages? Give your opinion and support it with reasons. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "State whether you agree that tipping should be replaced by higher fixed wages, and justify your view (150–180 words).",
+      "audience": "A general reader interested in the debate",
+      "purpose": "Take and defend a clear position on the issue",
+      "points": [
+        "A clear stance on tipping vs fixed wages",
+        "At least two supporting reasons",
+        "Brief acknowledgement of the other side"
+      ],
+      "vocab": [
+        "I side with those who",
+        "an unreliable income",
+        "at the mercy of",
+        "a living wage",
+        "there is something to be said for",
+        "on balance"
+      ],
+      "model": "On balance, I side with those who would replace tipping with higher fixed wages, though the arguments are not one-sided.\n\nMy main reason is fairness. Basing a person's income on the shifting generosity of strangers leaves workers with an unreliable income and at the mercy of factors beyond their control, from the weather to a customer's bad day. A dependable, living wage gives staff security and forces employers to pay properly rather than quietly passing that duty to diners.\n\nThere is, admittedly, something to be said for the incentive argument: tipping can reward genuinely attentive service. Yet I doubt most people give good service only for tips, and countries where tipping is rare do not obviously suffer worse hospitality.\n\nHigher menu prices with fair salaries also bring welcome transparency; the price you see is the price you pay. For these reasons, while I understand the appeal of rewarding service directly, I believe a stable wage is the fairer and simpler system.",
+      "analysis": "Vocabulary: opinion-and-concession phrasing ('I side with those who', 'there is something to be said for', 'on balance') that argues while staying fair. Grammar: the concessive 'There is, admittedly,…' inserts the counter-view smoothly. Structure: stance → main reason → conceded counter → secondary reason → restated position. Improvements: a strong opinion response engages the opposing argument on its own terms ('I doubt most people give good service only for tips') rather than ignoring it."
+    },
+    {
+      "id": "rr-03",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "The psychology of first impressions",
+      "topic": "science",
+      "level": "C1",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "1–2 words",
+      "textType": "Sentence completion",
+      "passage": "First impressions matter because they are formed before a conversation has properly begun. Clothing, posture, facial expression and even the setting can influence what observers expect, although the person being judged may have had little control over any of those signals.\n\nResearch suggests that people form a first impression of a stranger within milliseconds of seeing their face, judging traits such as trustworthiness and competence almost instantly. These snap judgements are often inaccurate, yet they are remarkably sticky: once formed, an initial impression shapes how we interpret everything the person subsequently does.\n\nA warm first impression can lead us to excuse later rudeness as an off day, while a cold one can make us read neutral behaviour as hostile. Interestingly, studies also find that people are quite confident in these instant judgements, even when told how unreliable they can be.\n\nAwareness can reduce the effect, but it rarely removes it completely. A useful response is to treat an initial judgement as a temporary hypothesis rather than a verdict, then look for behaviour across different situations. Confidence should not be confused with accuracy, especially when the evidence is no more than a brief glance.",
+      "task": "Locate the exact expression that describes how an initial judgement should be treated. Enter only the missing word or words.",
+      "prompt": "Read the entire passage. Complete the sentence with ONE OR TWO WORDS taken from the final paragraph.",
+      "audience": "A reader curious about applying the research",
+      "purpose": "Apply the passage's ideas to real situations",
+      "points": [
+        "Use no more than two words",
+        "Copy the precise expression from the passage",
+        "Do not write a full sentence"
+      ],
+      "vocab": [
+        "a fleeting glance",
+        "cloud one's judgement",
+        "give someone the benefit of the doubt",
+        "overturn",
+        "consistency over time",
+        "counteract"
+      ],
+      "model": "hypothesis",
+      "analysis": "The answer appears in the final paragraph: an initial judgement should be treated as a temporary hypothesis. The task checks precise reading rather than general opinion.",
+      "responseMode": "short-fill",
+      "gapSentence": "The passage recommends treating an initial judgement as a temporary ______ rather than a verdict.",
+      "acceptedAnswers": [
+        "hypothesis",
+        "temporary hypothesis"
+      ]
+    },
+    {
+      "id": "rr-04",
+      "modality": "read",
+      "format": "compare-views",
+      "title": "Two views on homework",
+      "topic": "education",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Comparison of positions",
+      "passage": "Homework policies often reveal a wider disagreement about what childhood and schooling are for. Some families see work completed at home as evidence of academic seriousness; others believe that evenings should protect rest, relationships and unstructured play.\n\nTeachers disagree sharply about homework. One camp argues that it is essential: it reinforces what is learned in class, builds discipline and independent study skills, and gives parents a window into their child's progress.\n\nThe opposing camp contends that homework, especially for younger children, does little to improve results while eating into family time, sleep and play. They point out that children from disadvantaged homes, without quiet space or help, are penalised by tasks meant to be done alone. Some schools have responded by abolishing homework for younger pupils, while others have doubled down on it.\n\nThe strongest evidence suggests that age, task design and quantity all matter. A short reading activity may strengthen learning, while repetitive worksheets can create conflict without adding much value. The debate is therefore less about whether homework is always good or bad than about what purpose each assignment serves and whether every child can complete it fairly.",
+      "task": "Read every paragraph before answering. Compare the two views presented. Which do you find more convincing, and why? Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Compare both positions on homework fairly, then say which you find more convincing and why (150–180 words).",
+      "audience": "A reader weighing both sides",
+      "purpose": "Contrast two positions and evaluate them",
+      "points": [
+        "A fair summary of each view",
+        "A clear comparison, not just two lists",
+        "Your judgement with a reason"
+      ],
+      "vocab": [
+        "proponents maintain that",
+        "by contrast",
+        "widen inequality",
+        "a valid concern",
+        "the more persuasive case",
+        "with an important caveat"
+      ],
+      "model": "The two views on homework rest on different priorities. Proponents maintain that homework reinforces learning, builds self-discipline and keeps parents informed — an argument focused on academic and character benefits. By contrast, critics worry less about lessons than about lives: they argue that homework often fails to raise results, encroaches on rest and play, and can widen inequality, since children without a quiet home or help are unfairly disadvantaged.\n\nWhere the first view stresses what homework gives, the second stresses what it costs and to whom.\n\nI find the critics' case more persuasive, though with an important caveat. The point about inequality is a valid concern that the pro-homework camp tends to overlook, and the evidence that homework helps younger children is genuinely weak. However, I would not abolish it entirely; for older students preparing for exams, independent study clearly matters. My position, then, is that the critics are right about young children, while a moderate amount of homework becomes justified as pupils grow older.",
+      "analysis": "Vocabulary: comparison signposts ('Proponents maintain that', 'By contrast', 'the more persuasive case') structure the contrast. Grammar: the pivot sentence 'Where the first view stresses what homework gives, the second stresses what it costs' compares rather than merely lists. Structure: view A → view B → explicit comparison → judgement with caveat. Improvements: comparing means highlighting the axis of disagreement ('gives' vs 'costs'), not summarising each side in isolation; the age-based caveat avoids a lazy total verdict."
+    },
+    {
+      "id": "rr-05",
+      "modality": "read",
+      "format": "propose-solutions",
+      "title": "Food waste in households",
+      "topic": "environment",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Solution proposal",
+      "passage": "Household food waste is difficult to notice because it happens in small pieces: half a bag of salad, leftovers at the back of a fridge, or fruit bought with optimistic plans that never become meals. Added together across millions of homes, those ordinary decisions create a major environmental and financial cost.\n\nA striking amount of the food we buy never gets eaten. Studies estimate that households throw away up to a third of the food they purchase, often because it spoils before anyone gets round to cooking it, or because portions are too large and leftovers are forgotten.\n\nBeyond the obvious waste of money, discarded food that rots in landfill releases methane, a potent greenhouse gas. The problem is not usually a lack of concern — most people dislike wasting food — but a mix of poor planning, confusing date labels and busy lives that push good intentions aside.\n\nSimple changes can help, but they must fit real routines. Smaller shopping trips, visible leftover shelves, flexible meal plans and clearer labels reduce waste more effectively than guilt alone. Retailers also influence behaviour through package sizes and promotions, so responsibility does not rest only with the person standing beside the bin.",
+      "task": "Read every paragraph before answering. Based on the passage, propose practical solutions that ordinary households could adopt to reduce their food waste. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Propose realistic solutions a household could use to cut food waste, drawing on the causes in the passage (150–180 words).",
+      "audience": "Ordinary households wanting to waste less",
+      "purpose": "Turn stated causes into workable, everyday solutions",
+      "points": [
+        "Solutions that target the specific causes named",
+        "Practical, low-effort suggestions",
+        "A brief note on the wider benefit"
+      ],
+      "vocab": [
+        "tackle the problem at its root",
+        "plan meals ahead",
+        "use up",
+        "a simple habit",
+        "cut down on",
+        "with little effort"
+      ],
+      "model": "Since the passage traces food waste to poor planning, oversized portions and confusing labels rather than indifference, the solutions should target those specific causes and keep the effort small.\n\nThe most effective habit is planning meals ahead. Deciding roughly what to cook for the week before shopping, and buying only what the plan needs, prevents the impulse purchases that later spoil untouched. A quick check of the fridge before each shop tackles the problem at its root.\n\nPortion control helps too: cooking a little less, or deliberately using up leftovers the next day rather than forgetting them, cuts down on the food that quietly goes off. Keeping leftovers visible at the front of the fridge, not buried behind newer items, makes this almost automatic.\n\nFinally, learning that 'best before' usually indicates quality, not safety, stops people binning food that is perfectly edible.\n\nAdopted together, these simple habits save households money with little effort while reducing the methane that wasted food produces — a rare case where the personal and environmental interest align.",
+      "analysis": "Vocabulary: practical-solution phrasing ('tackle the problem at its root', 'use up', 'a simple habit') keeps advice concrete. Grammar: each solution is tied causally to a problem from the text ('Since the passage traces… to…'). Structure: link to causes → planning → portions/leftovers → labels → shared benefit. Improvements: solution tasks reward suggestions that map onto the named causes; generic advice like 'waste less' scores poorly, while 'keep leftovers at the front of the fridge' shows real thought."
+    },
+    {
+      "id": "rr-06",
+      "modality": "read",
+      "format": "reply-author",
+      "title": "A letter arguing against public libraries",
+      "topic": "culture",
+      "level": "C1",
+      "register": "formal",
+      "time": "25 min",
+      "length": "170–200 words",
+      "textType": "Reply to the author",
+      "passage": "Judging a library only by the number of printed books it lends gives a narrow picture of its role. Contemporary branches may provide internet access, study space, language classes, children's programmes, local archives and practical help for people who struggle to use digital public services.\n\nA columnist recently argued that public libraries are an outdated luxury. In the age of the internet and cheap e-books, she wrote, few people still borrow physical books, and the money spent maintaining library buildings and staff would be better redirected to schools or hospitals. Libraries, she claimed, are 'a nostalgic indulgence' that societies can no longer afford, kept alive by sentiment rather than genuine need.\n\nThe case for libraries is not that every old building must remain unchanged. Services should be evaluated, adapted and sometimes shared with other community facilities. Yet removing a free, trusted public space can affect people who are almost invisible in commercial data: job seekers, isolated older residents, students in crowded homes and families unable to buy every resource they need.",
+      "task": "Read every paragraph before answering. Write a response addressed to the author, respectfully challenging her argument. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Write a reasoned reply to the columnist, respectfully disagreeing and defending public libraries (170–200 words).",
+      "audience": "The columnist who wrote the piece",
+      "purpose": "Rebut an argument politely but firmly",
+      "points": [
+        "Respectful acknowledgement before disagreeing",
+        "A direct challenge to the core claim",
+        "Evidence or reasoning the author overlooked"
+      ],
+      "vocab": [
+        "I read your column with interest",
+        "with respect, I must disagree",
+        "overlooks",
+        "far more than",
+        "a lifeline",
+        "I would urge you to reconsider"
+      ],
+      "model": "Dear Ms Hollis,\n\nI read your column on public libraries with interest, and while your concern for public spending is reasonable, with respect I must disagree with your conclusion.\n\nYour argument rests on the idea that libraries are merely places to borrow physical books, but this overlooks how much they have become. Modern libraries offer far more than shelves: free internet access for those who cannot afford it, warm and safe spaces for children and the elderly, job-search help, community classes and support for people who are, in every sense, digitally excluded. For someone without a laptop or reliable connection at home, the local library is not nostalgia; it is a lifeline.\n\nThe assumption that everyone now has cheap e-books also quietly ignores the poorest, who are precisely the people libraries serve most. Redirecting their funding to schools would, ironically, harm the very children whose only quiet study space is the library after class.\n\nLibraries are not an indulgence but public infrastructure for equality. I would gently urge you to reconsider, or at least to visit a busy branch on a weekday afternoon.\n\nYours sincerely,\nA reader",
+      "analysis": "Vocabulary: measured-rebuttal register ('with respect, I must disagree', 'overlooks', 'I would urge you to reconsider') that challenges without hostility. Grammar: the structure 'Your argument rests on… but this overlooks…' names and then dismantles the premise. Structure: courteous opening → central challenge → overlooked evidence → firm close. Improvements: replying to an author works best by attacking the argument's hidden assumption ('everyone now has cheap e-books') rather than merely asserting the opposite view."
+    },
+    {
+      "id": "rr-07",
+      "modality": "read",
+      "format": "analyse-consequences",
+      "title": "The rise of cashless payments",
+      "topic": "technology",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "160–190 words",
+      "textType": "Analysis of consequences",
+      "passage": "Paying without cash can feel almost effortless. A phone is tapped, a receipt appears, and neither customer nor business handles change. Because the convenience is so visible, the social infrastructure behind cash is easy to overlook until a payment system fails or someone cannot use it.\n\nIn many countries, cash is disappearing fast. Contactless cards and phone payments are now so convenient that some shops, cafés and even buses no longer accept coins or notes at all.\n\nSupporters welcome the speed, hygiene and reduced risk of theft that a cashless economy brings. Yet the shift is not costless, and it raises questions about who might be left behind and what we quietly give up when every transaction leaves a digital trace.\n\nA fully cashless system would also concentrate information. Banks and payment companies could reconstruct where a person travels, what they buy and when they spend, while outages could interrupt basic trade. Digital payment is likely to keep growing, but inclusion may require preserving a cash option and teaching secure alternatives rather than assuming every citizen has the same device, account or confidence.",
+      "task": "Read every paragraph before answering. Analyse the possible consequences of a fully cashless society. Consider both benefits and risks. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Analyse the likely consequences — positive and negative — of moving to a fully cashless society (160–190 words).",
+      "audience": "A reader considering the wider effects",
+      "purpose": "Reason through the ripple effects of a trend",
+      "points": [
+        "Clear benefits with reasons",
+        "Groups or values at risk",
+        "A balanced concluding reflection"
+      ],
+      "vocab": [
+        "a knock-on effect",
+        "financially excluded",
+        "a digital trail",
+        "at the expense of",
+        "vulnerable to",
+        "for all its convenience"
+      ],
+      "model": "A fully cashless society would bring genuine benefits, but its consequences reach further than the checkout.\n\nThe advantages are immediate and real. Payments become faster, shops handle less cash and so face lower theft, and money can be tracked, making certain crimes and tax evasion harder to hide. For most people, most of the time, the convenience is undeniable.\n\nThe risks, however, fall unevenly. A knock-on effect of removing cash is that those without bank accounts or smartphones — often the elderly, the poor or the homeless — risk becoming financially excluded, unable to buy basic goods in shops that reject coins. There is also a quieter cost: every cashless payment leaves a digital trail, so a society that abandons cash trades a measure of privacy for convenience, and becomes more vulnerable to system outages or hacking, when a single technical failure can leave people unable to pay for anything.\n\nFor all its convenience, then, a cashless future demands safeguards: guaranteed alternatives for the excluded and strong protection of data. The technology is not the danger; ignoring who it leaves behind is.",
+      "analysis": "Vocabulary: consequence-analysis lexis ('a knock-on effect', 'financially excluded', 'a digital trail') that traces effects rather than just describing. Grammar: the phrase 'the risks fall unevenly' sets up an equity analysis; conditional reasoning ('when a single failure can leave people unable to pay') explores outcomes. Structure: benefits → uneven risks → privacy/resilience → conditional conclusion. Improvements: analysing consequences means following the chain (no cash → no accounts excluded → basic goods unaffordable), not merely listing pros and cons side by side."
+    },
+    {
+      "id": "rr-08",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "How exercise affects the brain",
+      "topic": "health",
+      "level": "C1",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "1 word",
+      "textType": "Sentence completion",
+      "passage": "Scientists once treated the adult brain as relatively fixed, but research on neuroplasticity has changed that picture. Movement is now studied not merely as a way to strengthen muscles, but as a signal that can influence attention, stress regulation and the maintenance of brain tissue.\n\nWe tend to think of exercise as training for the body, but a growing body of research shows it reshapes the brain as well. Aerobic activity increases blood flow to the brain and stimulates the release of chemicals that support the growth of new neural connections, particularly in regions linked to memory and learning.\n\nStudies have found that people who exercise regularly perform better on certain memory tasks and appear to slow age-related cognitive decline. Even a single brisk walk can temporarily sharpen attention and mood. The effect does not require intense training; consistency seems to matter more than intensity.\n\nThe findings do not mean that exercise is a cure for every cognitive problem. Sleep, education, social connection and medical conditions also matter. Still, the consistency of the evidence is striking: regular moderate activity appears to support the hippocampus, a region central to memory, and the benefits begin long before old age.",
+      "task": "Identify the brain region named in the final paragraph. Enter only that word.",
+      "prompt": "Read the four paragraphs. Complete the sentence with ONE WORD from the passage.",
+      "audience": "A reader who has not seen the text",
+      "purpose": "Restate the key science accurately and briefly",
+      "points": [
+        "Use one word only",
+        "Spelling must match the passage",
+        "Do not add an article"
+      ],
+      "vocab": [
+        "it turns out that",
+        "boost",
+        "cognitive function",
+        "guard against",
+        "regular activity",
+        "rather than sheer effort"
+      ],
+      "model": "hippocampus",
+      "analysis": "The final paragraph directly identifies the hippocampus as a region central to memory.",
+      "responseMode": "short-fill",
+      "gapSentence": "Regular moderate activity appears to support the ______, a brain region central to memory.",
+      "acceptedAnswers": [
+        "hippocampus"
+      ]
+    },
+    {
+      "id": "rr-09",
+      "modality": "read",
+      "format": "opinion",
+      "title": "Screens in restaurants",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Reasoned opinion",
+      "passage": "Restaurants have always balanced hospitality with efficiency. Digital ordering pushes that balance in a new direction by transferring tasks once performed by staff to the customer, often in the name of speed and lower prices.\n\nA growing number of restaurants now hand diners a tablet or a QR code instead of a menu and a waiter. Customers browse, order and pay entirely through a screen, and some venues have removed table service almost completely.\n\nOwners say it cuts costs, speeds up service and reduces errors. Some diners appreciate the convenience and the lack of pressure to decide quickly. Others feel that something is lost — the human contact, the recommendation from a knowledgeable waiter, the sense of being looked after rather than processed.\n\nThe best system may depend on the kind of meal people expect. A quick lunch venue can benefit from rapid self-service, whereas a celebration restaurant sells attention as well as food. Accessibility also matters: small screens, poor connections and unfamiliar interfaces can turn convenience into frustration for some diners.",
+      "task": "Read every paragraph before answering. Do you think this shift towards screen-based service in restaurants is a positive development? Give your opinion with reasons. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Give your opinion on screen-based restaurant service, supporting it with clear reasons (150–180 words).",
+      "audience": "A general reader",
+      "purpose": "Argue a position on a familiar everyday change",
+      "points": [
+        "A clear opinion",
+        "Reasons drawn from convenience and/or human contact",
+        "Acknowledgement of the trade-off"
+      ],
+      "vocab": [
+        "there is no denying",
+        "a mixed blessing",
+        "the personal touch",
+        "at the end of the day",
+        "streamline",
+        "a matter of context"
+      ],
+      "model": "In my view, screen-based restaurant service is a mixed blessing whose value depends entirely on the kind of meal involved.\n\nThere is no denying the convenience. For a quick lunch or a busy fast-food counter, ordering by screen streamlines everything: no waiting to catch a waiter's eye, no pressure to decide, and fewer mistakes with the order. In that context I welcome it, and the lower costs may even keep prices down.\n\nHowever, for a proper evening out, I think something genuinely valuable is lost. Part of the pleasure of a good restaurant is the personal touch — a waiter's recommendation, the feeling of being looked after rather than processed by a machine. Replacing that with a tablet turns a social occasion into a transaction.\n\nSo my opinion is not a simple yes or no. Screens make sense where speed matters and human contact is incidental, but they impoverish the experience where hospitality is the point. At the end of the day, it is a matter of context, not a universal improvement.",
+      "analysis": "Vocabulary: everyday-opinion phrasing ('a mixed blessing', 'the personal touch', 'a matter of context') that qualifies rather than overstates. Grammar: the context-splitting structure ('For a quick lunch… However, for a proper evening out…') supports a nuanced view. Structure: qualified stance → pro context → con context → conclusion. Improvements: refusing a blanket verdict and tying the judgement to context is more convincing than 'screens are good/bad', and it directly answers the passage's own tension."
+    },
+    {
+      "id": "rr-10",
+      "modality": "read",
+      "format": "reply-author",
+      "title": "A post claiming talent beats hard work",
+      "topic": "education",
+      "level": "C1",
+      "register": "neutral",
+      "time": "25 min",
+      "length": "170–200 words",
+      "textType": "Reply to the author",
+      "passage": "Debates about talent are attractive because they offer a simple explanation for unequal performance. Exceptional musicians or athletes often appear effortless from the outside, and the years of guided practice, opportunity and repeated failure behind their skill remain largely invisible.\n\nA popular online post recently argued that natural talent matters far more than hard work. The author claimed that some people are simply born gifted — at music, sport or mathematics — and that no amount of practice will let an ordinary person catch up with them.\n\n'Effort is overrated,' the post concluded. 'If you don't have the gift, you're wasting your time trying.'\n\nNatural differences do exist, and effort alone does not guarantee that everyone will become world-class. However, the useful question for most learners is not whether they can surpass a prodigy, but how much they can improve from their present level. A fixed belief in talent can end practice before its effects have had time to appear.",
+      "task": "Read every paragraph before answering. Write a reply to the author, challenging this claim while remaining fair. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Reply to the post, challenging the 'talent beats effort' claim with reasoned counter-arguments (170–200 words).",
+      "audience": "The author of the online post",
+      "purpose": "Push back on a discouraging claim constructively",
+      "points": [
+        "A fair acknowledgement of talent's role",
+        "A direct challenge to 'effort is overrated'",
+        "Reasoning or examples for the value of practice"
+      ],
+      "vocab": [
+        "you make a fair point that",
+        "vastly overstates",
+        "raw ability",
+        "sustained practice",
+        "close the gap",
+        "a self-fulfilling prophecy"
+      ],
+      "model": "Hi,\n\nYou make a fair point that people differ in raw ability — nobody sensible denies that some are born with a head start. But I think your post vastly overstates the case, and its conclusion could do real harm.\n\nThe claim that 'effort is overrated' ignores how much of expert performance is built, not given. Studies of top musicians and athletes repeatedly find that sustained, deliberate practice separates the great from the merely talented; plenty of 'gifted' children fade away without work, while dedicated ones close the gap and overtake them. Talent may set a ceiling, but very few people ever get near their own ceiling, so for almost everyone effort is the limiting factor, not genes.\n\nThere is also a human cost to your argument. Telling someone 'you're wasting your time trying' can become a self-fulfilling prophecy: they give up, never practise, and never discover what they might have become.\n\nBy all means respect talent — but please don't tell people not to try. That advice fails precisely those who might most benefit from persistence.",
+      "analysis": "Vocabulary: constructive-rebuttal phrasing ('you make a fair point that', 'vastly overstates', 'a self-fulfilling prophecy') that disagrees generously. Grammar: the concession-then-counter pattern ('Talent may set a ceiling, but very few people ever get near…') carries the logic. Structure: concede → challenge core claim → evidence → the human cost → balanced close. Improvements: replying well means granting what is true before targeting what is false, and here the 'self-fulfilling prophecy' point adds an ethical dimension the original ignored."
+    },
+    {
+      "id": "rr-11",
+      "modality": "read",
+      "format": "compare-views",
+      "title": "Two views on space tourism",
+      "topic": "science",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Comparison of positions",
+      "passage": "Space tourism occupies an unusual position between scientific ambition and luxury entertainment. Its customers purchase an experience unavailable to almost everyone else, yet the vehicles, materials and safety systems involved may contribute to a broader commercial space industry.\n\nPrivate companies now sell brief trips to the edge of space to wealthy customers. Enthusiasts see this as a milestone: they argue that early, expensive tourism funds the technology that will eventually make space travel cheaper and open to many, just as early aviation was a rich person's novelty before it became ordinary. Critics respond that space tourism is a wasteful vanity project for billionaires, burning enormous amounts of fuel for a few minutes of weightlessness while urgent problems on Earth go unfunded, and that comparing it to early aviation flatters it.\n\nWhether that contribution justifies the environmental cost remains uncertain. The number of flights is currently small, but rapid expansion could change their impact, and claims about future public benefits are difficult to verify. The debate ultimately asks who should bear the risks of technological experimentation and who is likely to enjoy its rewards.",
+      "task": "Read every paragraph before answering. Compare the two views on space tourism and say which you find stronger. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Compare both positions on space tourism and judge which is more convincing (150–180 words).",
+      "audience": "A reader following the debate",
+      "purpose": "Contrast and evaluate two arguments",
+      "points": [
+        "Fair account of the optimistic view",
+        "Fair account of the critical view",
+        "Your judgement with reasoning"
+      ],
+      "vocab": [
+        "advocates liken it to",
+        "detractors dismiss it as",
+        "a stepping stone",
+        "an indulgence",
+        "the more compelling argument",
+        "the jury is still out"
+      ],
+      "model": "The two views on space tourism disagree about what it will become. Advocates liken it to early aviation: a rich person's novelty today that funds the engineering to make space travel affordable tomorrow, a stepping stone rather than an end in itself. Detractors dismiss it as an indulgence — vast fuel burned for minutes of thrill while pressing problems on Earth are neglected — and reject the aviation comparison as flattering.\n\nThe real disagreement, then, is whether today's luxury is an investment or simply waste.\n\nI find the optimistic argument the more compelling, though cautiously. History does suggest that expensive early technologies often become cheap and widespread, and the funding these trips generate genuinely advances rocketry. However, the critics land a fair blow on the environmental cost, which advocates too easily wave away. My position is that space tourism can be justified only if that funding demonstrably drives useful technology and its emissions are addressed; as a pure playground for the rich, the critics would be right. For now, the jury is still out.",
+      "analysis": "Vocabulary: framed-comparison verbs ('liken it to', 'dismiss it as') and evaluation ('the more compelling argument', 'the jury is still out'). Grammar: the axis sentence ('whether today's luxury is an investment or simply waste') names the crux. Structure: view A → view B → the crux → conditional judgement. Improvements: the verdict is conditional ('only if that funding drives useful technology'), which engages the critics' valid environmental point rather than dismissing it."
+    },
+    {
+      "id": "rr-12",
+      "modality": "read",
+      "format": "propose-solutions",
+      "title": "Smartphone use before bed",
+      "topic": "health",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "140–170 words",
+      "textType": "Solution proposal",
+      "passage": "Bedtime phone use is not a single habit but a chain of cues. A notification creates curiosity, one video leads automatically to another, and the device that serves as an alarm remains within reach even after a person decides to stop scrolling.\n\nMany people scroll through their phones in bed and then wonder why they sleep badly. The blue light from screens can suppress melatonin, the hormone that signals it is time to sleep, while the stream of messages, news and videos keeps the mind alert exactly when it should be winding down. People know this, yet the habit is hard to break: the phone is right there, the charger is by the bed, and 'just five more minutes' quietly becomes an hour.\n\nEffective solutions usually change the environment rather than relying on willpower at the tiredest point of the day. Charging the phone outside the bedroom, using a separate alarm clock, setting a fixed wind-down routine and disabling non-essential alerts all create friction. The goal is not to make technology an enemy, but to prevent it from occupying the final quiet minutes before sleep.",
+      "task": "Read every paragraph before answering. Propose practical solutions that would help someone reduce phone use before bed. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Suggest realistic, specific solutions to help break the bedtime-phone habit, based on the causes given (140–170 words).",
+      "audience": "Someone struggling to sleep because of their phone",
+      "purpose": "Offer targeted, achievable behaviour changes",
+      "points": [
+        "Solutions aimed at the causes named",
+        "Practical, specific steps",
+        "A note on why small changes stick"
+      ],
+      "vocab": [
+        "remove the temptation",
+        "out of arm's reach",
+        "wind down",
+        "set a cut-off",
+        "replace the habit",
+        "ease into"
+      ],
+      "model": "Since the passage blames both blue light and the phone's constant availability, the best solutions attack the temptation itself rather than relying on willpower alone.\n\nThe simplest change is physical: charge the phone in another room, or at least across the bedroom, so it is out of arm's reach. If reaching for it means getting out of bed, the habit weakens almost by itself. Buying a cheap alarm clock removes the classic excuse of needing the phone to wake up.\n\nSetting a firm cut-off — say, no screens for the half-hour before bed — also helps, especially if that time is filled with a calmer replacement habit like reading a paper book, which lets the mind wind down instead of staying alert.\n\nFinally, it is easier to ease into these changes gradually than to quit overnight. Moving the phone one metre further each night sounds trivial, but small, sustainable steps are precisely the ones people actually keep.",
+      "analysis": "Vocabulary: behaviour-change phrasing ('remove the temptation', 'out of arm's reach', 'set a cut-off') that is concrete and doable. Grammar: conditional reasoning ('If reaching for it means getting out of bed, the habit weakens') explains why each fix works. Structure: link to causes → physical distance → cut-off + replacement → gradual approach. Improvements: strong solution answers make the environment do the work ('charge it in another room') rather than just urging more discipline, which the passage shows tends to fail."
+    },
+    {
+      "id": "rr-13",
+      "modality": "read",
+      "format": "analyse-consequences",
+      "title": "Working from anywhere",
+      "topic": "work",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "160–190 words",
+      "textType": "Analysis of consequences",
+      "passage": "Location-independent work can redistribute people and spending more quickly than housing or public services can adapt. A salary earned from a major-city employer may stretch much further in a small town, making relocation attractive to workers who want space, lower costs or a different pace of life.\n\nAs remote work becomes normal, some employees are no longer tied to the city where their office sits. A growing number now work from smaller towns, the countryside, or even other countries, logging in from wherever they choose.\n\nFor workers, this promises cheaper housing and a freer lifestyle. But when large numbers of well-paid remote workers move into a small town, or leave a big city, the effects ripple outward in ways that are only beginning to be understood.\n\nThe movement can revive cafés, schools and local businesses, but it can also raise rents beyond the reach of existing residents. Meanwhile, city centres may lose weekday customers and office tax revenue. Policies on housing, short-term rentals and shared workspaces will shape whether remote migration produces renewal or displacement.",
+      "task": "Read every paragraph before answering. Analyse the possible consequences of large numbers of people working remotely from wherever they choose. Consider effects on both the places they leave and the places they move to. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Analyse the wider consequences of location-independent remote work for both origin cities and destination towns (160–190 words).",
+      "audience": "A reader interested in social and economic effects",
+      "purpose": "Trace ripple effects across two kinds of place",
+      "points": [
+        "Effects on the towns people move to",
+        "Effects on the cities they leave",
+        "A balanced reflection on winners and losers"
+      ],
+      "vocab": [
+        "an influx of",
+        "drive up prices",
+        "breathe new life into",
+        "hollow out",
+        "price out",
+        "cut both ways"
+      ],
+      "model": "When location no longer dictates where people work, the consequences cut both ways, reshaping both the places that gain residents and those that lose them.\n\nFor a small town, an influx of well-paid remote workers can breathe new life into a struggling local economy: cafés, shops and services gain customers, and empty houses fill again. Yet the same influx can drive up prices, and long-standing residents on local wages may find themselves priced out of their own community as newcomers with city salaries push up rents.\n\nLarge cities feel the reverse. If enough high earners leave, city-centre businesses that relied on office crowds — sandwich shops, dry cleaners, transport — lose trade, and neighbourhoods risk being hollowed out. Tax revenues may fall just as the city still has to maintain its infrastructure.\n\nThe overall picture, then, has no simple winners. Remote freedom redistributes prosperity rather than only creating it, lifting some places while straining others. Managing it well will mean protecting locals from being priced out and helping cities adapt to a thinner weekday population.",
+      "analysis": "Vocabulary: economic-geography phrasing ('an influx of', 'price out', 'hollow out', 'cut both ways') that captures movement and its effects. Grammar: the mirror structure ('For a small town… Large cities feel the reverse') organises a two-sided analysis. Structure: destinations gain/lose → origins lose → 'redistribution not creation' verdict. Improvements: good consequence analysis follows the money in both directions and names the losers ('locals priced out') rather than only the headline winners."
+    },
+    {
+      "id": "rr-14",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "Why we procrastinate",
+      "topic": "science",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "A person who procrastinates may spend hours planning, worrying or completing minor tasks, which is why the behaviour cannot be explained simply by a lack of effort. The avoided task often carries a threat to identity: it may expose uncertainty, invite judgement or challenge an image of being competent.\n\nProcrastination is often mistaken for laziness, but psychologists increasingly see it differently. It is, they argue, mainly a way of avoiding unpleasant emotions. When a task makes us feel anxious, bored or unsure of ourselves, delaying it brings instant relief, even though it creates bigger problems later.\n\nThe habit therefore has little to do with poor time management and much to do with how we handle discomfort. This helps explain a familiar paradox: people put off tasks they genuinely care about, because caring makes failure feel more threatening. Treating the emotion, not the schedule, is what tends to help.\n\nThis view changes the remedy. Detailed calendars can help, but only after the emotional barrier is acknowledged. Breaking a task into an undramatic first step, accepting that discomfort will be present and speaking to oneself less harshly are forms of emotional regulation, not excuses for delay.",
+      "task": "Find the term used for managing the feelings that encourage delay.",
+      "prompt": "After reading the passage, complete the sentence with TWO WORDS from the final paragraph.",
+      "audience": "A reader who has not read the text",
+      "purpose": "Capture a counter-intuitive explanation accurately",
+      "points": [
+        "Use exactly two words",
+        "Copy the phrase from the passage",
+        "Do not include punctuation"
+      ],
+      "vocab": [
+        "contrary to popular belief",
+        "stem from",
+        "short-term relief",
+        "steer clear of",
+        "counter-intuitively",
+        "address the underlying"
+      ],
+      "model": "emotional regulation",
+      "analysis": "The phrase emotional regulation names the process of handling the discomfort behind procrastination.",
+      "responseMode": "short-fill",
+      "gapSentence": "The passage describes accepting discomfort and reducing self-criticism as forms of ______ ______.",
+      "acceptedAnswers": [
+        "emotional regulation"
+      ]
+    },
+    {
+      "id": "rr-15",
+      "modality": "read",
+      "format": "opinion",
+      "title": "Banning cars from city centres",
+      "topic": "environment",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Reasoned opinion",
+      "passage": "Historic city centres were rarely designed for modern traffic volumes. Narrow streets that once carried pedestrians and carts now accommodate parked cars, delivery vehicles, buses and tourists, creating competition for a limited amount of public space.\n\nSeveral cities have begun banning private cars from their historic centres, allowing only pedestrians, cyclists and public transport. Supporters point to cleaner air, quieter streets and safer, more pleasant spaces where people linger and local shops thrive.\n\nOpponents argue that such bans punish drivers, harm businesses that depend on car-borne customers, and simply push traffic and pollution into surrounding neighbourhoods rather than removing it. The debate has grown heated wherever these schemes are proposed.\n\nSuccessful restrictions usually arrive with alternatives: frequent public transport, access for disabled residents, timed deliveries and support for traders during the transition. Without these measures, a ban can feel punitive. With them, reduced traffic may allow streets to serve more people rather than merely storing vehicles.",
+      "task": "Read every paragraph before answering. Do you support banning private cars from city centres? Give your opinion with clear reasons. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "State whether you support car-free city centres and defend your view with reasons (150–180 words).",
+      "audience": "A general reader",
+      "purpose": "Argue a clear position on an urban policy",
+      "points": [
+        "A clear stance",
+        "Reasons addressing air/space or business/displacement",
+        "Engagement with the strongest objection"
+      ],
+      "vocab": [
+        "I am broadly in favour of",
+        "reclaim the streets",
+        "a legitimate worry",
+        "displace rather than solve",
+        "provided that",
+        "the benefits are worth"
+      ],
+      "model": "I am broadly in favour of banning private cars from city centres, though I take the objections seriously.\n\nMy main reason is that such bans reclaim the streets for people. Removing cars cuts air and noise pollution immediately, and the space that opens up — for walking, cycling, cafés and markets — tends to make centres more pleasant and, in the long run, more prosperous. Cities that have tried it often report that footfall and local trade actually rise once the area becomes somewhere people want to spend time.\n\nThe strongest objection, that traffic is merely displaced into surrounding areas, is a legitimate worry rather than a knock-down argument. A ban that simply pushes cars next door displaces rather than solves the problem. That is why I support these schemes only when paired with genuinely good public transport, so people can reach the centre without driving at all.\n\nProvided that condition is met, I believe the benefits are worth the disruption. Without it, the critics would have a point.",
+      "analysis": "Vocabulary: policy-opinion phrasing ('reclaim the streets', 'displace rather than solve', 'provided that') that argues with nuance. Grammar: the conditional stance ('only when paired with… public transport') qualifies the support precisely. Structure: qualified yes → main reason → strongest objection engaged → condition → close. Improvements: naming and partly conceding the best counter-argument ('displaced traffic') and then setting a condition is stronger than ignoring it — it shows the writer has actually weighed the other side."
+    },
+    {
+      "id": "rr-16",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "The value of failure",
+      "topic": "education",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "Failure is praised easily in speeches but experienced very differently in real life. A rejected application, a failed business or a poor examination result can carry financial and emotional consequences, so advice to 'embrace failure' may sound careless when offered from a safe distance.\n\nMany successful people insist that their failures taught them more than their successes. Failure, they argue, forces reflection: when something goes wrong, we are pushed to examine what happened and why, in a way that easy success never demands.\n\nIt also builds resilience, teaching us that setbacks are survivable. Yet failure only becomes valuable if it is examined honestly rather than ignored or blamed on others. A failure we refuse to learn from teaches nothing at all.\n\nIts educational value depends on honest reflection and the opportunity to try again. People need enough psychological and practical safety to examine mistakes without being destroyed by them. Success can teach too, but failure often makes hidden assumptions visible because the expected result did not arrive.",
+      "task": "Identify the condition that turns failure into a useful learning experience.",
+      "prompt": "Read all four paragraphs. Complete the sentence with TWO WORDS used in the passage.",
+      "audience": "A reader reflecting on the idea",
+      "purpose": "Explain and extend the passage's argument",
+      "points": [
+        "Use exactly two words",
+        "Take the wording from the passage",
+        "Do not explain your choice"
+      ],
+      "vocab": [
+        "take for granted",
+        "prompt reflection",
+        "bounce back",
+        "own one's mistakes",
+        "learn the lesson",
+        "all the difference"
+      ],
+      "model": "honest reflection",
+      "analysis": "The text repeatedly distinguishes failure itself from the honest reflection that allows learning.",
+      "responseMode": "short-fill",
+      "gapSentence": "Failure becomes educational only when it is followed by ______ ______.",
+      "acceptedAnswers": [
+        "honest reflection"
+      ]
+    },
+    {
+      "id": "rr-17",
+      "modality": "read",
+      "format": "reply-author",
+      "title": "An article against learning foreign languages",
+      "topic": "technology",
+      "level": "C1",
+      "register": "formal",
+      "time": "25 min",
+      "length": "170–200 words",
+      "textType": "Reply to the author",
+      "passage": "Translation software has improved dramatically, especially for routine travel and written information. It can identify signs, produce a usable restaurant order and help two strangers exchange basic facts even when they share no language.\n\nA technology writer recently argued that learning foreign languages is now a waste of time. With instant translation apps in every pocket, he wrote, spending years mastering French or Japanese is as pointless as memorising phone numbers.\n\n'Let the machines translate,' he argued. 'Human language learning is a hobby, not a necessity, and schools should stop pretending otherwise.'\n\nCommunication, however, is more than replacing one word with another. Humour, politeness, cultural references and trust depend on context, while learning a language changes what a person notices and which relationships become possible. Machines can remove practical barriers without making human learning pointless.",
+      "task": "Read every paragraph before answering. Write a response to the author challenging his argument respectfully. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Reply to the tech writer, disagreeing with reasoned points about the value of language learning (170–200 words).",
+      "audience": "The author of the article",
+      "purpose": "Rebut a provocative claim with substance",
+      "points": [
+        "A fair nod to translation tech's usefulness",
+        "A challenge to 'learning is a waste'",
+        "Values translation can't replace (culture, thinking, connection)"
+      ],
+      "vocab": [
+        "you raise a provocative point",
+        "misses something essential",
+        "convey the words but not",
+        "forge a connection",
+        "rewire the mind",
+        "reduce X to Y"
+      ],
+      "model": "Dear Mr Sato,\n\nYou raise a provocative point, and I will grant that translation apps are genuinely useful — for ordering a meal abroad or reading a menu, they are a marvel. But your conclusion misses something essential about what language learning is for.\n\nTranslation can convey the words but not the connection. When you speak someone's language, even clumsily, you forge a connection that a phone held between two faces never will; people open up to you differently. An app also cannot give you the cultural understanding that comes bundled with a language — the jokes, the assumptions, the way a people see the world.\n\nThere is a cognitive case too. Learning a language appears to rewire the mind, improving memory and even delaying cognitive decline; you cannot outsource that benefit to software any more than you can outsource exercise.\n\nTo reduce language learning to information transfer is to mistake its smallest function for its whole purpose. Machines can translate; they cannot make you understood in the deeper sense. I would keep it in schools, not abandon it.\n\nYours sincerely,\nA reader",
+      "analysis": "Vocabulary: substantive-rebuttal phrasing ('you raise a provocative point', 'misses something essential', 'reduce X to Y') that concedes then counters. Grammar: the memorable antithesis 'Translation can convey the words but not the connection' compresses the argument. Structure: concede tech's use → connection → culture → cognition → close. Improvements: the reply attacks the author's hidden assumption — that language is only information transfer — which is more powerful than merely listing benefits of language study."
+    },
+    {
+      "id": "rr-18",
+      "modality": "read",
+      "format": "compare-views",
+      "title": "Two views on ambition",
+      "topic": "culture",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Comparison of positions",
+      "passage": "Ambition is shaped not only by personality but by the stories a society tells about a successful life. Awards, promotions and public recognition are easy to display, whereas quiet satisfaction, care work and balanced relationships are harder to measure.\n\nCultures differ in how they regard ambition. In some, ambition is celebrated: the person who strives relentlessly, sets bold goals and refuses to settle is admired as a role model, and 'contentment' can sound suspiciously like giving up.\n\nIn others, this drive is viewed with caution. Relentless ambition, people there argue, breeds anxiety, damages relationships and treats life as an endless competition, while the ability to be satisfied with what one has is seen as wisdom, not weakness.\n\nA healthier distinction may be between purposeful and compulsive ambition. Goals can organise effort and expand a person's abilities, but they become damaging when every achievement immediately loses value or when other people are treated only as competitors. Contentment need not mean passivity, just as ambition need not require permanent dissatisfaction.",
+      "task": "Read every paragraph before answering. Compare these two attitudes to ambition. Which do you find healthier, and why? Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Compare the two cultural attitudes to ambition and judge which is healthier, with reasons (150–180 words).",
+      "audience": "A reflective reader",
+      "purpose": "Contrast two value systems and evaluate them",
+      "points": [
+        "Fair account of each attitude",
+        "Explicit comparison of what each prizes",
+        "A reasoned personal judgement"
+      ],
+      "vocab": [
+        "prize",
+        "drive",
+        "at what cost",
+        "a healthy medium",
+        "restless striving",
+        "know when enough is enough"
+      ],
+      "model": "The two attitudes to ambition prize almost opposite things. The first celebrates drive: the striver who never settles is a hero, and contentment is treated with suspicion, as if satisfaction were merely a failure of nerve. The second prizes balance: it questions relentless striving, warning that it breeds anxiety and damages relationships, and it treats the ability to be satisfied as a form of wisdom.\n\nIn essence, one culture asks 'How much more can you achieve?' while the other asks 'At what cost?'\n\nI find the healthier answer lies between them rather than in either extreme. Pure contentment, taken too far, can slide into passivity and unfulfilled potential; but restless ambition that never pauses to enjoy anything seems a joyless bargain, achieving much while savouring little. The wiser path, to me, keeps the energy of ambition but adds the second culture's crucial question — knowing when enough is enough. Ambition gives life direction; contentment gives it peace, and a good life surely needs some of both.",
+      "analysis": "Vocabulary: values-comparison lexis ('prize', 'restless striving', 'know when enough is enough') that captures each worldview. Grammar: the paired questions ('How much more…' vs 'At what cost?') crystallise the contrast. Structure: attitude A → attitude B → the crux → a middle judgement. Improvements: rather than crowning one culture, the answer identifies what each gets right and proposes a synthesis, which is a more mature response to a values question than a flat preference."
+    },
+    {
+      "id": "rr-19",
+      "modality": "read",
+      "format": "propose-solutions",
+      "title": "Plastic packaging in supermarkets",
+      "topic": "environment",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Solution proposal",
+      "passage": "Plastic packaging is popular because it is light, cheap and effective at protecting goods during transport. Those same qualities make it persistent after use: a wrapper designed to last through a supply chain may remain in the environment long after the food it protected has disappeared.\n\nWalk through any supermarket and you will see fruit shrink-wrapped in plastic, vegetables sitting on plastic trays, and countless items double-packaged for no obvious reason. Much of this plastic is used once and thrown away, and only a fraction is actually recycled. Shoppers often say they want less packaging, but changing the system is not simple: plastic protects food and extends its shelf life, packaging-free alternatives can be more expensive, and habits — on both the shop's side and the customer's — are slow to shift.\n\nProgress will require several approaches at once. Refill stations and reusable containers suit some products; redesigned packaging and deposit systems suit others. Clearer labelling can help shoppers, but supermarkets and manufacturers have more power to change what is offered in the first place.",
+      "task": "Read every paragraph before answering. Propose practical solutions, for shops and/or shoppers, that could reduce plastic packaging. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Suggest realistic solutions for supermarkets and shoppers to cut plastic packaging, acknowledging the obstacles named (150–180 words).",
+      "audience": "Readers who shop and shops that sell",
+      "purpose": "Offer feasible steps that respect real constraints",
+      "points": [
+        "Solutions for supermarkets",
+        "Solutions for shoppers",
+        "A nod to the obstacles (cost, shelf life)"
+      ],
+      "vocab": [
+        "phase out",
+        "loose produce",
+        "refill stations",
+        "the onus is on",
+        "incentivise",
+        "meet halfway"
+      ],
+      "model": "Because the passage shows the problem sits with both shops and shoppers, the solutions have to work on both sides and respect the fact that some plastic genuinely protects food.\n\nSupermarkets can start by phasing out the most needless packaging — the shrink-wrapped single cucumber, the plastic tray under apples — and offering more loose produce, letting customers take only what they need. Introducing refill stations for staples such as rice, pasta and cleaning products would cut single-use containers substantially, and some chains already show this can work.\n\nShoppers, meanwhile, can bring their own bags and containers, choose loose over packaged where the option exists, and favour shops that visibly reduce plastic, since the onus is partly on us to reward good behaviour with our custom.\n\nGovernments can help both sides meet halfway by incentivising alternatives or taxing pointless packaging, so the greener choice is also the cheaper one.\n\nNone of this removes plastic overnight, and food safety must come first, but together these steps chip away at the waste the passage describes.",
+      "analysis": "Vocabulary: retail-environment phrasing ('phase out', 'loose produce', 'refill stations', 'incentivise') that is concrete and current. Grammar: the framing 'the solutions have to work on both sides' organises shops-then-shoppers-then-policy. Structure: acknowledge shared cause → shop solutions → shopper solutions → policy lever → realistic caveat. Improvements: the answer respects the passage's obstacles ('food safety must come first') instead of ignoring them, which makes the proposals credible rather than naive."
+    },
+    {
+      "id": "rr-20",
+      "modality": "read",
+      "format": "analyse-consequences",
+      "title": "Automating routine jobs",
+      "topic": "technology",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "160–190 words",
+      "textType": "Analysis of consequences",
+      "passage": "Automation debates often focus on the number of jobs, but the quality and distribution of work are equally important. A machine may remove a repetitive task without eliminating a whole occupation, allowing an employee to spend more time on judgement, care or problem-solving.\n\nMachines and software are increasingly capable of performing routine tasks once done by people — from operating checkouts to processing paperwork and answering standard customer queries. Businesses adopt automation to cut costs and errors, and the trend shows no sign of slowing.\n\nHistory suggests that technology eventually creates new kinds of work even as it destroys old ones. But the transition is rarely smooth, and the people who lose routine jobs are not always the ones who gain the new ones.\n\nThe benefits are unlikely to be shared automatically. Companies may gain productivity while displaced workers face lower wages or long periods of retraining. Education systems, employers and governments therefore influence whether automation becomes a tool that expands human capability or a process that transfers risk to those with the least bargaining power.",
+      "task": "Read every paragraph before answering. Analyse the likely consequences of automating routine jobs, for workers and for society. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Analyse the consequences of automating routine work, considering both the gains and who bears the costs (160–190 words).",
+      "audience": "A reader thinking about the future of work",
+      "purpose": "Reason through economic and social effects",
+      "points": [
+        "Efficiency and new-job arguments",
+        "Who is displaced and the mismatch problem",
+        "A reflection on managing the transition"
+      ],
+      "vocab": [
+        "boost efficiency",
+        "displace",
+        "a skills mismatch",
+        "fall on",
+        "reskilling",
+        "cushion the blow"
+      ],
+      "model": "Automating routine jobs promises real gains, but the way those gains and losses are shared is where the consequences become complicated.\n\nThe benefits are clear enough. Automation boosts efficiency, lowers prices and frees people from dull, repetitive tasks, and history does suggest that new kinds of work eventually emerge to replace what disappears. In the long run, societies have generally adapted.\n\nThe difficulty lies in the transition. The passage's key point is that those who lose routine jobs are often not those who gain the new ones. A supermarket cashier displaced by self-checkout cannot simply become a software engineer overnight; the new roles frequently demand different skills, creating a skills mismatch. The immediate costs therefore fall on a specific group — often older or lower-paid workers — even as society as a whole benefits.\n\nThe real consequence, then, depends on how the transition is handled. Without serious investment in reskilling and support, automation risks deepening inequality, rewarding some while stranding others. Managed well, with training that helps displaced workers move into new roles, it can cushion the blow and spread the gains more fairly.",
+      "analysis": "Vocabulary: labour-economics phrasing ('boost efficiency', 'a skills mismatch', 'reskilling', 'cushion the blow') that traces effects precisely. Grammar: the pivot 'The difficulty lies in the transition' turns from gains to distribution; the cashier example concretises an abstract point. Structure: gains → the mismatch problem → who bears the cost → conditional conclusion. Improvements: the analysis distinguishes long-run society from short-run individuals, which is exactly the nuance the passage plants ('not always the ones who gain'), rather than a simple 'good or bad' verdict."
+    },
+    {
+      "id": "rr-21",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "The origins of the coffee break",
+      "topic": "culture",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "Work breaks existed before coffee became their symbol, but industrial workplaces gave pauses a new economic purpose. Managers began to observe fatigue as a production problem and experimented with rest periods that could reduce errors during long, repetitive shifts.\n\nThe coffee break, now a fixture of working life, has a surprisingly recent and deliberate history. In the early twentieth century, some employers began offering short pauses for coffee, having noticed that rested workers made fewer mistakes and produced more.\n\nWhat started as a practical measure to raise output gradually became a social ritual, a moment to step away from the desk and talk to colleagues. Advertisers later seized on the idea, promoting the 'coffee break' as a natural part of the day. Today it is so ingrained that few realise it was, in origin, a productivity strategy rather than a tradition.\n\nOver time, workers made the pause their own. A few minutes away from a machine or desk created informal communication across roles and departments, sometimes solving problems that formal meetings missed. The modern coffee break is therefore both a management invention and a social practice shaped by factory workers and later office staff.",
+      "task": "Find the group of people credited with shaping the break as a social practice.",
+      "prompt": "Read the passage and complete the sentence with TWO WORDS from the final paragraph.",
+      "audience": "A reader who has not seen the text",
+      "purpose": "Restate a short history faithfully and briefly",
+      "points": [
+        "Use two words only",
+        "Use the exact noun phrase",
+        "Do not add “the”"
+      ],
+      "vocab": [
+        "trace back to",
+        "with an eye to",
+        "catch on",
+        "evolve into",
+        "capitalise on",
+        "far from being"
+      ],
+      "model": "factory workers",
+      "analysis": "The last paragraph says the practice was shaped by factory workers and later office staff; the two-word answer requested is factory workers.",
+      "responseMode": "short-fill",
+      "gapSentence": "The social form of the modern coffee break was partly shaped by ______ ______.",
+      "acceptedAnswers": [
+        "factory workers"
+      ]
+    },
+    {
+      "id": "rr-22",
+      "modality": "read",
+      "format": "opinion",
+      "title": "Compulsory volunteering for students",
+      "topic": "education",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Reasoned opinion",
+      "passage": "Service-learning programmes try to connect education with local needs. A student might help at a food bank, coach younger children or assist an environmental project, gaining experience that cannot be reproduced fully in a classroom.\n\nSome schools now require students to complete a set number of volunteering hours before they can graduate. Supporters say this exposes young people to their community, builds empathy and looks good on university applications.\n\nCritics counter that forcing people to volunteer is a contradiction: genuine volunteering is freely chosen, and compelling it produces reluctant students ticking a box rather than caring about the cause. There is also concern that it burdens those who already work part-time to support their families.\n\nCompulsion changes the meaning of that experience but does not necessarily erase its value. Good programmes offer choice, recognise caring or paid responsibilities, and include reflection on what was learned. Poor ones measure only hours and reward students who already have the easiest access to attractive placements.",
+      "task": "Read every paragraph before answering. Do you think volunteering should be compulsory for students? Give your opinion with reasons. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "State whether student volunteering should be compulsory, and justify your view (150–180 words).",
+      "audience": "A general reader",
+      "purpose": "Argue a position on an education policy",
+      "points": [
+        "A clear stance",
+        "Reasons engaging the 'forced volunteering' paradox",
+        "A note on fairness / practicality"
+      ],
+      "vocab": [
+        "a contradiction in terms",
+        "expose them to",
+        "go through the motions",
+        "a hidden burden",
+        "strike the right balance",
+        "in principle"
+      ],
+      "model": "In principle I support encouraging students to volunteer, but I am uneasy about making it strictly compulsory, and on balance I lean against it.\n\nThe supporters' aims are good: volunteering can expose sheltered young people to their community and build genuine empathy, and some students only discover a cause they love because they were nudged towards it. That is a real benefit.\n\nYet the critics identify a genuine problem. Forced volunteering is close to a contradiction in terms; a student made to serve against their will may simply go through the motions, learning cynicism rather than compassion. There is also a hidden burden: for a student already working to help their family, mandatory hours are not enrichment but pressure.\n\nMy own preference is a middle path that strikes the right balance — strongly encouraging volunteering, celebrating it and building it into school life, but stopping short of a hard requirement, with flexible alternatives for those who cannot spare the time. Encouragement can achieve most of the benefit without the resentment compulsion breeds.",
+      "analysis": "Vocabulary: policy-opinion phrasing ('a contradiction in terms', 'go through the motions', 'strike the right balance') that argues with care. Grammar: concession then reservation ('The supporters' aims are good… Yet the critics identify…') builds a fair case. Structure: qualified stance → benefit conceded → the paradox and the burden → a middle path. Improvements: the answer engages the passage's own tension (choice vs compulsion) and proposes a specific alternative rather than a bare yes/no."
+    },
+    {
+      "id": "rr-23",
+      "modality": "read",
+      "format": "reply-author",
+      "title": "A comment dismissing small talk",
+      "topic": "relationships",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "160–190 words",
+      "textType": "Reply to the author",
+      "passage": "Small talk often appears trivial because its literal content is not the main point. A comment about the weather may actually ask whether conversation is welcome, whether the other person feels safe, or whether two strangers can move towards a more meaningful exchange.\n\nIn an online discussion, someone wrote that small talk is 'pointless and fake'. Real conversation, they argued, is deep and meaningful, while chatting about the weather or the weekend is empty noise that wastes everyone's time.\n\n'I refuse to do it,' they declared. 'If we can't talk about something real, I'd rather say nothing.'\n\nOf course, forced politeness can be tiring, and not every silence needs to be filled. Yet refusing all low-stakes conversation removes a common bridge between unfamiliar people. Depth usually requires some degree of trust, and trust is often built through repeated, ordinary contact rather than immediate confession.",
+      "task": "Read every paragraph before answering. Write a reply to this comment, offering a different perspective on small talk. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Reply to the commenter, respectfully offering a case for the value of small talk (160–190 words).",
+      "audience": "The person who wrote the comment",
+      "purpose": "Gently challenge a dismissive view",
+      "points": [
+        "Acknowledge the frustration behind the view",
+        "Argue what small talk actually does",
+        "A practical reframe"
+      ],
+      "vocab": [
+        "I get where you're coming from",
+        "serve a purpose",
+        "break the ice",
+        "a stepping stone",
+        "warm someone up",
+        "not either/or"
+      ],
+      "model": "I get where you're coming from — endless chatter with no substance can feel hollow, and I too prefer real conversation. But I think you're being a little unfair to small talk, because it usually serves a purpose you may be overlooking.\n\nSmall talk is rarely the destination; it is the doorway. Very few people leap straight into their fears and dreams with a stranger. Talking about the weather or the weekend is how we break the ice, signal that we are friendly, and warm someone up before anything deeper becomes possible. It is a stepping stone, not a dead end.\n\nThere's a social kindness in it too. A quick, light exchange with a colleague or a neighbour is a small act of connection that keeps daily life pleasant, even if it changes nothing.\n\nSo it needn't be either/or. You can treat small talk as the short bridge that leads to the real conversations you want, rather than refusing to cross it. Skip the bridge, and you may never reach the other side.",
+      "analysis": "Vocabulary: friendly-rebuttal phrasing ('I get where you're coming from', 'break the ice', 'a stepping stone') that disagrees warmly. Grammar: the metaphor 'the doorway… not the destination' reframes the whole issue; 'not either/or' resolves the false choice. Structure: empathise → the real function → the social kindness → a reframe. Improvements: the reply validates the commenter's frustration first, which makes the disagreement land better, and reframes small talk as a means rather than defending it as an end."
+    },
+    {
+      "id": "rr-24",
+      "modality": "read",
+      "format": "compare-views",
+      "title": "Two views on keeping a routine",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Comparison of positions",
+      "passage": "Routine and spontaneity are sometimes presented as opposites, although most lives contain both. Even highly creative people rely on repeated structures for sleep, meals or practice, while the most organised schedule can leave room for unexpected choices.\n\nPeople hold opposing views about daily routines. Some swear by them: a fixed structure, they say, removes the exhausting need to make small decisions all day, builds good habits automatically and creates a reassuring sense of control.\n\nOthers resist routine, arguing that too much structure becomes a rut, drains spontaneity and makes life feel mechanical. They prefer to follow their energy and mood, doing things when it feels right rather than when the schedule dictates.\n\nThe useful amount of routine depends on circumstances. During stressful periods, predictable habits can conserve attention; during stable periods, excessive structure may feel restrictive. A flexible routine works as a support rather than a command, protecting important activities without dictating every hour.",
+      "task": "Read every paragraph before answering. Compare the two views on routine. Which suits you better, and why? Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Compare the two attitudes to daily routine and say which suits you, with reasons (150–180 words).",
+      "audience": "A general reader",
+      "purpose": "Contrast two lifestyles and reflect personally",
+      "points": [
+        "What each side values",
+        "A genuine comparison",
+        "A personal, reasoned preference"
+      ],
+      "vocab": [
+        "swear by",
+        "decision fatigue",
+        "fall into a rut",
+        "go with the flow",
+        "the best of both",
+        "for my part"
+      ],
+      "model": "The two views on routine value different freedoms. Supporters of routine prize freedom from friction: a fixed structure spares them decision fatigue, turns good behaviour into automatic habit, and offers a comforting sense of control. Opponents prize freedom of the moment: they fear that structure hardens into a rut, and they would rather go with the flow, letting mood and energy decide.\n\nWhere one side sees routine as liberating, then, the other sees it as confining — the same structure, read as either scaffolding or cage.\n\nFor my part, I lean towards routine, but not a rigid one. I find that a loose framework — steady sleep, work and exercise at roughly fixed times — removes exactly the small daily decisions that tire me, freeing energy for the choices that matter. Yet I deliberately leave gaps for spontaneity, so the structure serves me rather than the reverse. In truth, the best of both may be a reliable skeleton with room to improvise, rather than either total structure or total drift.",
+      "analysis": "Vocabulary: lifestyle-comparison phrasing ('swear by', 'decision fatigue', 'go with the flow') plus the vivid 'scaffolding or cage' image. Grammar: the antithesis 'liberating… confining' names the disagreement; the personal section uses 'but not a rigid one' to qualify. Structure: side A → side B → the crux → personal synthesis. Improvements: the answer finds the shared object seen two ways ('scaffolding or cage') and lands on a blended personal position rather than a simple pick."
+    },
+    {
+      "id": "rr-25",
+      "modality": "read",
+      "format": "propose-solutions",
+      "title": "Overcrowded tourist destinations",
+      "topic": "travel",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "160–190 words",
+      "textType": "Solution proposal",
+      "passage": "Tourism pressure is often concentrated in a few famous streets, beaches or seasons rather than spread evenly across a region. Social media can intensify this concentration by directing thousands of visitors towards the same photographable viewpoint.\n\nSome of the world's most beautiful places are being loved to death. Famous cities and natural sites now receive so many visitors that residents are pushed out by holiday rentals, streets become impassable, and fragile landscapes are eroded by foot traffic.\n\nLocal people increasingly resent the crowds, yet tourism also brings vital income, so simply banning visitors is rarely realistic. The challenge is to manage the flow rather than stop it.\n\nManagement tools include timed entry, tourist taxes, limits on holiday rentals and promotion of less-visited areas. Each has trade-offs, and local residents should help define what level of tourism remains acceptable. The aim is not to keep places frozen or inaccessible, but to prevent the visitor economy from destroying the qualities people travel to experience.",
+      "task": "Read every paragraph before answering. Propose solutions that would help popular destinations manage the problem of overtourism. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Suggest realistic solutions to manage overtourism, keeping in mind that tourism brings needed income (160–190 words).",
+      "audience": "Readers and local authorities",
+      "purpose": "Balance protecting places against needing tourist income",
+      "points": [
+        "Solutions that spread or limit the flow",
+        "Solutions that protect residents/sites",
+        "A nod to preserving income"
+      ],
+      "vocab": [
+        "spread the load",
+        "off-peak",
+        "cap numbers",
+        "channel visitors",
+        "strike a balance",
+        "reinvest the revenue"
+      ],
+      "model": "Because the passage stresses that tourism brings vital income, the aim must be to manage the flow rather than choke it off, and several measures can help strike that balance.\n\nThe first is to spread the load. Promoting less famous towns and quieter, off-peak seasons draws visitors away from the few crowded hotspots, easing pressure while keeping the money flowing to the wider region. Timed-entry tickets can channel visitors through fragile sites in manageable numbers rather than all at once.\n\nWhere crowds are simply too great, authorities can cap numbers — as some island and heritage sites already do — or introduce a modest tourist tax, using it to fund the upkeep the visitors themselves cause.\n\nProtecting residents matters too: regulating short-term holiday rentals stops locals being priced out of their own neighbourhoods, addressing the resentment the passage describes.\n\nCrucially, the revenue raised should be reinvested in maintaining the sites and supporting the community, so tourism pays its own way. Managed like this, popular places can keep welcoming visitors without being destroyed by them.",
+      "analysis": "Vocabulary: tourism-management lexis ('spread the load', 'off-peak', 'cap numbers', 'reinvest the revenue') that is concrete and current. Grammar: the framing 'manage the flow rather than choke it off' echoes and respects the passage's constraint. Structure: spread → cap/tax → protect residents → reinvest. Improvements: the solutions honour the income constraint throughout rather than defaulting to 'ban tourists', which the passage explicitly rules out — showing the writer read carefully."
+    },
+    {
+      "id": "rr-26",
+      "modality": "read",
+      "format": "analyse-consequences",
+      "title": "Free university places for all",
+      "topic": "education",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "160–190 words",
+      "textType": "Analysis of consequences",
+      "passage": "Opening university access sounds simple until capacity is considered. Lecturers, laboratories, libraries and student support cannot expand instantly, and an unlimited promise may reduce the quality of education if resources remain fixed.\n\nImagine a country that decides to make every university place completely free and to admit anyone who wishes to attend, with no limit on numbers. Supporters of such a policy celebrate the openness and equality it seems to promise. Yet removing both cost and competition from higher education would change the system in ways that are worth thinking through carefully before assuming the outcome is simply good.\n\nDemand could also shift away from vocational routes even when those skills are urgently needed. On the positive side, removing fees and restrictive admissions could reveal talent excluded by the current system. The likely outcome would depend on funding, guidance and whether access means merely entering a course or receiving enough support to complete it.",
+      "task": "Read every paragraph before answering. Analyse the likely consequences of making all university places free and unlimited. Consider both intended and unintended effects. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Analyse the probable consequences — intended and unintended — of free, unlimited university places (160–190 words).",
+      "audience": "A reader considering the policy",
+      "purpose": "Reason beyond the surface appeal of a policy",
+      "points": [
+        "The intended benefit (access/equality)",
+        "Unintended effects (funding, value, quality)",
+        "A balanced reflection"
+      ],
+      "vocab": [
+        "at first glance",
+        "the intended effect",
+        "an unintended consequence",
+        "stretch resources",
+        "dilute",
+        "a double-edged reform"
+      ],
+      "model": "At first glance, free and unlimited university places look purely positive, but following the policy through reveals a more complicated picture.\n\nThe intended effect is clear and admirable: removing cost as a barrier should widen access, letting talented people from poor families attend who might otherwise never have applied — a genuine gain for equality.\n\nThe unintended consequences, however, deserve attention. Someone must fund all those places, and admitting unlimited numbers would stretch resources thin, potentially forcing larger classes, fewer staff per student and, over time, a dilution of teaching quality — so the degree everyone can now get may be worth less than the one they replaced. Removing competition might also reduce the incentive to study hard beforehand, and a flood of graduates could make a degree less useful in the job market simply because it is no longer distinctive.\n\nThe policy is therefore a double-edged reform. Its equality aims are worthy, but without careful funding and quality safeguards, it risks offering everyone access to an education that has quietly become less valuable — helping in one respect while harming in another.",
+      "analysis": "Vocabulary: policy-analysis phrasing ('the intended effect', 'an unintended consequence', 'dilute', 'a double-edged reform') that distinguishes surface from depth. Grammar: 'so the degree… may be worth less' draws the second-order effect explicitly. Structure: surface appeal → intended benefit → unintended effects → balanced verdict. Improvements: the answer separates intended from unintended consequences — exactly what the passage invites ('worth thinking through') — rather than just praising or condemning the idea."
+    },
+    {
+      "id": "rr-27",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "The paradox of choice",
+      "topic": "science",
+      "level": "C1",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "Choice is valuable because it allows people to match decisions to their needs and values. Problems arise when comparing options demands more attention than the decision deserves, or when every choice creates a visible list of alternatives that were sacrificed.\n\nWe assume that more choice always makes us happier, yet research suggests the opposite can occur. Faced with dozens of options — of jam, of jobs, of streaming shows — people often feel paralysed, take longer to decide, and end up less satisfied with whatever they pick, haunted by the alternatives they rejected.\n\nA small, well-curated set of options can leave us both quicker to choose and happier with the result. Choice, it seems, is good up to a point, beyond which it starts to weigh on us.\n\nBusinesses sometimes exploit this by presenting numerous slightly different plans, while digital platforms keep recommendations endless. Reducing options, setting a clear decision rule and accepting that no choice will be perfect can limit decision fatigue. Freedom is preserved not by considering everything, but by choosing a manageable field.",
+      "task": "Identify the phrase used for the mental cost of comparing too many alternatives.",
+      "prompt": "Read the entire passage. Complete the sentence with TWO WORDS from the final paragraph.",
+      "audience": "A reader curious about the practical angle",
+      "purpose": "Explain a finding and apply it",
+      "points": [
+        "Use exactly two words",
+        "Copy the expression from the passage",
+        "Do not write a definition"
+      ],
+      "vocab": [
+        "overwhelm",
+        "second-guess",
+        "the road not taken",
+        "a curated selection",
+        "narrow down",
+        "at a glance"
+      ],
+      "model": "decision fatigue",
+      "analysis": "Decision fatigue is the expression used to describe the mental burden created by excessive comparison.",
+      "responseMode": "short-fill",
+      "gapSentence": "A very large number of options can produce ______ ______.",
+      "acceptedAnswers": [
+        "decision fatigue"
+      ]
+    },
+    {
+      "id": "rr-28",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "Why cities are getting hotter",
+      "topic": "environment",
+      "level": "C1",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "Heat is distributed unevenly within a city. Neighbourhoods with mature trees, parks and light-coloured buildings may remain noticeably cooler than districts dominated by warehouses, wide roads and little shade, even when they are only a few kilometres apart.\n\nCities are often several degrees warmer than the countryside around them, a phenomenon known as the urban heat island effect. The causes are largely physical: dark roads and rooftops absorb sunlight rather than reflecting it, dense concrete and brick store heat and release it slowly through the night, and a shortage of trees and green space removes the natural cooling that plants provide.\n\nWaste heat from vehicles, air conditioning and industry adds further warmth. As summers grow hotter, this effect turns cities into uncomfortable and sometimes dangerous places, particularly for the elderly and the ill.\n\nThis makes urban heat a planning and equality issue as well as a weather problem. Cool roofs, shaded bus stops, planted streets and protected green space can lower exposure, but the hottest neighbourhoods are often those with the fewest resources to demand investment. Dark surfaces are therefore part of a broader pattern of design choices.",
+      "task": "Find the phrase that describes the heat-absorbing roads and rooftops.",
+      "prompt": "Read the passage and complete the sentence with TWO WORDS taken from it.",
+      "audience": "A reader who has not seen the text",
+      "purpose": "Condense causes and significance accurately",
+      "points": [
+        "Use exactly two words",
+        "Use wording from the passage",
+        "Do not include an article"
+      ],
+      "vocab": [
+        "known as",
+        "absorb rather than reflect",
+        "retain heat",
+        "a lack of greenery",
+        "compound the problem",
+        "pose a risk to"
+      ],
+      "model": "dark surfaces",
+      "analysis": "The passage identifies dark surfaces as materials that absorb solar energy and contribute to urban heat.",
+      "responseMode": "short-fill",
+      "gapSentence": "Roads and rooftops contribute to urban heat because they are often ______ ______.",
+      "acceptedAnswers": [
+        "dark surfaces"
+      ]
+    },
+    {
+      "id": "rr-29",
+      "modality": "read",
+      "format": "opinion",
+      "title": "Should news be free?",
+      "topic": "technology",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "150–180 words",
+      "textType": "Reasoned opinion",
+      "passage": "Professional reporting requires time, specialist knowledge, legal review and people willing to investigate claims that powerful organisations would prefer to keep hidden. Advertising once covered much of that cost, but digital platforms captured a growing share of the revenue.\n\nFor years, much online news was free, funded by advertising. Now many outlets place their journalism behind paywalls, charging readers a subscription.\n\nSupporters of paywalls argue that quality journalism is expensive to produce and that readers should pay for it, just as they pay for other goods; free news, they say, led to a flood of shallow, click-chasing content. Critics worry that paywalls create an information divide, in which reliable news becomes a luxury for those who can afford it while everyone else is left with rumour and free but unreliable sources.\n\nSubscriptions can protect editorial independence, yet a society also needs shared access to reliable information. Possible compromises include free public-interest articles, library subscriptions, student rates and non-profit funding. The central challenge is to pay for journalism without making trustworthy knowledge available only to wealthier readers.",
+      "task": "Read every paragraph before answering. Should quality news be free to everyone, or is it fair to charge for it? Give your opinion with reasons. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Give your view on whether quality news should be free or paid, with reasons (150–180 words).",
+      "audience": "A general reader",
+      "purpose": "Argue a position on a genuine dilemma",
+      "points": [
+        "A clear stance",
+        "Reasons engaging cost vs access",
+        "A nod to the strongest counter-point"
+      ],
+      "vocab": [
+        "there is a real tension",
+        "a public good",
+        "sustain quality",
+        "an information divide",
+        "a hybrid model",
+        "for the sake of"
+      ],
+      "model": "There is a real tension here, because both sides are partly right, and my own view lands on a middle position rather than a pure one.\n\nI accept the paywall argument that good journalism is expensive and cannot survive on nothing; reporters, editors and fact-checkers must be paid, and years of free news did encourage shallow, click-chasing content. Charging is one honest way to sustain quality.\n\nYet the critics identify something genuinely troubling. Reliable news is close to a public good, and if it becomes a luxury behind paywalls, an information divide opens up: the well-off stay informed while everyone else is left with free but unreliable rumour — bad for democracy itself.\n\nSo my position favours a hybrid model. Outlets can reasonably charge for in-depth or specialist content while keeping essential public-interest reporting — elections, health, safety — free for all. For the sake of an informed society, the news that citizens most need to make decisions should not sit behind a paywall, even if the rest does.",
+      "analysis": "Vocabulary: media-economics phrasing ('a public good', 'an information divide', 'a hybrid model') that frames the dilemma precisely. Grammar: the twin concessions ('I accept…', 'Yet the critics identify…') build a genuinely balanced case. Structure: name the tension → paywall side → access side → hybrid position. Improvements: rather than 'news should be free' or 'people should pay', the answer distinguishes essential from optional content, a distinction the passage's own framing invites."
+    },
+    {
+      "id": "rr-30",
+      "modality": "read",
+      "format": "reply-author",
+      "title": "A post saying money can't buy happiness",
+      "topic": "culture",
+      "level": "C1",
+      "register": "neutral",
+      "time": "25 min",
+      "length": "170–200 words",
+      "textType": "Reply to the author",
+      "passage": "The relationship between money and wellbeing is strongest where income protects people from insecurity. Reliable housing, healthcare, food and time away from exhausting work are material conditions, not shallow luxuries, and their absence can dominate daily life.\n\nA widely shared post insisted flatly that 'money can't buy happiness'. The author argued that the richest people are often miserable, that chasing wealth is a trap, and that true happiness comes only from relationships and inner peace, never from material things.\n\n'Stop worrying about money,' the post advised. 'It has nothing to do with a good life.'\n\nBeyond a comfortable level, additional wealth may bring smaller gains, especially when it is pursued at the cost of health or relationships. Money can buy options and reduce certain forms of stress, but it cannot guarantee purpose, affection or self-respect. A nuanced view asks what money is used for and what was sacrificed to obtain it.",
+      "task": "Read every paragraph before answering. Write a reply to the author, offering a more nuanced view of the relationship between money and happiness. Use your own wording unless a quotation is specifically requested.",
+      "prompt": "Reply to the post, complicating its claim with a more nuanced view (170–200 words).",
+      "audience": "The author of the post",
+      "purpose": "Add nuance to an oversimplified claim",
+      "points": [
+        "Grant the kernel of truth",
+        "Challenge the absolute claim",
+        "Introduce the nuance (money and security / a point of diminishing returns)"
+      ],
+      "vocab": [
+        "there's truth in what you say",
+        "an overstatement",
+        "a certain point",
+        "peace of mind",
+        "diminishing returns",
+        "it depends on"
+      ],
+      "model": "Hi,\n\nThere's real truth in what you say, and I don't want to lose it: beyond a certain level, chasing wealth clearly doesn't guarantee happiness, and relationships and inner peace matter more than any possession. On that, I fully agree.\n\nBut I think 'money has nothing to do with a good life' is an overstatement that could mislead people. For someone struggling to pay rent or buy food, money is not a distraction from happiness; it is the difference between constant stress and peace of mind. Research actually supports a middle picture: money reliably improves wellbeing up to the point where basic needs and a little security are met, and only after that do its returns diminish sharply.\n\nSo the honest message isn't 'money doesn't matter', but 'money matters enormously until you're safe, and much less afterwards.' Telling a person in poverty to 'stop worrying about money' isn't wisdom; it's advice that only makes sense once you already have enough.\n\nBy all means warn against greed — but let's not pretend money is irrelevant to those who don't yet have enough of it.\n\nBest,\nA reader",
+      "analysis": "Vocabulary: nuance-building phrasing ('there's truth in what you say', 'an overstatement', 'diminishing returns') that refines rather than rejects. Grammar: the corrected slogan ('money matters enormously until you're safe, and much less afterwards') reframes the claim crisply. Structure: grant the truth → challenge the absolute → the diminishing-returns nuance → who the bad advice harms. Improvements: replying to a slogan works best by keeping its kernel and attacking its absoluteness, and the poverty example exposes exactly whom the oversimplification fails."
+    },
+    {
+      "id": "rr-31",
+      "modality": "read",
+      "format": "summarise",
+      "title": "The return of urban wetlands",
+      "topic": "environment",
+      "level": "C1",
+      "register": "formal",
+      "time": "24 min",
+      "length": "120–140 words",
+      "textType": "Summary",
+      "passage": "For much of the twentieth century, urban wetlands were treated as useless ground. Marshes were drained, streams forced into concrete channels and low-lying areas filled so that roads or housing could be built. The changes appeared to make land productive, but they also removed places that had quietly stored floodwater.\n\nAs intense rainfall becomes more common, several cities are reversing that approach. Engineers are reopening buried streams, lowering sections of parks and restoring reeds and shallow ponds. During ordinary weather, these areas function as public green space; during storms, they temporarily hold water that might otherwise overwhelm drains.\n\nWetlands provide benefits beyond flood control. They cool nearby streets, filter some pollutants and create habitat for insects and birds. Residents often value the visible change from fenced infrastructure to a landscape that can be walked through and observed.\n\nRestoration is not effortless. Contaminated soil may need treatment, mosquitoes must be managed and land in dense cities is expensive. Even so, planners increasingly regard wetlands as working infrastructure rather than decoration, combining ecological processes with conventional pipes and barriers.",
+      "task": "Read the full passage, then summarise the change in urban planning, the main benefits of restored wetlands and one limitation. Use your own wording.",
+      "prompt": "Write a coherent 120–140 word summary covering the former approach, the new approach, its benefits and one practical challenge.",
+      "audience": "An academic reader",
+      "purpose": "Condense a multi-part environmental argument",
+      "points": [
+        "Cover all four elements",
+        "Do not add your opinion",
+        "Avoid copying complete sentences",
+        "Use one connected paragraph or two short paragraphs"
+      ],
+      "vocab": [
+        "drainage capacity",
+        "temporarily retain",
+        "ecological infrastructure",
+        "restore habitat",
+        "contaminated soil",
+        "conventional barriers"
+      ],
+      "model": "Urban planners once removed wetlands to create land for construction, but this also reduced cities' natural capacity to absorb heavy rain. Some authorities are now restoring streams, ponds and marshy parks so that public spaces can temporarily store stormwater. These projects can lower flood risk while cooling neighbourhoods, filtering pollutants and supporting wildlife. They may also be more attractive to residents than fenced drainage structures. However, restoration can be costly because urban land is valuable and damaged soil may require treatment; practical issues such as mosquito control also need attention. The passage therefore presents wetlands as a form of functional infrastructure that complements, rather than completely replaces, pipes and flood barriers.",
+      "analysis": "The summary follows the passage's logic without reproducing its sentences. It balances benefits with a concrete limitation."
+    },
+    {
+      "id": "rr-32",
+      "modality": "read",
+      "format": "compare-views",
+      "title": "Should schools publish student rankings?",
+      "topic": "education",
+      "level": "C1",
+      "register": "formal",
+      "time": "30 min",
+      "length": "180–210 words",
+      "textType": "Comparison and judgement",
+      "passage": "Some school systems publish rankings showing each student's position in a class. Supporters argue that visible results establish clear standards. High performers receive recognition, while other students can identify the gap between their current work and the level required. They also claim that competition prepares young people for selective universities and workplaces.\n\nOpponents say rankings convert learning into a public hierarchy. A student may improve substantially yet still appear near the bottom in a strong class, while another may remain near the top without progressing. Public positions can also attach an academic identity to children at an age when ability is still developing.\n\nTeachers note that the effect depends on classroom culture. Some students respond to comparison with greater effort; others avoid difficult subjects because a low result would be visible. Rankings may therefore encourage safe performance rather than curiosity, especially when a single number hides strengths in different areas.\n\nAlternatives include private progress reports, criterion-based grades and individual targets. These methods still provide accountability, but they compare a student's work with defined standards or previous performance rather than with classmates alone.",
+      "task": "Compare the arguments for and against public rankings. Then decide which assessment approach is more educationally useful and explain why.",
+      "prompt": "Write 180–210 words. Present both positions fairly before giving a clear judgement supported by the passage.",
+      "audience": "An academic examiner",
+      "purpose": "Compare assessment philosophies",
+      "points": [
+        "Explain the strongest point on each side",
+        "Discuss an effect on behaviour",
+        "Evaluate at least one alternative",
+        "State a clear judgement"
+      ],
+      "vocab": [
+        "visible benchmark",
+        "public hierarchy",
+        "criterion-based assessment",
+        "academic identity",
+        "risk avoidance",
+        "individual progress"
+      ],
+      "model": "Public rankings offer clarity. Students and families can see relative performance, and recognition may motivate some learners to work harder. The system can also resemble competitive selection later in life, so supporters regard it as preparation rather than cruelty.\n\nHowever, a class position is a poor measure of learning. It may hide substantial improvement, encourage students to avoid difficult subjects and turn a temporary result into a public identity. The same score can mean very different things in classes of different strength, which makes the ranking look more objective than it is.\n\nCriterion-based grades and private progress reports are more useful because they preserve clear standards without making classmates the standard. Students still learn whether their work meets expectations, but they can also see how they have developed and where specific weaknesses remain.\n\nFor these reasons, schools should report achievement rigorously but avoid publishing class positions. Accountability is educational when it directs attention towards better work; it becomes damaging when its main effect is to arrange children in a visible hierarchy.",
+      "analysis": "The response concedes the appeal of clarity, then judges the methods by whether they improve learning rather than merely intensify competition."
+    },
+    {
+      "id": "rr-33",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "Coral restoration beneath the surface",
+      "topic": "science",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "Coral reefs can recover naturally after storms, but repeated heatwaves leave less time between disturbances. When water remains unusually warm, corals expel the algae that provide much of their energy, a process known as bleaching. If stressful conditions continue, large areas may die.\n\nRestoration teams collect small fragments from corals that survived earlier heat events. The fragments are grown on frames below the surface, where divers clean them and monitor growth. These sites are often described as underwater nurseries because young corals are cared for before being moved.\n\nOnce a fragment is large enough, it is attached to a damaged reef using cement or specialised clips. Survival varies with species, location and water quality. A successful transplant can create shelter for fish, but a few planted colonies cannot replace an entire ecosystem.\n\nResearchers therefore see restoration as a supporting measure, not a substitute for reducing warming and pollution. Its greatest value may be preserving genetic diversity and learning which corals tolerate future conditions.",
+      "task": "Find the two-word term used for the places where coral fragments are grown before transplantation.",
+      "prompt": "Complete the sentence with TWO WORDS from the passage: The coral fragments are first raised in ______ ______.",
+      "audience": "A learner practising precise reading",
+      "purpose": "Locate an exact two-word phrase",
+      "points": [
+        "Use exactly two words",
+        "Copy the phrase from paragraph two",
+        "Do not add an article"
+      ],
+      "vocab": [
+        "bleaching",
+        "coral fragment",
+        "monitor growth",
+        "transplant",
+        "genetic diversity",
+        "water quality"
+      ],
+      "model": "underwater nurseries",
+      "analysis": "Paragraph two calls the cultivation sites underwater nurseries.",
+      "responseMode": "short-fill",
+      "gapSentence": "The coral fragments are first raised in ______ ______.",
+      "acceptedAnswers": [
+        "underwater nurseries"
+      ]
+    },
+    {
+      "id": "rr-34",
+      "modality": "read",
+      "format": "reply-author",
+      "title": "The case against constant productivity",
+      "topic": "work",
+      "level": "C1",
+      "register": "neutral",
+      "time": "30 min",
+      "length": "180–210 words",
+      "textType": "Reply to the author",
+      "passage": "A business columnist argues that every unused hour is an opportunity being wasted. According to her, successful people convert commutes into language lessons, exercise while answering messages and use weekends to build additional income. Rest, in this view, should be planned only when it improves later performance.\n\nThe argument appeals to people who feel that modern work is insecure. Developing skills and protecting finances can be sensible, and many people do gain confidence from purposeful projects outside their main job. The columnist also criticises passive habits that consume time without leaving either enjoyment or progress.\n\nYet treating all time as an investment changes the meaning of leisure. A walk with no fitness target, a conversation with no networking goal or an afternoon spent doing very little may have value that cannot be converted into output. Constant self-optimisation can also turn exhaustion into a personal failure rather than a signal that demands are excessive.\n\nPsychologists distinguish restorative rest from disengagement caused by boredom or depression. The first helps attention and emotional regulation, but its benefit does not make it merely another productivity technique. It may be part of a worthwhile life in its own right.",
+      "task": "Write a respectful reply to the columnist. Acknowledge one strength in her argument, challenge its central assumption and defend a broader idea of valuable time.",
+      "prompt": "Write 180–210 words as a direct reply. Do not simply summarise the passage; answer the author's position.",
+      "audience": "A business columnist",
+      "purpose": "Challenge a productivity ideology",
+      "points": [
+        "Address the author directly",
+        "Concede one reasonable point",
+        "Challenge the “unused time” assumption",
+        "Use a concrete example"
+      ],
+      "vocab": [
+        "self-optimisation",
+        "restorative rest",
+        "instrumental value",
+        "in its own right",
+        "economic insecurity",
+        "unsustainable demand"
+      ],
+      "model": "Your advice contains one useful warning: time can disappear into habits that provide neither real pleasure nor progress. Learning during a commute or developing an additional skill may be a sensible choice, particularly when employment feels insecure.\n\nThe problem is your assumption that an hour is valuable only when it produces a measurable return. A slow meal with family, an aimless walk or an evening reading fiction may not improve a résumé, yet these activities sustain relationships, curiosity and mental health. Turning them into techniques for working harder afterwards strips them of part of their meaning.\n\nConstant optimisation also places the entire burden on individuals. When someone is exhausted, the answer may not be a better weekend schedule; it may be unreasonable workloads, unstable employment or the expectation of permanent availability. Treating fatigue as failed self-management prevents those conditions from being questioned.\n\nPurposeful activity matters, but so does restorative rest and time valued in its own right. A successful life should include achievement without requiring every quiet moment to justify itself as an investment.",
+      "analysis": "The reply concedes a valid concern before rejecting the author's underlying definition of value. It responds directly rather than paraphrasing paragraph by paragraph."
+    },
+    {
+      "id": "rr-35",
+      "modality": "read",
+      "format": "analyse-consequences",
+      "title": "When a town loses its only bank branch",
+      "topic": "everyday-life",
+      "level": "C1",
+      "register": "formal",
+      "time": "30 min",
+      "length": "180–210 words",
+      "textType": "Consequence analysis",
+      "passage": "In the town of Calder, the last bank branch will close at the end of the year. The company says that most customers now use online services and that maintaining the building is no longer economical. Cash withdrawals will still be available from one supermarket machine.\n\nFor many residents, the change will be minor. Salaries arrive electronically, bills are paid automatically and video appointments can replace some meetings. The closure may also release a central building for another use.\n\nOther residents depend on services that are harder to reproduce. Small traders deposit cash, people dealing with bereavement or fraud need complex advice, and some older customers lack suitable devices or confidence. The nearest branch is thirty kilometres away and public transport runs only twice a day.\n\nThe decision may affect the town indirectly. If businesses must travel to deposit money, holding cash becomes riskier and more expensive. Reduced foot traffic could also harm nearby shops. A community organisation is exploring a shared banking hub, but it would require several providers to cooperate.",
+      "task": "Analyse the direct and indirect consequences of the closure for different groups. Finish by judging which response would reduce the greatest harm.",
+      "prompt": "Write 180–210 words. Separate immediate inconvenience from wider economic or social effects.",
+      "audience": "A policy reader",
+      "purpose": "Analyse uneven consequences of service withdrawal",
+      "points": [
+        "Identify groups affected differently",
+        "Include at least one indirect effect",
+        "Consider benefits as well as costs",
+        "Judge a practical response"
+      ],
+      "vocab": [
+        "digital exclusion",
+        "cash handling",
+        "shared banking hub",
+        "foot traffic",
+        "complex transaction",
+        "public transport constraint"
+      ],
+      "model": "The closure will be almost invisible to customers who already manage routine banking online. The company will reduce costs, and the empty building could be reused. However, convenience for the majority does not remove the more serious effects on groups who need physical services.\n\nOlder residents without reliable digital access may lose independence, while people handling fraud, bereavement or unfamiliar financial decisions will have fewer opportunities for face-to-face explanation. Small traders face a different problem: travelling thirty kilometres to deposit cash costs time and increases the risk of keeping money on their premises.\n\nThe effects may then spread beyond banking. Fewer visits to the centre can reduce spending in neighbouring shops, and poor transport makes the substitute branch inaccessible for part of the population. A cash machine covers withdrawals but not advice, deposits or identity checks.\n\nA shared banking hub would reduce the greatest harm because it could provide scheduled staff from several banks without requiring each company to maintain a full branch. Digital training and mobile services would help, but they should supplement a local human option rather than assume every transaction can move online.",
+      "analysis": "The response distinguishes routine users, vulnerable customers and businesses, then traces second-order effects on the town centre."
+    },
+    {
+      "id": "rr-36",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "Why weekend sleep cannot fix everything",
+      "topic": "health",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "Many adults sleep too little during the working week and try to compensate by remaining in bed much longer on Saturday or Sunday. Extra rest can reduce immediate tiredness, but the body does not calculate sleep as a simple weekly total.\n\nIrregular hours shift the internal clock. Waking at 7 a.m. on weekdays and 11 a.m. at weekends resembles travelling across time zones twice every week. Sunday night then becomes difficult because the body is not ready to sleep at the usual hour.\n\nResearchers sometimes call this pattern social jet lag. It has been associated with poorer mood, reduced attention and disrupted appetite, although work schedules and other lifestyle factors also contribute.\n\nA more effective strategy is a consistent schedule combined with a modest increase in sleep across the whole week. A short weekend extension may help, but large swings make Monday morning harder and do not fully reverse chronic sleep loss.",
+      "task": "Identify the two-word strategy recommended in the final paragraph.",
+      "prompt": "Complete the sentence with TWO WORDS from the passage: The passage recommends maintaining a ______ ______.",
+      "audience": "A learner practising sentence completion",
+      "purpose": "Extract a precise recommendation",
+      "points": [
+        "Use exactly two words",
+        "Take the phrase from the last paragraph",
+        "Do not include an adjective before it"
+      ],
+      "vocab": [
+        "internal clock",
+        "social jet lag",
+        "chronic sleep loss",
+        "consistent schedule",
+        "irregular hours",
+        "modest extension"
+      ],
+      "model": "consistent schedule",
+      "analysis": "The recommended strategy in the final paragraph is a consistent schedule.",
+      "responseMode": "short-fill",
+      "gapSentence": "The passage recommends maintaining a ______ ______.",
+      "acceptedAnswers": [
+        "consistent schedule"
+      ]
+    },
+    {
+      "id": "rr-37",
+      "modality": "read",
+      "format": "opinion",
+      "title": "Should museums return contested objects?",
+      "topic": "culture",
+      "level": "C1",
+      "register": "formal",
+      "time": "32 min",
+      "length": "190–220 words",
+      "textType": "Reasoned opinion",
+      "passage": "Many museums hold objects removed during colonial rule, military occupation or unequal archaeological agreements. Countries and communities seeking their return argue that the objects are part of living cultural heritage, not neutral items that can be owned permanently by the institution that acquired them.\n\nMuseums often reply that their collections preserve objects safely and allow visitors to compare cultures in one place. Legal ownership may also be complicated: records are incomplete, modern borders differ from those at the time of removal, and more than one group may claim a connection.\n\nRecent agreements show that return need not end research or public access. Some institutions have transferred ownership while arranging long-term loans, joint exhibitions, digital archives or shared conservation training. Critics of these compromises say they can still delay justice; supporters see them as practical ways to maintain cooperation.\n\nThe central dispute concerns authority. Who has the right to decide where an object belongs, how it is described and what kind of access counts as public benefit? A glass case may protect material, but it can also separate an object from ceremonies, language and place.",
+      "task": "State your view on how museums should handle well-supported claims for return. Address preservation, ownership and continuing public access.",
+      "prompt": "Write 190–220 words. Use the passage, but develop a clear principle of your own.",
+      "audience": "An academic examiner",
+      "purpose": "Develop a principled view on restitution",
+      "points": [
+        "State a governing principle",
+        "Acknowledge legal complexity",
+        "Discuss preservation and access",
+        "Propose a practical process"
+      ],
+      "vocab": [
+        "provenance research",
+        "cultural authority",
+        "restitution claim",
+        "joint stewardship",
+        "legal title",
+        "living heritage"
+      ],
+      "model": "Museums should return objects when evidence shows that they were taken through force, coercion or an arrangement that the source community could not meaningfully refuse. Legal possession alone is an inadequate principle because many colonial laws were designed by the powers that benefited from removal.\n\nPreservation remains important, but it does not justify permanent control. Institutions seeking to retain an object should not assume that conservation expertise exists only in wealthy countries. Funding, training and joint research can accompany restitution, particularly where the object requires specialised care.\n\nClaims will sometimes conflict or rely on incomplete records. For that reason, decisions should follow transparent provenance research, consultation with relevant communities and independent review. The process should examine not only where an item was found, but how it left and whether it still has a ceremonial or social role.\n\nReturn also need not eliminate public access. Digital records, travelling exhibitions and renewable loans can allow wider audiences to study an object after ownership has been restored. These arrangements should be negotiated by the new owner rather than imposed as a condition of justice.\n\nThe key change is authority: museums can remain partners in scholarship without treating historic possession as an unlimited right.",
+      "analysis": "The response establishes a principle, then deals with difficult cases and access. It frames conservation as a shared capacity rather than a reason for permanent retention."
+    },
+    {
+      "id": "rr-38",
+      "modality": "read",
+      "format": "propose-solutions",
+      "title": "Noise pollution around hospitals",
+      "topic": "health",
+      "level": "C1",
+      "register": "formal",
+      "time": "30 min",
+      "length": "180–210 words",
+      "textType": "Solution proposal",
+      "passage": "A large city hospital sits beside an elevated road and a busy construction zone. Measurements inside several wards exceed recommended night-time noise levels, even with windows closed. Patients report interrupted sleep, while staff say alarms and conversations are harder to distinguish from background sound.\n\nThe sources vary by hour. Traffic produces a constant low rumble; reversing vehicles create sudden warning tones; construction begins at 6 a.m.; and deliveries cluster near the emergency entrance. Inside the building, hard corridors and poorly adjusted equipment add echoes and unnecessary alarms.\n\nNo single organisation controls all of these factors. The hospital manages internal equipment and delivery contracts, the city regulates traffic, and private companies hold construction permits. Patients cannot solve the exposure themselves, and simply providing earplugs may make important announcements harder to hear.\n\nNoise reduction therefore requires coordination. Temporary measures can protect the most vulnerable wards, but long-term improvement depends on changing schedules, surfaces, routes and standards rather than asking patients to tolerate the problem.",
+      "task": "Propose a coordinated set of solutions. Include one immediate hospital measure, one change involving external organisations and one way to evaluate whether conditions improve.",
+      "prompt": "Write 180–210 words as a practical proposal. Match each recommendation to a source of noise.",
+      "audience": "Hospital and city managers",
+      "purpose": "Design a coordinated noise-reduction response",
+      "points": [
+        "Address internal and external sources",
+        "Include an immediate measure",
+        "Assign responsibility",
+        "Describe monitoring"
+      ],
+      "vocab": [
+        "acoustic panels",
+        "alarm audit",
+        "delivery window",
+        "permit condition",
+        "night-time threshold",
+        "continuous monitoring"
+      ],
+      "model": "The hospital should begin with an internal alarm audit. Equipment that produces duplicate or unnecessarily loud alerts can be adjusted, while acoustic panels and soft-closing doors would reduce echoes in the wards most affected. Patients who are medically suitable could also be moved temporarily away from the road-facing side during the loudest construction phase.\n\nExternal noise requires agreements rather than requests to patients. The city should prohibit non-emergency heavy vehicles on the elevated road at night and enforce a later construction start beside the hospital. Future permit conditions could require quieter reversing systems and temporary sound barriers. The hospital can also reschedule routine deliveries so that they do not cluster near sleeping wards before dawn.\n\nResponsibility should be formalised through a small working group involving hospital managers, traffic officials, the contractor and a patient representative. Each action needs a named owner and a completion date.\n\nFinally, continuous monitoring should record ward-level noise before and after the changes. Results should be compared with night-time thresholds, sleep complaints and staff reports about alarm clarity. This would show whether the measures reduce exposure rather than merely move it to another hour or entrance.",
+      "analysis": "The proposal maps solutions to specific causes and includes governance plus measurement, avoiding the common mistake of offering earplugs as the main answer."
+    },
+    {
+      "id": "rr-39",
+      "modality": "read",
+      "format": "sentence-completion",
+      "title": "What happened when museum entry became free",
+      "topic": "culture",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "10 min",
+      "length": "2 words",
+      "textType": "Sentence completion",
+      "passage": "A regional museum removed its entrance fee for one year to test whether cost was preventing local residents from visiting. Total attendance rose by 62 per cent, with the largest increase among families and people under twenty-five.\n\nThe change also altered visiting patterns. More people entered for short, unplanned visits instead of treating the museum as a full-day event. The café and shop earned more revenue, although the additional income did not fully replace ticket sales.\n\nStaff initially worried that crowded galleries would reduce the quality of the experience. Weekend congestion did increase, but timed activities and longer Friday opening hours spread some demand. Surveys showed that satisfaction remained broadly stable.\n\nThe strongest predictor of a first visit was not advertising but a recommendation from someone who had already attended. The museum concluded that free entry lowered the initial barrier, while positive word of mouth encouraged repeat and new visitors.",
+      "task": "Identify the two-word policy that lowered the initial barrier to attendance.",
+      "prompt": "Complete the sentence with TWO WORDS from the passage: The museum concluded that ______ ______ lowered the initial barrier.",
+      "audience": "A learner practising precise retrieval",
+      "purpose": "Complete a sentence from a longer passage",
+      "points": [
+        "Use exactly two words",
+        "Take the phrase from the final paragraph",
+        "Do not write the percentage"
+      ],
+      "vocab": [
+        "entrance fee",
+        "unplanned visit",
+        "ticket revenue",
+        "timed activity",
+        "word of mouth",
+        "initial barrier"
+      ],
+      "model": "free entry",
+      "analysis": "The final paragraph states directly that free entry lowered the initial barrier.",
+      "responseMode": "short-fill",
+      "gapSentence": "The museum concluded that ______ ______ lowered the initial barrier.",
+      "acceptedAnswers": [
+        "free entry"
+      ]
+    },
+    {
+      "id": "rr-40",
+      "modality": "read",
+      "format": "open-questions",
+      "title": "Why some apologies fail",
+      "topic": "relationships",
+      "level": "C1",
+      "register": "neutral",
+      "time": "30 min",
+      "length": "180–210 words",
+      "textType": "Answers to open questions",
+      "passage": "An apology can contain the word “sorry” and still leave the injured person feeling unheard. Statements such as “I am sorry you were upset” place the problem in the other person's reaction, while “mistakes were made” removes the person who acted from the sentence entirely.\n\nEffective apologies usually name the action and its impact. This requires the speaker to tolerate discomfort long enough to describe what happened without immediately defending intentions. An explanation may later be relevant, but when it arrives too early it can sound like an attempt to reduce responsibility.\n\nRepair also matters. If a colleague repeatedly misses deadlines, an apology without a new system offers little reason to trust the next promise. A realistic commitment should address the cause and be visible enough for the other person to judge whether behaviour changes.\n\nForgiveness cannot be demanded as the reward for apologising. The injured person may need time, boundaries or no further relationship at all. The purpose of an apology is to accept responsibility and offer repair, not to control the response.",
+      "task": "Answer both questions in connected prose: (1) Why do explanations sometimes weaken an apology? (2) What makes a promise of repair credible?",
+      "prompt": "Write 180–210 words total. Answer both questions explicitly and support each answer with an example of your own.",
+      "audience": "A reader interested in communication",
+      "purpose": "Explain the mechanics of effective apologies",
+      "points": [
+        "Answer both numbered questions",
+        "Explain timing, not only wording",
+        "Define a credible repair",
+        "Include one relevant example"
+      ],
+      "vocab": [
+        "accept responsibility",
+        "defensive explanation",
+        "name the impact",
+        "credible commitment",
+        "behavioural change",
+        "demand forgiveness"
+      ],
+      "model": "Explanations weaken an apology when they arrive before responsibility has been accepted. The listener may hear the reason as a request to excuse the behaviour: “I was stressed” can imply that the harm should matter less. An explanation becomes more useful after the speaker has named the action and its impact without qualification. For example, a manager should first admit that public criticism embarrassed an employee before discussing the pressure surrounding the meeting.\n\nA promise of repair is credible when it is specific, connected to the cause and observable. Saying “It will never happen again” offers no mechanism. If someone repeatedly arrives late, a stronger commitment might be to leave twenty minutes earlier, share an updated arrival time and stop scheduling back-to-back appointments.\n\nCredibility also depends on proportion. The action should address the actual damage rather than perform regret dramatically. Some harms require replacing money, correcting a public statement or respecting a new boundary.\n\nEven a good apology does not guarantee forgiveness. Its value lies in accepting responsibility and making future conduct testable, while leaving the other person free to decide what relationship, if any, can continue.",
+      "analysis": "The response labels each issue clearly, explains the mechanism and uses concrete examples. It does not confuse apology with entitlement to forgiveness."
+    },
+    {
+      "id": "vw-01",
+      "modality": "visual",
+      "format": "describe-trends",
+      "title": "Coffee vs tea consumption over time",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Trend description (Task 1 style)",
+      "visualType": "line chart (described as data)",
+      "visualData": "LINE CHART — Average cups per person per day in Country X:\nYear 2000: Coffee 1.2 · Tea 2.8\nYear 2005: Coffee 1.6 · Tea 2.5\nYear 2010: Coffee 2.1 · Tea 2.0\nYear 2015: Coffee 2.6 · Tea 1.6\nYear 2020: Coffee 3.0 · Tea 1.3",
+      "prompt": "The chart shows average daily consumption of coffee and tea per person in Country X between 2000 and 2020. Describe the main trends. Report the overall movement, the point where the two lines cross, and the final gap. Do not give your opinion.",
+      "audience": "An academic examiner",
+      "purpose": "Report trends and key features objectively",
+      "points": [
+        "The overall direction of each drink",
+        "The crossover point around 2010",
+        "The size of the change and the final gap"
+      ],
+      "vocab": [
+        "a steady rise",
+        "a corresponding decline",
+        "overtake",
+        "the gap widened",
+        "by 2020",
+        "in contrast"
+      ],
+      "model": "The chart illustrates how average daily consumption of coffee and tea per person in Country X changed between 2000 and 2020.\n\nOverall, the two beverages moved in opposite directions. Coffee consumption showed a steady rise across the period, climbing from 1.2 cups a day in 2000 to 3.0 cups by 2020. Tea, in contrast, fell just as consistently, dropping from 2.8 cups to only 1.3 over the same twenty years.\n\nThe most striking feature is the crossover. In 2000, tea was far more popular, with more than twice the consumption of coffee. However, the two figures converged during the decade and met at around 2.0 cups each near 2010. After this point, coffee overtook tea and the gap widened once more, but now in coffee's favour.\n\nBy 2020, the situation had effectively reversed: coffee, once the minor drink, had become the clear leader, while tea had fallen to less than half its earlier level.",
+      "analysis": "Vocabulary: trend lexis ('a steady rise', 'a corresponding decline', 'overtake', 'converge') that reports movement precisely. Grammar: past tenses with movement verbs; comparative structures ('more than twice', 'less than half') quantify the change. Structure: overview → each trend with figures → the crossover feature → final state. Improvements: strong Task-1 answers open with an overview, then group data by trend rather than year-by-year, and select the standout feature (the crossover) instead of listing every number."
+    },
+    {
+      "id": "vw-02",
+      "modality": "visual",
+      "format": "compare-data",
+      "title": "Household spending across three countries",
+      "topic": "everyday-life",
+      "level": "C1",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data comparison (Task 1 style)",
+      "visualType": "table (described as data)",
+      "visualData": "TABLE — Percentage of household budget spent on each category:\nCategory | Country A | Country B | Country C\nHousing  |   38%     |   25%     |   30%\nFood     |   18%     |   35%     |   22%\nTransport|   14%     |   10%     |   18%\nLeisure  |   12%     |    8%     |   16%\nOther    |   18%     |   22%     |   14%",
+      "prompt": "The table shows the percentage of the household budget that families in three countries spend on different categories. Compare the data. Highlight the biggest differences between the countries; do not explain the reasons.",
+      "audience": "An academic examiner",
+      "purpose": "Compare figures and identify key differences",
+      "points": [
+        "The category where each country differs most",
+        "At least one clear comparison across all three",
+        "The most striking contrast overall"
+      ],
+      "vocab": [
+        "account for",
+        "the largest share",
+        "roughly half",
+        "whereas",
+        "comparatively",
+        "the most notable difference"
+      ],
+      "model": "The table compares how families in three countries divide their household budgets across five categories.\n\nThe most notable difference concerns essentials. In Country A, housing accounts for the largest share at 38%, well above the 25% seen in Country B and 30% in Country C. Country B, by contrast, is dominated by food, which absorbs 35% of the budget — roughly double the 18% spent in Country A and considerably more than Country C's 22%.\n\nSpending on discretionary items reveals a further contrast. Country C devotes the most to leisure at 16%, whereas Country B spends only 8%, the lowest of the three. Transport follows a similar pattern, with Country C spending the most (18%) and Country B the least (10%).\n\nBroadly, then, Country A's budget is shaped by housing costs and Country B's by food, while Country C spends comparatively more on transport and leisure, suggesting a more even distribution across the categories.",
+      "analysis": "Vocabulary: comparison lexis ('account for', 'the largest share', 'whereas', 'comparatively') that sets figures against each other. Grammar: comparatives and superlatives throughout ('roughly double', 'the lowest of the three'). Structure: overview → essentials compared → discretionary compared → a summarising contrast. Improvements: comparison tasks reward grouping by theme (essentials vs discretionary) and picking the sharpest contrasts, not simply reading each cell of the table aloud."
+    },
+    {
+      "id": "vw-03",
+      "modality": "visual",
+      "format": "interpret-data",
+      "title": "Reasons people give for changing jobs",
+      "topic": "work",
+      "level": "C1",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data interpretation",
+      "visualType": "bar chart (described as data)",
+      "visualData": "BAR CHART — Survey: main reason employees gave for leaving their last job (%):\nBetter pay elsewhere — 31%\nPoor management — 24%\nLack of career growth — 19%\nWork–life balance — 14%\nRelocation — 7%\nOther — 5%",
+      "prompt": "The chart shows the main reasons employees gave for leaving their previous job. Interpret the data. Describe what the figures reveal and what they might imply for employers, but base your interpretation only on the data shown.",
+      "audience": "An HR or business reader",
+      "purpose": "Read meaning from figures, not just report them",
+      "points": [
+        "The leading reasons and their share",
+        "The combined weight of related reasons",
+        "A cautious implication for employers"
+      ],
+      "vocab": [
+        "the leading reason",
+        "a significant proportion",
+        "taken together",
+        "point to",
+        "beyond pay",
+        "retention"
+      ],
+      "model": "The chart presents the main reasons employees gave for leaving their previous job, and the figures are revealing.\n\nThe leading reason is pay, cited by 31% — the single largest group, confirming that money remains a powerful motive for moving on. However, it is striking that a clear majority left for reasons other than pay. Poor management (24%) and a lack of career growth (19%) are the next largest factors, and taken together they account for 43% of departures — more than pay alone.\n\nThis pattern points to an important interpretation. While employers often assume that higher salaries are the key to retention, the data suggest that how people are managed and whether they can progress matter just as much, if not more. Work–life balance (14%) adds further weight to this non-financial picture.\n\nCautiously, then, the figures imply that improving pay would address only part of the problem. To retain staff, employers may need to look beyond pay to management quality and genuine opportunities for advancement.",
+      "analysis": "Vocabulary: interpretation phrasing ('the leading reason', 'taken together', 'point to', 'retention') that moves from data to meaning. Grammar: the additive move ('taken together they account for 43%') combines categories to build an insight. Structure: headline figure → the combined non-pay reasons → cautious implication. Improvements: interpretation goes beyond describing bars; combining related categories and drawing a hedged inference ('the data suggest… may need') is what distinguishes interpreting from merely listing."
+    },
+    {
+      "id": "vw-04",
+      "modality": "visual",
+      "format": "explain-causes",
+      "title": "A spike in cycling one particular year",
+      "topic": "environment",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Explaining causes from data",
+      "visualType": "line chart with an anomaly (described)",
+      "visualData": "LINE CHART — Daily cyclists on City Bridge (thousands):\n2017: 12 · 2018: 13 · 2019: 14 · 2020: 22 · 2021: 19 · 2022: 20 · 2023: 21\nNote: a sharp spike appears in 2020, after which numbers settle above the earlier level but below the peak.",
+      "prompt": "The chart shows daily cycling numbers on City Bridge from 2017 to 2023, with a clear spike in 2020. Describe the pattern and suggest possible reasons for the sudden rise in 2020 and why numbers stayed higher afterwards. Make clear which parts are the data and which are your explanation.",
+      "audience": "A general reader",
+      "purpose": "Describe a pattern and reason about its causes",
+      "points": [
+        "The overall pattern and the 2020 spike",
+        "Plausible causes of the spike",
+        "Why the new level stayed elevated"
+      ],
+      "vocab": [
+        "a gradual increase",
+        "a dramatic jump",
+        "level off",
+        "a plausible explanation",
+        "may be attributed to",
+        "a lasting shift"
+      ],
+      "model": "The chart shows daily cycling numbers on City Bridge between 2017 and 2023. From 2017 to 2019 there was a gradual increase, from 12,000 to 14,000 riders. Then, in 2020, the figure made a dramatic jump to 22,000 before falling back and levelling off around 20,000 in the years that followed — higher than before but below the 2020 peak.\n\nWhile the chart itself does not give reasons, several explanations seem plausible. The sudden spike in 2020 may be attributed to changes in commuting: if public transport became less attractive or roads were quieter that year, many people are likely to have switched to cycling. New cycle lanes or a public campaign could also have encouraged the shift.\n\nThe fact that numbers settled above the old level, rather than returning to it, suggests a lasting shift in habits. Some of those who took up cycling in 2020 probably discovered they preferred it and kept going, so the temporary surge left a permanent increase behind it.",
+      "analysis": "Vocabulary: pattern-and-cause phrasing ('a gradual increase', 'a dramatic jump', 'may be attributed to', 'a lasting shift') that separates fact from inference. Grammar: hedged causal language ('may be attributed to', 'are likely to have switched') keeps explanation appropriately tentative. Structure: describe the data → explain the spike → explain the new baseline. Improvements: the task requires labelling the boundary between data and speculation ('While the chart itself does not give reasons…'), which good answers signal explicitly rather than blurring."
+    },
+    {
+      "id": "vw-05",
+      "modality": "visual",
+      "format": "write-conclusion",
+      "title": "Infographic on daily screen time by age",
+      "topic": "technology",
+      "level": "C1",
+      "register": "neutral",
+      "time": "18 min",
+      "length": "120–150 words",
+      "textType": "Concluding paragraph from an infographic",
+      "visualType": "infographic (described)",
+      "visualData": "INFOGRAPHIC — 'How long we look at screens' (average hours per day):\nAges 13–17: 7.5 h · Ages 18–29: 6.8 h · Ages 30–49: 5.4 h · Ages 50–64: 4.1 h · Ages 65+: 2.9 h\nSide note: figures include phones, computers and TVs combined.",
+      "prompt": "You have been given an infographic showing average daily screen time by age group. The description of the figures has already been written. Write only the CONCLUDING paragraph that would end a short report on this data, summing up the overall message without introducing new numbers.",
+      "audience": "A general reader of a report",
+      "purpose": "Write a strong summarising conclusion",
+      "points": [
+        "The clear overall trend (younger = more)",
+        "A restated takeaway without new data",
+        "A forward-looking or reflective closing line"
+      ],
+      "vocab": [
+        "in summary",
+        "a clear inverse relationship",
+        "the younger the group",
+        "a marked generational divide",
+        "raises questions about",
+        "going forward"
+      ],
+      "model": "In summary, the data reveal a clear inverse relationship between age and daily screen time: broadly, the younger the group, the more hours its members spend looking at screens. The pattern falls steadily from the teenage years, where screen use is heaviest, through to the oldest group, where it is lowest by a wide margin. This marked generational divide is unlikely to be accidental; it reflects the very different worlds in which each generation grew up, from those raised entirely online to those for whom screens arrived late in life. While the figures themselves pass no judgement, they raise questions about how such habits form and what their long-term effects might be, particularly for the youngest. Going forward, understanding this divide may matter as much as measuring it, since today's teenagers will carry their screen habits into the decades ahead.",
+      "analysis": "Vocabulary: conclusion signals ('in summary', 'a clear inverse relationship', 'a marked generational divide') that gather the report's thread. Grammar: the pattern is generalised ('the younger the group, the more…') rather than re-listing numbers. Structure: restate the trend → interpret its meaning → forward-looking close. Improvements: a good conclusion adds no new data, generalises the finding, and looks slightly beyond it ('today's teenagers will carry their habits…') rather than merely repeating the introduction."
+    },
+    {
+      "id": "vw-06",
+      "modality": "visual",
+      "format": "story-from-image",
+      "title": "A story from a described photograph",
+      "topic": "culture",
+      "level": "B2+",
+      "register": "informal",
+      "time": "25 min",
+      "length": "180–220 words",
+      "textType": "Short narrative",
+      "visualType": "photograph (described scene)",
+      "visualData": "DESCRIBED IMAGE: An old wooden bench sits at the end of a rain-soaked pier at dusk. A single umbrella, bright red, has been left open and leaning against the bench. There is no person in the picture. The sea beyond is grey and calm, and a string of harbour lights is just beginning to glow in the distance.",
+      "prompt": "Look at the described image and write a short imaginative story inspired by it. You should: create a character connected to the red umbrella, build a small event or turning point, and give the story a satisfying ending. Do not simply describe the scene.",
+      "audience": "A reader of short fiction",
+      "purpose": "Turn a still image into a narrative with movement",
+      "points": [
+        "A character linked to the umbrella",
+        "A small event or turning point",
+        "A resolved, resonant ending"
+      ],
+      "vocab": [
+        "as dusk settled",
+        "on a whim",
+        "it had been years",
+        "a lump in her throat",
+        "she hesitated",
+        "let go"
+      ],
+      "model": "The red umbrella had been her mother's. For three years it had lived in the hall cupboard, too full of memory to use and too loved to throw away, until this evening, when on a whim, Nadia carried it down to the pier.\n\nIt had been years since she'd come here. As dusk settled and a thin rain began, she opened the umbrella and sat on the old bench where the two of them once shared chips and impossible plans. The sea was grey and calm, indifferent as ever, and the harbour lights blinked awake one by one across the water.\n\nShe had come to say something she'd never managed to say aloud. The words caught, a lump in her throat, but she said them anyway, quietly, to the sea and the empty air: thank you, and I'm sorry, and I'm all right now.\n\nWhen she finally stood to leave, she hesitated over the umbrella. Then, surprising herself, she left it open against the bench — a splash of red in the greying dark — and walked home lighter, ready, at last, to let go.",
+      "analysis": "Vocabulary: narrative phrasing ('on a whim', 'a lump in her throat', 'let go') that carries emotion economically. Grammar: past tenses with a past-perfect backstory ('had been her mother's', 'once shared'); short final clauses quicken the ending. Structure: object as anchor → return to a meaningful place → the unspoken said → symbolic release. Improvements: a story, not a description, must move — here the umbrella becomes a symbol resolved by an action ('she left it open'), giving the still image an arc rather than a caption."
+    },
+    {
+      "id": "vw-07",
+      "modality": "visual",
+      "format": "describe-place",
+      "title": "Describing a described marketplace",
+      "topic": "travel",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "170–200 words",
+      "textType": "Descriptive writing",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED SCENE: A crowded outdoor market at mid-morning. Stalls piled with oranges, chillies and unfamiliar herbs line a narrow, sun-striped street. Steam rises from a food cart frying something golden. A vendor laughs with a customer; a boy weaves through the crowd carrying a tower of empty boxes. Colours are loud, the air is warm, and somewhere a radio plays.",
+      "prompt": "Write a vivid description of the market scene described, as if for a travel blog. Bring it to life using several senses — sight, sound, smell — and choose details that give the place character. Aim to make a reader feel present, not just informed.",
+      "audience": "Readers of a travel blog",
+      "purpose": "Evoke a place through sensory detail",
+      "points": [
+        "At least three senses engaged",
+        "Specific, characterful details (not generic)",
+        "A sense of atmosphere or mood"
+      ],
+      "vocab": [
+        "a riot of colour",
+        "the air is thick with",
+        "sizzle",
+        "haggle",
+        "weave through",
+        "come alive"
+      ],
+      "model": "The market comes alive well before you reach it. First the sound finds you — a tangle of laughter, bartering and a tinny radio somewhere out of sight — and then the smell: warm dust, ripe oranges, and the sharp bite of chillies piled in glossy red mountains.\n\nThe street itself is a riot of colour, narrow and striped with sunlight where it slips between the awnings. Stalls lean towards one another, heavy with fruit and unfamiliar herbs whose names I don't know but whose scent I won't forget. The air is thick with the smell of something golden and unidentifiable frying on a cart, the oil sizzling, steam curling up into the light.\n\nEverywhere there is motion. A vendor throws back his head and laughs with a customer mid-haggle; a boy weaves through the crush balancing an impossible tower of empty boxes, unbothered, expert. Nobody hurries and nobody is still.\n\nStand here for a moment and the place presses in on all sides — loud, warm, alive. This is not somewhere you observe. It is somewhere you are swallowed by, happily.",
+      "analysis": "Vocabulary: sensory-travel phrasing ('a riot of colour', 'the air is thick with', 'haggle', 'sizzle') that paints the scene. Grammar: present tense for immediacy; varied sentence lengths, including fragments for rhythm ('unbothered, expert'). Structure: sound → smell → colour → motion → atmosphere. Improvements: strong description engages multiple senses and chooses specific details ('an impossible tower of empty boxes') over generic ones ('lots of people'), and closes on mood rather than a list."
+    },
+    {
+      "id": "vw-08",
+      "modality": "visual",
+      "format": "describe-trends",
+      "title": "Two products' sales over a year",
+      "topic": "work",
+      "level": "B2+",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Trend description (Task 1 style)",
+      "visualType": "line chart (described as data)",
+      "visualData": "LINE CHART — Monthly sales (thousands of units) of Product A and Product B:\nJan A5 B9 · Mar A7 B8 · May A10 B7 · Jul A14 B7 · Sep A13 B6 · Nov A16 B5\nProduct A trends upward with a slight dip in autumn; Product B declines gently and steadily.",
+      "prompt": "The chart shows monthly sales of two products over one year. Describe the main trends, including the general direction of each product, any exception to the pattern, and how the two compare by the end. Do not speculate about causes.",
+      "audience": "An academic examiner",
+      "purpose": "Report movement and comparison objectively",
+      "points": [
+        "The direction of each product",
+        "The autumn dip in Product A",
+        "The end-of-year comparison"
+      ],
+      "vocab": [
+        "an upward trajectory",
+        "with the exception of",
+        "a slight dip",
+        "a gentle decline",
+        "by the year's end",
+        "outsell"
+      ],
+      "model": "The chart illustrates the monthly sales of two products, A and B, over the course of a single year.\n\nProduct A followed a broadly upward trajectory. Starting the year at just 5,000 units, it climbed steadily to reach 16,000 by November. This rise was not perfectly smooth, however: with the exception of a slight dip in autumn, when sales eased from 14,000 to 13,000, the overall direction was clearly one of growth.\n\nProduct B moved in the opposite direction, showing a gentle but persistent decline. From a starting point of 9,000 units in January — higher than Product A at that stage — it fell gradually throughout the year to only 5,000 by November.\n\nThe two products effectively swapped positions over the twelve months. In January, Product B outsold Product A comfortably, but the gap closed by late spring, and by the year's end Product A had overtaken and roughly tripled its early figures while Product B had shrunk to little more than half of its own.",
+      "analysis": "Vocabulary: trend lexis ('an upward trajectory', 'a gentle decline', 'outsell') for objective reporting. Grammar: the concessive 'with the exception of' handles the anomaly without breaking the main trend statement. Structure: overview → Product A with its exception → Product B → the reversal comparison. Improvements: noting the exception inside the trend ('not perfectly smooth… however') is more accurate than ignoring it, and closing with the crossover comparison satisfies the 'how they compare' requirement."
+    },
+    {
+      "id": "vw-09",
+      "modality": "visual",
+      "format": "interpret-data",
+      "title": "Where students say they study best",
+      "topic": "education",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data interpretation",
+      "visualType": "pie-style data (described)",
+      "visualData": "SURVEY DATA — 'Where do you concentrate best?' (students, %):\nA quiet library — 34%\nMy bedroom — 28%\nA café with background noise — 21%\nOutdoors — 10%\nAnywhere / no preference — 7%",
+      "prompt": "The data show where students say they concentrate best. Interpret the findings. Describe the spread of preferences and what it might suggest about how people study, based only on the figures given.",
+      "audience": "A reader interested in study habits",
+      "purpose": "Draw a reasonable interpretation from a distribution",
+      "points": [
+        "The leading preferences",
+        "The surprising size of the 'café' group",
+        "A cautious interpretation about variety"
+      ],
+      "vocab": [
+        "a plurality",
+        "contrary to what one might expect",
+        "a sizeable minority",
+        "one size does not fit all",
+        "a range of",
+        "suggests"
+      ],
+      "model": "The survey data show where students believe they concentrate best, and the spread of answers is as interesting as the leading figure.\n\nA quiet library is the most popular choice, but only a plurality rather than a majority, chosen by 34%. Closely behind, 28% concentrate best in their own bedroom, so together these two quieter, familiar settings account for well over half of all students.\n\nWhat stands out, contrary to what one might expect, is that a sizeable minority — 21% — say they focus best in a café with background noise, rather than in silence. This is a notable finding: for one in five students, some ambient sound apparently helps rather than hinders.\n\nTaken as a whole, the data suggest that there is no single ideal study environment; one size does not fit all. While quiet settings dominate, a substantial group thrives elsewhere, which implies that advice to 'study in silence' may suit many students but would be wrong for a significant number of others.",
+      "analysis": "Vocabulary: interpretation phrasing ('a plurality', 'a sizeable minority', 'one size does not fit all') that reads meaning from proportions. Grammar: the contrast 'contrary to what one might expect' flags the counter-intuitive café figure. Structure: leading choices → the surprising finding → an overall inference. Improvements: interpreting a distribution means noticing the shape (no majority, a surprising minority) and drawing a hedged lesson, not just naming the biggest slice."
+    },
+    {
+      "id": "vw-10",
+      "modality": "visual",
+      "format": "story-from-image",
+      "title": "A story from a described street scene",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "informal",
+      "time": "25 min",
+      "length": "180–220 words",
+      "textType": "Short narrative",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED IMAGE: A busy train platform, early morning. Among the grey commuters stands one man in a bright yellow raincoat, holding a small cardboard sign that simply reads 'WELCOME HOME'. He is smiling nervously and checking the arrivals board. A train is just pulling in.",
+      "prompt": "Write a short story inspired by the described scene. You should: invent who the man is waiting for and why, build a little tension or emotion as the train arrives, and end on the moment of meeting (or a twist). Show the feeling; don't just report the scene.",
+      "audience": "A reader of short fiction",
+      "purpose": "Build a small emotional narrative from an image",
+      "points": [
+        "Who he is waiting for and the backstory",
+        "Rising tension as the train arrives",
+        "A meeting or twist ending"
+      ],
+      "vocab": [
+        "his heart hammered",
+        "scanning the crowd",
+        "against all odds",
+        "what if",
+        "the doors hissed open",
+        "and then"
+      ],
+      "model": "Tomás had made the sign at four in the morning, unable to sleep, colouring in the letters like a child. WELCOME HOME. Two words for a brother he hadn't seen in eleven years.\n\nThey had fallen out over something so small he could barely remember it now — pride, mostly, the stubborn kind that runs in their family. Eleven years of silence, and then, last month, a single message: I'm coming back. Platform 4. Will you be there?\n\nSo here he stood in his ridiculous yellow raincoat, chosen so he'd be impossible to miss, his heart hammering as the train slid in. The doors hissed open and grey commuters spilled out, and Tomás held the sign higher, scanning the crowd, suddenly terrified. What if his brother had changed his mind? What if he walked straight past?\n\nAnd then, against all odds, a face he knew — older, greyer, uncertain — stopped dead at the sight of a middle-aged man in a raincoat holding a hand-made sign.\n\nFor a moment neither moved. Then his brother laughed, a broken, wonderful sound, and crossed the platform.\n\nEleven years. Two words. One yellow coat.",
+      "analysis": "Vocabulary: emotive narrative phrasing ('his heart hammered', 'against all odds', 'the doors hissed open') that raises the stakes. Grammar: past perfect for backstory ('hadn't seen', 'had fallen out'); rhetorical 'What if…' questions build tension. Structure: the sign and its meaning → the estrangement backstory → the arrival and fear → the reunion. Improvements: turning a single visual detail (the yellow coat) into a recurring motif that closes the story ('One yellow coat') gives the narrative unity a flat retelling would lack."
+    },
+    {
+      "id": "vw-11",
+      "modality": "visual",
+      "format": "describe-trends",
+      "title": "Renewable vs fossil electricity",
+      "topic": "environment",
+      "level": "C1",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Trend description (Task 1 style)",
+      "visualType": "line chart (described as data)",
+      "visualData": "LINE CHART — Share of electricity generation in Region Y (%):\n2010: Fossil 78 · Renewable 12 (rest: other)\n2014: Fossil 70 · Renewable 20\n2018: Fossil 58 · Renewable 32\n2022: Fossil 46 · Renewable 44",
+      "prompt": "The chart shows the share of electricity generated from fossil fuels and renewables in Region Y from 2010 to 2022. Describe the main trends, the rate of change, and how close the two sources were by the end. Do not give reasons.",
+      "audience": "An academic examiner",
+      "purpose": "Report a converging trend with figures",
+      "points": [
+        "The opposite directions of the two sources",
+        "The pace/steadiness of change",
+        "How close they became by 2022"
+      ],
+      "vocab": [
+        "a consistent fall",
+        "a corresponding surge",
+        "narrow the gap",
+        "at a similar rate",
+        "all but",
+        "converge"
+      ],
+      "model": "The chart shows how the share of electricity generated from fossil fuels and renewables changed in Region Y between 2010 and 2022.\n\nThe two sources moved steadily in opposite directions throughout. Fossil fuels, which dominated at the start with 78% of generation in 2010, underwent a consistent fall to 46% by 2022. Renewables showed a corresponding surge over the same period, more than tripling from just 12% to 44%.\n\nNotably, the change proceeded at a fairly similar rate in each successive period, with fossil fuels dropping by roughly ten to twelve percentage points every four years and renewables climbing by a comparable amount. This steady exchange gradually narrowed the gap between them.\n\nBy 2022, the two sources had all but converged. Where fossil fuels had once outweighed renewables by a factor of more than six to one, the difference had shrunk to a mere two percentage points, leaving the region's electricity almost evenly split between the two — a striking reversal of the situation twelve years earlier.",
+      "analysis": "Vocabulary: convergence lexis ('a consistent fall', 'a corresponding surge', 'narrow the gap', 'converge') for a clean trend report. Grammar: quantified rate description ('roughly ten to twelve percentage points every four years') shows control of figures. Structure: overview → both trends with data → the rate → the near-convergence. Improvements: describing the rate of change and the shrinking ratio ('six to one' down to 'two percentage points') adds analytical depth beyond simply stating up and down."
+    },
+    {
+      "id": "vw-12",
+      "modality": "visual",
+      "format": "compare-data",
+      "title": "How three cities commute",
+      "topic": "environment",
+      "level": "B2+",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data comparison (Task 1 style)",
+      "visualType": "table (described as data)",
+      "visualData": "TABLE — Main way of commuting to work (% of workers):\nMode        | City P | City Q | City R\nCar         |  62%   |  28%   |  45%\nPublic transp| 20%   |  40%   |  30%\nCycling     |   6%   |  22%   |   8%\nWalking     |  12%   |  10%   |  17%",
+      "prompt": "The table compares how workers in three cities usually travel to work. Compare the data, highlighting the biggest contrasts between the cities. Do not explain why the differences exist.",
+      "audience": "An academic examiner",
+      "purpose": "Compare a distribution across three cases",
+      "points": [
+        "Which city is most car-dependent and least",
+        "The standout figure (cycling in City Q)",
+        "A summarising comparison"
+      ],
+      "vocab": [
+        "rely heavily on",
+        "the lowest proportion",
+        "stands out",
+        "by far",
+        "a more balanced split",
+        "in comparison"
+      ],
+      "model": "The table compares the main commuting methods of workers in three cities: P, Q and R.\n\nThe clearest contrast concerns car use. City P relies heavily on cars, with 62% of workers driving to work — by far the highest of the three. City R sits in the middle at 45%, while City Q is the least car-dependent, at only 28%.\n\nCity Q stands out in the opposite way for its sustainable transport. It has both the highest use of public transport (40%) and, most strikingly, a cycling rate of 22% — roughly three times higher than in the other two cities, where cycling barely reaches 8%. In this respect City Q is exceptional.\n\nWalking, by contrast, varies little, ranging only from 10% in City Q to 17% in City R.\n\nOverall, then, City P is dominated by the car, City Q shows a far more balanced split across public transport and cycling, and City R falls between the two, without any single mode being as dominant as the car is in City P.",
+      "analysis": "Vocabulary: comparison lexis ('rely heavily on', 'by far', 'a more balanced split') that ranks and contrasts. Grammar: superlatives and ratio ('roughly three times higher') sharpen the comparison. Structure: car use compared → City Q's standout features → the low-variation mode → an overall summary. Improvements: identifying the single most striking figure (Q's cycling) and noting where variation is small (walking) shows selective comparison rather than reading every cell."
+    },
+    {
+      "id": "vw-13",
+      "modality": "visual",
+      "format": "explain-causes",
+      "title": "A sudden drop in library visits",
+      "topic": "education",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Explaining causes from data",
+      "visualType": "bar chart with a drop (described)",
+      "visualData": "BAR CHART — Annual visits to Town Library (thousands):\n2018: 90 · 2019: 92 · 2020: 41 · 2021: 68 · 2022: 74 · 2023: 79\nNote: a sharp drop in 2020, followed by a partial but incomplete recovery.",
+      "prompt": "The chart shows annual visits to Town Library, with a sharp drop in 2020 and only a partial recovery afterwards. Describe the pattern and suggest possible reasons for both the sudden fall and the incomplete recovery. Distinguish the data from your explanation.",
+      "audience": "A general reader",
+      "purpose": "Describe a pattern and reason about its causes",
+      "points": [
+        "The stable base, the 2020 drop, the partial recovery",
+        "Possible causes of the drop",
+        "Why recovery might be incomplete"
+      ],
+      "vocab": [
+        "remain stable",
+        "plummet",
+        "a partial rebound",
+        "one likely reason",
+        "fail to fully recover",
+        "a permanent change in behaviour"
+      ],
+      "model": "The chart shows annual visits to Town Library from 2018 to 2023. Visits remained stable at around 90,000 in 2018 and 2019, then plummeted to just 41,000 in 2020 — less than half the previous level. After this low point, numbers began to climb again, reaching 79,000 by 2023, a partial rebound that nonetheless stayed below the earlier figures.\n\nThe chart offers no reasons, but some are easy to imagine. One likely reason for the sudden fall in 2020 is that the library was closed or restricted for part of the year, or that people simply stayed away, so visits collapsed regardless of demand.\n\nThe fact that visits recovered but failed to fully recover is more interesting. It suggests a partial and permanent change in behaviour: during the closure, some former visitors may have switched to borrowing e-books or reading online and never fully returned. In other words, the disruption seems to have left a lasting mark, so the library regained most of its visitors but not all of them.",
+      "analysis": "Vocabulary: pattern-and-cause phrasing ('remain stable', 'plummet', 'a partial rebound', 'a permanent change in behaviour'). Grammar: hedged inference ('is likely', 'may have switched', 'seems to have') keeps the explanation tentative. Structure: describe the three phases → explain the drop → explain the incomplete recovery. Improvements: the incomplete recovery is the richer puzzle; a strong answer explains why the rebound stalls (habits shifted to e-books) rather than only accounting for the initial fall."
+    },
+    {
+      "id": "vw-14",
+      "modality": "visual",
+      "format": "write-conclusion",
+      "title": "Report on recycling rates by material",
+      "topic": "environment",
+      "level": "C1",
+      "register": "formal",
+      "time": "18 min",
+      "length": "120–150 words",
+      "textType": "Concluding paragraph from a chart",
+      "visualType": "bar chart (described)",
+      "visualData": "BAR CHART — Recycling rate by material in Country Z (%):\nGlass 78% · Paper 71% · Metal 66% · Plastic 34% · Textiles 12%\n(The report's earlier paragraphs have already described these figures.)",
+      "prompt": "A report has already described recycling rates for five materials. Write only the CONCLUDING paragraph, drawing the figures together into an overall message and identifying where effort is most needed, without introducing new numbers.",
+      "audience": "A policy-minded reader",
+      "purpose": "Synthesise and direct attention in a conclusion",
+      "points": [
+        "The overall picture (strong vs weak materials)",
+        "Where the priority lies",
+        "A forward-looking note, no new data"
+      ],
+      "vocab": [
+        "in conclusion",
+        "a mixed picture",
+        "at opposite ends",
+        "lag well behind",
+        "warrant attention",
+        "if the country is to"
+      ],
+      "model": "In conclusion, the figures present a mixed picture. Country Z performs strongly on traditional materials such as glass and paper, where recycling is now well established and the majority of waste is successfully recovered. At the opposite end, however, plastic and especially textiles lag well behind, with the great bulk of these materials still not being recycled at all.\n\nThe clear message is that overall progress is uneven, and that future effort should concentrate on the weakest categories rather than the strongest. It is textiles, and to a lesser extent plastic, that most warrant attention, since improvements there offer the greatest room for gain. If the country is to raise its overall recycling performance meaningfully, tackling these lagging materials — rather than further refining the ones it already handles well — is where the real opportunity lies.",
+      "analysis": "Vocabulary: conclusion phrasing ('a mixed picture', 'at opposite ends', 'lag well behind', 'warrant attention') that gathers and directs. Grammar: the priority is drawn as an inference ('improvements there offer the greatest room for gain') rather than restated data. Structure: overall picture → where the gap is → where to focus. Improvements: a strong conclusion turns description into direction — pointing to textiles as the priority — without smuggling in new figures, which the task explicitly forbids."
+    },
+    {
+      "id": "vw-15",
+      "modality": "visual",
+      "format": "describe-place",
+      "title": "Describing a described mountain village",
+      "topic": "travel",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "180–210 words",
+      "textType": "Descriptive writing",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED SCENE: A small stone village clings to a steep mountainside at dawn. Mist fills the valley below so the houses seem to float. Smoke rises from one chimney. Narrow cobbled lanes climb between the buildings; window boxes spill red geraniums. An old woman sweeps a doorstep; a cat watches from a wall. The peaks behind are still tipped with snow, catching the first pink light.",
+      "prompt": "Write a rich description of the mountain village described, for a travel feature. Evoke the atmosphere of early morning using sensory and specific detail, and try to capture a mood as well as the appearance.",
+      "audience": "Readers of a travel feature",
+      "purpose": "Convey place and mood through description",
+      "points": [
+        "Vivid, specific visual detail",
+        "At least one non-visual sense",
+        "A clear mood or atmosphere"
+      ],
+      "vocab": [
+        "cling to",
+        "shrouded in mist",
+        "catch the first light",
+        "a hush",
+        "wisp of smoke",
+        "as though time"
+      ],
+      "model": "At dawn the village seems to belong to another century. It clings to the mountainside as if it has grown there, its stone houses stacked one above another, and this morning the valley below is shrouded in mist, so that the whole place appears to float on a soft white sea.\n\nThere is a hush over everything. The only movement is a single wisp of smoke rising straight from one chimney into the still air, and somewhere the muffled scrape of a broom. An old woman sweeps her doorstep without hurry, as she has surely done for fifty years; a cat watches her from a low stone wall with the patience of something that owns the place.\n\nThe cold carries the smell of woodsmoke and wet stone. Narrow cobbled lanes climb steeply between the walls, and even now, before the day has fully begun, red geraniums blaze in the window boxes, defiant against the grey.\n\nBehind it all, the snow-tipped peaks catch the first pink light of the sun. Everything is quiet, unhurried, complete — as though time here has simply agreed to slow down.",
+      "analysis": "Vocabulary: atmospheric-travel phrasing ('cling to', 'shrouded in mist', 'a wisp of smoke', 'a hush') that builds mood. Grammar: similes ('as if it has grown there', 'as though time…') and present tense create a timeless, immediate feel. Structure: the floating whole → the hush and small movements → smell and detail → the peaks and the mood. Improvements: description rises above a list when it commits to a single mood (timeless stillness) and reinforces it through choices ('the patience of something that owns the place') rather than piling up unrelated details."
+    },
+    {
+      "id": "vw-16",
+      "modality": "visual",
+      "format": "describe-event",
+      "title": "Describing a described festival moment",
+      "topic": "culture",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "170–200 words",
+      "textType": "Descriptive writing (event)",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED SCENE: A night-time street festival. Thousands of people fill a square lit by strings of coloured lanterns. On a stage, drummers pound out a fast rhythm; dancers in bright costumes spin, their sleeves flaring. Food stalls send up smoke and the smell of grilled corn. Children sit on shoulders; sparklers trace patterns in the dark. A firework has just burst gold overhead, and every upturned face is lit for a second.",
+      "prompt": "Describe the festival moment shown, capturing its energy and atmosphere. Use sound, movement and light, and try to place the reader inside the crowd rather than watching from outside.",
+      "audience": "A magazine reader",
+      "purpose": "Capture the energy of a live event",
+      "points": [
+        "Sound and rhythm of the event",
+        "Movement and light",
+        "The feeling of being in the crowd"
+      ],
+      "vocab": [
+        "pulse with",
+        "a wall of sound",
+        "in full swing",
+        "erupt",
+        "swept up",
+        "for a heartbeat"
+      ],
+      "model": "The square pulses with life. Above your head, strings of coloured lanterns sway between the buildings, and beneath them thousands of bodies press together, moving as one restless creature. The festival is in full swing.\n\nOn the stage, the drummers hit a rhythm you feel in your chest before you hear it — a wall of sound that seems to lift the whole crowd onto its toes. Dancers spin across the boards in costumes of impossible colour, their long sleeves flaring like flames caught mid-air, and the crowd answers with a roar every time the beat drops.\n\nThe air is thick with smoke and the sweet smell of grilling corn. Children ride high on their parents' shoulders, wide-eyed; nearby, a boy writes his name in the dark with a sparkler that fizzes gold.\n\nThen a firework erupts overhead, blooming into gold, and for a single heartbeat every upturned face in the square is lit — thousands of strangers, briefly one. You are not watching this. You are swept up in it, grinning like all the rest.",
+      "analysis": "Vocabulary: event-energy phrasing ('pulse with', 'a wall of sound', 'in full swing', 'swept up') that conveys intensity. Grammar: second-person present ('you feel it in your chest') places the reader inside; the firework 'blooming into gold' animates light. Structure: the whole crowd → sound → smell and small human moments → the firework climax and belonging. Improvements: 'You are not watching this. You are swept up in it' fulfils the brief of immersing rather than observing — a deliberate shift from spectator to participant that a flat account would miss."
+    },
+    {
+      "id": "vw-17",
+      "modality": "visual",
+      "format": "interpret-data",
+      "title": "What people miss most when travelling",
+      "topic": "travel",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data interpretation",
+      "visualType": "bar chart (described)",
+      "visualData": "SURVEY DATA — 'What do you miss most from home when travelling long-term?' (%):\nFamily and friends — 42%\nMy own bed / comfort — 19%\nFamiliar food — 16%\nA daily routine — 13%\nSpeaking my language — 10%",
+      "prompt": "The data show what long-term travellers say they miss most from home. Interpret the findings. Describe the pattern and what it might reveal about people's needs when away from home, based only on the figures.",
+      "audience": "A reader interested in travel psychology",
+      "purpose": "Read human meaning from a distribution",
+      "points": [
+        "The dominant answer and its lead",
+        "The grouping of comfort-related answers",
+        "A cautious insight about belonging"
+      ],
+      "vocab": [
+        "by a clear margin",
+        "the runaway leader",
+        "cluster around",
+        "a sense of belonging",
+        "beneath the surface",
+        "tellingly"
+      ],
+      "model": "The data reveal what long-term travellers most miss from home, and the results say something about human needs.\n\nBy a clear margin, family and friends is the runaway leader, chosen by 42% — more than double the next answer. This alone suggests that what people miss most is not a place or a thing but their relationships, the human connections that no destination can replace.\n\nThe remaining answers cluster around comfort and familiarity: one's own bed (19%), familiar food (16%), a daily routine (13%) and speaking one's own language (10%). Individually smaller, together these point to a second, quieter need — for the ordinary, predictable texture of everyday life.\n\nTellingly, then, the figures suggest that beneath the excitement of travel, people crave two things above all: connection and familiarity. Adventure may be why we leave, but a sense of belonging is what we miss. The data imply that the hardest part of long journeys is less physical discomfort than the absence of the people and routines that make somewhere feel like home.",
+      "analysis": "Vocabulary: interpretive phrasing ('by a clear margin', 'cluster around', 'a sense of belonging', 'tellingly') that reads meaning from proportions. Grammar: the additive combining ('together these point to…') builds a theme from small categories. Structure: the dominant answer → the comfort cluster → a synthesising insight. Improvements: interpretation groups the minor answers into a meaningful category (familiarity) and draws a human conclusion ('connection and familiarity'), rather than reciting each percentage in isolation."
+    },
+    {
+      "id": "vw-18",
+      "modality": "visual",
+      "format": "story-from-image",
+      "title": "A story from a described attic discovery",
+      "topic": "culture",
+      "level": "C1",
+      "register": "informal",
+      "time": "25 min",
+      "length": "190–230 words",
+      "textType": "Short narrative",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED IMAGE: A dusty attic lit by one shaft of light from a small window. In the beam sits an open wooden trunk. Inside are old letters tied with ribbon, a child's shoe, and a black-and-white photograph of a smiling young couple. A person's hand reaches into the frame, about to lift the photograph.",
+      "prompt": "Write a short story inspired by the described image. You should: reveal whose hand it is and what they discover, connect the objects in the trunk to a hidden family story, and end on a note of realisation. Bring the past to life; don't just describe the objects.",
+      "audience": "A reader of short fiction",
+      "purpose": "Weave discovered objects into a revealed story",
+      "points": [
+        "Who is searching and why",
+        "A hidden story linking the objects",
+        "A moment of realisation at the end"
+      ],
+      "vocab": [
+        "a shaft of light",
+        "trace a finger over",
+        "it dawned on her",
+        "all these years",
+        "a stranger and yet",
+        "the family never spoke of"
+      ],
+      "model": "Clara had come up to the attic to find Christmas decorations. Instead, in a shaft of dusty light, she found the trunk.\n\nShe hadn't known it existed. Inside lay a bundle of letters tied with faded ribbon, a single child's shoe, soft with age, and a photograph of a young couple laughing at whoever held the camera. She lifted it out and traced a finger over the woman's face. There was something in the smile she recognised — her grandmother, surely, but decades younger, and beside her a man Clara had never seen in a single family photograph.\n\nShe untied the letters. They were love letters, dozens of them, signed by a name the family never spoke of. And slowly, as she read, it dawned on her: her grandmother had loved before, had perhaps married before, had had a child — the shoe — and had lost them both to a war whose name filled the letters' final, unfinished lines.\n\nAll these years, that quiet, gentle woman had carried this silently, folded into a trunk in the dark.\n\nClara sat back on her heels in the fading light, holding the photograph. A stranger, and yet family. She understood her grandmother now, she thought, for the very first time.",
+      "analysis": "Vocabulary: discovery-narrative phrasing ('a shaft of light', 'trace a finger over', 'it dawned on her') that paces revelation. Grammar: past perfect anchors the layered past ('hadn't known', 'had loved before'); the dash-list of realisations mimics dawning understanding. Structure: mundane errand → the trunk → reading the letters → the hidden history → present-day realisation. Improvements: each object (photo, shoe, letters) is made to carry part of the story, so the ending's realisation feels earned by the discovery rather than tacked on."
+    },
+    {
+      "id": "vw-19",
+      "modality": "visual",
+      "format": "describe-trends",
+      "title": "Website visitors by device",
+      "topic": "technology",
+      "level": "B2+",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Trend description (Task 1 style)",
+      "visualType": "line chart (described as data)",
+      "visualData": "LINE CHART — Share of website visits by device (%):\n2016: Desktop 64 · Mobile 30 · Tablet 6\n2018: Desktop 52 · Mobile 42 · Tablet 6\n2020: Desktop 43 · Mobile 52 · Tablet 5\n2022: Desktop 36 · Mobile 60 · Tablet 4",
+      "prompt": "The chart shows the share of website visits made from desktops, mobiles and tablets from 2016 to 2022. Describe the main trends, the point where mobile overtook desktop, and the behaviour of the tablet figure. Do not give reasons.",
+      "audience": "An academic examiner",
+      "purpose": "Report three trends including a crossover and a flat line",
+      "points": [
+        "Desktop down, mobile up",
+        "The crossover point",
+        "The near-flat tablet share"
+      ],
+      "vocab": [
+        "a steady decline",
+        "climb consistently",
+        "overtake",
+        "remain broadly flat",
+        "the crossover occurred",
+        "negligible"
+      ],
+      "model": "The chart illustrates the share of website visits made from three types of device between 2016 and 2022.\n\nThe two dominant devices moved in opposite directions. Desktop visits, which made up nearly two-thirds of the total in 2016 at 64%, went into a steady decline, falling to just 36% by 2022. Mobile visits climbed consistently over the same years, rising from 30% to 60% and effectively swapping places with desktop.\n\nThe crossover occurred around 2019, between the 2018 and 2020 data points, when mobile overtook desktop as the most common device. By the end of the period, mobile clearly led, accounting for well over half of all visits.\n\nThe tablet share, by contrast, remained broadly flat throughout, hovering between 4% and 6% and never becoming a significant channel. Indeed, it edged slightly downwards over the six years, ending as a small and increasingly negligible share of total traffic.",
+      "analysis": "Vocabulary: device-trend lexis ('a steady decline', 'climb consistently', 'remain broadly flat', 'negligible') covering three distinct behaviours. Grammar: 'effectively swapping places' compresses the reversal; the crossover is located between data points. Structure: the two big trends → the crossover → the flat third line. Improvements: a complete answer treats the near-constant tablet figure as its own feature ('broadly flat… negligible') rather than ignoring it because it barely moves."
+    },
+    {
+      "id": "vw-20",
+      "modality": "visual",
+      "format": "explain-causes",
+      "title": "Ice-cream sales and sunshine",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Explaining a relationship from data",
+      "visualType": "dual chart (described)",
+      "visualData": "TWO LINES ON ONE CHART — by month:\nHours of sunshine: Jan 60 · Apr 150 · Jul 240 · Oct 120 · Dec 50\nIce-cream sales (units, thousands): Jan 8 · Apr 22 · Jul 46 · Oct 15 · Dec 7\nThe two lines rise and fall together across the year.",
+      "prompt": "The chart shows monthly sunshine hours and ice-cream sales across a year, and the two lines move together. Describe the relationship and explain the likely reason for it. Also note briefly why 'moving together' does not always prove one thing causes another.",
+      "audience": "A general reader",
+      "purpose": "Describe correlation and reason about causation carefully",
+      "points": [
+        "The parallel movement of the two lines",
+        "The likely causal explanation",
+        "A note on correlation vs causation"
+      ],
+      "vocab": [
+        "move in step",
+        "peak in",
+        "a strong correlation",
+        "it stands to reason",
+        "correlation does not prove causation",
+        "a common cause"
+      ],
+      "model": "The chart shows monthly sunshine hours and ice-cream sales over a single year, and the two lines clearly move in step. Both are low in winter — sunshine at around 60 hours and sales at 8,000 units in January — and both peak sharply in July, when sunshine reaches 240 hours and sales climb to 46,000. As autumn arrives, the two fall away together again.\n\nThe relationship is a strong correlation, and its likely explanation is straightforward. It stands to reason that when the weather is sunny and warm, more people want a cold treat, so sunshine drives up ice-cream sales.\n\nHowever, it is worth remembering that correlation does not prove causation. Although a direct link seems very plausible here, two things rising together can sometimes share a common cause rather than one causing the other. In this case the everyday explanation is convincing, but the chart alone shows only that the two move together — not, strictly, that one produces the other.",
+      "analysis": "Vocabulary: correlation phrasing ('move in step', 'a strong correlation', 'correlation does not prove causation', 'a common cause') that reasons carefully. Grammar: hedged causal claim ('seems very plausible', 'not, strictly, that one produces the other') models good scientific caution. Structure: describe the parallel movement → the plausible cause → the correlation-causation caveat. Improvements: the task specifically rewards the reasoning move of separating correlation from causation, which weaker answers skip by assuming the link is proven."
+    },
+    {
+      "id": "vw-21",
+      "modality": "visual",
+      "format": "compare-data",
+      "title": "Diet composition, past vs present",
+      "topic": "health",
+      "level": "C1",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data comparison (Task 1 style)",
+      "visualType": "table (described as data)",
+      "visualData": "TABLE — Share of daily calories by food group (%):\nFood group        | 1980 | 2020\nGrains/staples    |  48  |  33\nMeat              |  14  |  22\nDairy             |  10  |  12\nProcessed/packaged|   8  |  24\nFruit & vegetables|  20  |   9",
+      "prompt": "The table compares the share of daily calories from each food group in 1980 and 2020. Compare the two years, highlighting the largest changes. Do not explain the causes.",
+      "audience": "An academic examiner",
+      "purpose": "Compare a distribution across two time points",
+      "points": [
+        "The biggest rises and the biggest falls",
+        "A clear before/after comparison",
+        "The most striking single shift"
+      ],
+      "vocab": [
+        "a marked shift",
+        "more than",
+        "at the expense of",
+        "halve",
+        "triple",
+        "a reversal"
+      ],
+      "model": "The table compares the proportion of daily calories drawn from five food groups in 1980 and 2020, and reveals a marked shift in diet over the forty years.\n\nThe most dramatic change is the rise of processed and packaged food, which tripled from 8% of calories to 24%, becoming one of the largest sources by 2020. Meat also grew substantially, from 14% to 22%.\n\nThese increases came largely at the expense of two traditional groups. Grains and staple foods, once dominant at 48%, fell to just 33%, losing their commanding position. More striking still, fruit and vegetables were more than halved, dropping from a fifth of all calories (20%) to under a tenth (9%).\n\nDairy was the exception, changing little, from 10% to 12%.\n\nOverall, then, the comparison shows a diet that moved away from staples and fresh produce towards processed food and meat — in effect a reversal, with the healthier fresh category shrinking as the packaged category expanded.",
+      "analysis": "Vocabulary: change-comparison lexis ('a marked shift', 'at the expense of', 'halve', 'triple', 'a reversal'). Grammar: quantified verbs of change ('tripled', 'more than halved') do the comparing efficiently. Structure: biggest rises → the offsetting falls → the exception → an overall summary. Improvements: pairing what rose with what it displaced ('at the expense of') tells a comparison story, and flagging the one stable group (dairy) shows complete reading of the table."
+    },
+    {
+      "id": "vw-22",
+      "modality": "visual",
+      "format": "write-conclusion",
+      "title": "Report on volunteering by age group",
+      "topic": "culture",
+      "level": "C1",
+      "register": "formal",
+      "time": "18 min",
+      "length": "120–150 words",
+      "textType": "Concluding paragraph from a chart",
+      "visualType": "bar chart (described)",
+      "visualData": "BAR CHART — Share of each age group who volunteer regularly (%):\nUnder 25: 18% · 25–39: 22% · 40–54: 29% · 55–69: 41% · 70+: 34%\n(Earlier paragraphs of the report have already described these figures.)",
+      "prompt": "A report has already described volunteering rates across age groups. Write only the CONCLUDING paragraph, summing up the overall pattern and its main implication, without introducing new figures.",
+      "audience": "A community-organisation reader",
+      "purpose": "Draw a report to a purposeful close",
+      "points": [
+        "The overall shape (rising then slight fall)",
+        "Where volunteering peaks",
+        "An implication for organisations"
+      ],
+      "vocab": [
+        "in conclusion",
+        "rise with age",
+        "peak among",
+        "tail off slightly",
+        "an untapped group",
+        "worth targeting"
+      ],
+      "model": "In conclusion, the data show that regular volunteering tends to rise with age, at least until later life. Participation is lowest among the youngest adults, climbs steadily through the middle decades, and peaks among those approaching or entering retirement, before tailing off slightly in the oldest group, most likely as health and mobility begin to limit involvement.\n\nThe main implication is that organisations seeking volunteers should recognise where their strongest support already lies — among older adults with time and inclination to give — while also treating the young as an untapped group worth targeting. Since participation is lowest at the start of adulthood, there may be significant room to raise it there, whether through more flexible opportunities or earlier encouragement. Understanding this age pattern, rather than treating all groups alike, would allow organisations to recruit far more effectively.",
+      "analysis": "Vocabulary: conclusion phrasing ('rise with age', 'peak among', 'tail off slightly', 'an untapped group') that summarises a curved trend. Grammar: the arc is generalised in one sentence ('rise… climb… peak… before tailing off'); the implication is drawn, not restated. Structure: overall shape → where it peaks → practical implication. Improvements: turning description into action ('the young as an untapped group worth targeting') gives the conclusion purpose while obeying the no-new-numbers rule."
+    },
+    {
+      "id": "vw-23",
+      "modality": "visual",
+      "format": "describe-place",
+      "title": "Describing a described empty stadium",
+      "topic": "everyday-life",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "170–200 words",
+      "textType": "Descriptive writing",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED SCENE: A vast sports stadium, completely empty, an hour after a match has ended. Litter drifts across the stands. Floodlights are still on, harsh and white, throwing long shadows. A lone groundskeeper walks the pitch. The silence is total where, an hour ago, there were eighty thousand voices. Torn tickets and a single abandoned scarf lie on a seat.",
+      "prompt": "Write a description of the empty stadium described, capturing the strange, echoing atmosphere of a place just after a crowd has gone. Use contrast between the recent noise and the present silence, and choose telling details.",
+      "audience": "A magazine reader",
+      "purpose": "Convey atmosphere through absence and contrast",
+      "points": [
+        "The contrast between then and now",
+        "Telling, specific details of aftermath",
+        "A clear mood (emptiness, echo)"
+      ],
+      "vocab": [
+        "an hour ago",
+        "an eerie silence",
+        "linger",
+        "a ghost of",
+        "strewn with",
+        "as if holding its breath"
+      ],
+      "model": "An hour ago this place held eighty thousand voices. Now there is only silence, and it is the strangest silence in the world — the silence of a space built to be loud.\n\nThe floodlights are still on, harsh and white, and under them the empty stands rise on every side, tier upon tier of vacant seats. Litter drifts across them in the faint wind: torn tickets, flattened cups, and here and there a ghost of the crowd that was, like the single blue scarf abandoned on a seat, still holding the shape of whoever wore it.\n\nThe air seems to remember the noise. You can almost hear the echo of the roar that filled it, the way an empty shell holds the sound of the sea. But there is nothing now except the soft scrape of a lone groundskeeper crossing the pitch, small and slow at the centre of all that emptiness.\n\nThe stadium sits as if holding its breath, waiting for the next crowd, the next roar. For now it belongs to no one — vast, bright, and utterly, unnervingly still.",
+      "analysis": "Vocabulary: aftermath phrasing ('an eerie silence', 'a ghost of', 'strewn with', 'as if holding its breath') that dwells on absence. Grammar: the then/now contrast ('An hour ago… Now there is only silence') frames the whole piece; the sea simile deepens the echo image. Structure: the contrast → the lit emptiness and its relics → the remembered noise → the waiting stillness. Improvements: describing a place through what is missing (the crowd) and one poignant object (the scarf) creates more atmosphere than cataloguing the architecture."
+    },
+    {
+      "id": "vw-24",
+      "modality": "visual",
+      "format": "interpret-data",
+      "title": "Why customers abandon online purchases",
+      "topic": "technology",
+      "level": "C1",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data interpretation",
+      "visualType": "bar chart (described)",
+      "visualData": "BAR CHART — Reasons shoppers abandon an online basket before paying (%):\nUnexpected extra costs (delivery/fees) — 38%\nHad to create an account — 24%\nProcess too long/complicated — 17%\nConcerns about payment security — 12%\nJust browsing / not ready — 9%",
+      "prompt": "The chart shows why online shoppers abandon their basket before completing a purchase. Interpret the findings and suggest what they imply for online shops. Base your interpretation only on the data shown.",
+      "audience": "An e-commerce or business reader",
+      "purpose": "Turn data into actionable insight",
+      "points": [
+        "The leading, fixable reasons",
+        "The share that shops could plausibly reduce",
+        "A clear implication for design"
+      ],
+      "vocab": [
+        "the single biggest factor",
+        "put off by",
+        "avoidable",
+        "streamline",
+        "at the final hurdle",
+        "the takeaway"
+      ],
+      "model": "The chart sets out why online shoppers abandon their basket before paying, and the pattern is revealing for retailers.\n\nThe single biggest factor, at 38%, is unexpected extra costs such as delivery or fees appearing late in the process. This suggests that many shoppers are willing to buy until they are put off by a nasty surprise at the final hurdle. Two further reasons — being forced to create an account (24%) and a process that is too long or complicated (17%) — point to friction in the checkout itself.\n\nCrucially, these top three reasons, accounting for almost 80% of abandonments, are largely avoidable and within the shop's control. Only the smallest group, those 'just browsing', reflects genuine lack of intent.\n\nThe takeaway, then, is clear. Shops could recover a large share of lost sales not by attracting more visitors but by fixing their own checkout: showing all costs upfront, allowing guest purchases, and streamlining the payment steps. The data imply that many sales are lost through avoidable friction rather than a lack of interest.",
+      "analysis": "Vocabulary: e-commerce interpretation ('the single biggest factor', 'put off by', 'avoidable', 'streamline', 'the takeaway'). Grammar: the combining move ('these top three reasons, accounting for almost 80%') builds the central insight. Structure: lead factor → checkout-friction group → the avoidable share → the design implication. Improvements: interpretation here means separating fixable causes from genuine non-buyers and translating that into concrete fixes ('show all costs upfront'), rather than just ranking the bars."
+    },
+    {
+      "id": "vw-25",
+      "modality": "visual",
+      "format": "story-from-image",
+      "title": "A story from a described desert road",
+      "topic": "travel",
+      "level": "C1",
+      "register": "informal",
+      "time": "25 min",
+      "length": "190–230 words",
+      "textType": "Short narrative",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED IMAGE: A long, empty desert highway stretching dead straight to the horizon under a huge orange sunset sky. A single old car is parked on the roadside with its bonnet up. A figure sits on the roof of the car, looking at the sky, apparently in no hurry despite the breakdown. A guitar case leans against the wheel.",
+      "prompt": "Write a short story inspired by the image. You should: explain who the person is and where they were heading, use the breakdown as a turning point rather than a disaster, and end with a decision or realisation. Let the mood of the scene shape the story.",
+      "audience": "A reader of short fiction",
+      "purpose": "Turn a still, moody image into a reflective story",
+      "points": [
+        "Who the traveller is and their journey",
+        "The breakdown reframed as a turning point",
+        "A closing decision or realisation"
+      ],
+      "vocab": [
+        "in the middle of nowhere",
+        "conk out",
+        "had been running from",
+        "no signal, no rush",
+        "it occurred to him",
+        "turn back or press on"
+      ],
+      "model": "The car had finally conked out sixty miles from anywhere, and Elias found that he didn't much mind.\n\nHe had been driving for two days, guitar in the back, heading west to a city where a friend had promised him a gig and a sofa. But the truth, which he'd been avoiding somewhere around the second tank of fuel, was that he hadn't been driving towards anything so much as running from a life that had quietly stopped fitting him.\n\nNow the engine ticked as it cooled, the desert stretched flat and endless in every direction, and the sky was doing something extraordinary — the whole horizon burning orange, the kind of sunset you couldn't photograph and wouldn't forget. No signal, no rush. Just this.\n\nHe climbed onto the roof and sat there, and after a while he reached down for the guitar and played, badly and happily, to an audience of sand.\n\nAnd sitting there, it occurred to him that he didn't have to decide tonight whether to turn back or press on. For once, being stuck was not a problem to solve. It was, he realised, the first time in months he had actually stopped — and it was exactly where he needed to be.",
+      "analysis": "Vocabulary: road-story phrasing ('in the middle of nowhere', 'conk out', 'no signal, no rush', 'turn back or press on') that fits the mood. Grammar: past perfect for the running-away backstory ('had been driving', 'had quietly stopped fitting'); the sunset animated with a present-participle image. Structure: the breakdown accepted → the real journey revealed → the sunset moment → the reframed realisation. Improvements: the brief asks for a turning point, not a disaster; making the breakdown the moment the character finally stops running honours the still, unhurried tone of the image."
+    },
+    {
+      "id": "vw-26",
+      "modality": "visual",
+      "format": "describe-trends",
+      "title": "Population of a town over a century",
+      "topic": "everyday-life",
+      "level": "B2+",
+      "register": "formal",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Trend description (Task 1 style)",
+      "visualType": "line chart (described as data)",
+      "visualData": "LINE CHART — Population of Millford (thousands):\n1920: 8 · 1950: 20 · 1970: 34 · 1990: 30 · 2010: 25 · 2020: 28\nRapid growth to a 1970 peak, then decline, then a recent modest recovery.",
+      "prompt": "The chart shows the population of the town of Millford from 1920 to 2020. Describe the main changes: the growth phase, the peak, the decline, and the recent recovery. Do not explain the reasons.",
+      "audience": "An academic examiner",
+      "purpose": "Describe a rise-peak-fall-recovery trajectory",
+      "points": [
+        "The growth to the peak",
+        "The peak year and the decline",
+        "The recent modest recovery"
+      ],
+      "vocab": [
+        "quadruple",
+        "reach a peak",
+        "go into decline",
+        "bottom out",
+        "stage a recovery",
+        "over the course of a century"
+      ],
+      "model": "The chart shows how the population of Millford changed over the course of a century, from 1920 to 2020.\n\nThe town grew rapidly in its early decades. From just 8,000 residents in 1920, the population more than quadrupled to reach a peak of 34,000 in 1970, with the steepest growth occurring in the mid-century years.\n\nAfter 1970, however, the trend reversed and Millford went into decline. Numbers fell over the following decades, from the 34,000 peak down to 30,000 in 1990 and then to a low of 25,000 by 2010, when the population appears to have bottomed out.\n\nThe final decade tells a more hopeful story. Between 2010 and 2020 the town staged a modest recovery, with the population edging back up to 28,000. While this remains well below the 1970 high, it reverses the long decline. Overall, then, Millford's population rose sharply, peaked in 1970, fell for four decades, and has recently begun to grow again.",
+      "analysis": "Vocabulary: trajectory lexis ('quadruple', 'reach a peak', 'go into decline', 'bottom out', 'stage a recovery') that names each phase. Grammar: sequenced past tenses map the four stages; 'appears to have bottomed out' hedges the low point. Structure: growth → peak and decline → recovery → one-sentence summary. Improvements: a clear multi-phase answer labels each stage and closes with a compact recap, so the examiner sees the whole shape at a glance rather than a string of numbers."
+    },
+    {
+      "id": "vw-27",
+      "modality": "visual",
+      "format": "explain-causes",
+      "title": "Sales far higher in one region",
+      "topic": "work",
+      "level": "C1",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Explaining differences from data",
+      "visualType": "bar chart (described)",
+      "visualData": "BAR CHART — Average monthly sales per shop by region (units):\nNorth 420 · South 405 · East 390 · West 780\nWest is nearly double every other region. All regions sell the same products at the same prices.",
+      "prompt": "The chart shows average monthly sales per shop in four regions, with the West far ahead of the rest even though products and prices are identical. Describe the difference and suggest possible reasons why one region might sell so much more. Distinguish the data from your explanation.",
+      "audience": "A business reader",
+      "purpose": "Describe an outlier and reason about its causes",
+      "points": [
+        "The size of the West's lead",
+        "Plausible causes unrelated to product/price",
+        "Clear data/explanation boundary"
+      ],
+      "vocab": [
+        "stand out sharply",
+        "roughly double",
+        "cannot be explained by",
+        "a plausible factor",
+        "footfall",
+        "worth investigating"
+      ],
+      "model": "The chart shows average monthly sales per shop across four regions. Three of them — North, South and East — are closely grouped, each selling between 390 and 420 units. The West, however, stands out sharply, at 780 units, roughly double any other region.\n\nSince the chart tells us that products and prices are identical everywhere, the West's lead cannot be explained by cheaper or different goods. The data alone show the gap but not its cause; the following are only possibilities.\n\nSeveral plausible factors could account for it. The Western shops might simply be located in busier areas, with far higher footfall — near stations or in dense city centres, for instance. Alternatively, the region may have a larger or wealthier population, stronger local advertising, or particularly effective staff and store management.\n\nWhatever the true reason, the pattern is clearly worth investigating, since understanding what the West does differently might allow the company to lift sales elsewhere. The key point, though, is that the explanation must lie in factors beyond the products themselves, which are the same in every region.",
+      "analysis": "Vocabulary: outlier-analysis phrasing ('stand out sharply', 'cannot be explained by', 'footfall', 'worth investigating'). Grammar: the logical elimination ('Since products and prices are identical… cannot be explained by…') narrows the cause; hedged options ('might', 'may') keep it tentative. Structure: describe the grouping and outlier → rule out price → offer plausible causes → note the value of investigating. Improvements: the task rewards using a given fact (same products/prices) to eliminate an explanation, which structures the reasoning better than listing random guesses."
+    },
+    {
+      "id": "vw-28",
+      "modality": "visual",
+      "format": "describe-event",
+      "title": "Describing a described graduation moment",
+      "topic": "education",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "170–200 words",
+      "textType": "Descriptive writing (event)",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED SCENE: A university graduation, outdoors on a bright afternoon. Rows of students in black gowns and caps fill a lawn. One student has just thrown her cap into the air; it hangs at the top of its arc against a blue sky. Families cheer from the sides; a small child waves a hand-drawn banner. Sunlight catches the gold tassels. Somewhere a bagpipe plays.",
+      "prompt": "Describe the graduation moment shown, capturing the emotion and energy of the occasion. Freeze the instant of the cap in the air, then let the scene breathe around it. Use detail to convey pride and joy.",
+      "audience": "A magazine reader",
+      "purpose": "Capture a peak emotional moment vividly",
+      "points": [
+        "The frozen moment (cap in the air)",
+        "The surrounding celebration and detail",
+        "The emotion of the occasion"
+      ],
+      "vocab": [
+        "at the peak of its arc",
+        "a sea of black gowns",
+        "erupt in cheers",
+        "beam with pride",
+        "years of effort",
+        "for one perfect moment"
+      ],
+      "model": "For one perfect moment, everything stops.\n\nHigh above the lawn, a single black cap hangs at the peak of its arc against a cloudless blue sky, tassel flaring gold in the afternoon sun. Beneath it stands the young woman who threw it, arms still raised, her face turned upward and shining — the physical shape of pure release after years of effort.\n\nAround her spreads a sea of black gowns, row upon row of students who have made it, and along the edges of the lawn the families press forward. They erupt in cheers as the cap flies; parents beam with pride, phones held high, and a small child near the front waves a hand-drawn banner nobody can quite read but everyone understands.\n\nThe air smells of cut grass and warm stone, and somewhere, gloriously out of place, a lone bagpipe drones on. Sunlight catches every gold tassel at once, so the whole crowd seems to glitter.\n\nThen the cap begins to fall, hands reach up, and the moment breaks into laughter and hugs and noise — but for that one suspended second, all the years of work simply hung in the air, and it was enough.",
+      "analysis": "Vocabulary: celebratory phrasing ('at the peak of its arc', 'a sea of black gowns', 'beam with pride', 'for one perfect moment') that conveys joy. Grammar: the frozen-then-released structure ('For one perfect moment, everything stops… Then the cap begins to fall') controls time; sensory detail (grass, bagpipe) grounds it. Structure: the suspended cap → the graduate → the crowd → sensory air → the moment breaking. Improvements: freezing the peak instant and only then letting the scene 'breathe' is exactly the brief; a flat account would narrate straight through and lose the emotional pause."
+    },
+    {
+      "id": "vw-29",
+      "modality": "visual",
+      "format": "interpret-data",
+      "title": "How people rate their week",
+      "topic": "health",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "20 min",
+      "length": "150–180 words",
+      "textType": "Data interpretation",
+      "visualType": "line chart (described)",
+      "visualData": "LINE CHART — Average self-reported mood score (1–10) by day of the week:\nMon 5.4 · Tue 5.9 · Wed 6.1 · Thu 6.4 · Fri 7.6 · Sat 8.1 · Sun 6.8\nMood rises across the week, peaks Saturday, and dips again on Sunday.",
+      "prompt": "The chart shows how people's average self-reported mood changes across the week. Interpret the pattern and suggest what it might reveal about how people feel, based only on the data.",
+      "audience": "A reader interested in wellbeing",
+      "purpose": "Read a familiar human pattern from data",
+      "points": [
+        "The rising trend and the weekend peak",
+        "The Sunday dip and what it might mean",
+        "A cautious human interpretation"
+      ],
+      "vocab": [
+        "climb steadily",
+        "peak on",
+        "a noticeable dip",
+        "the working week",
+        "anticipation",
+        "read into"
+      ],
+      "model": "The chart tracks how people's average mood, rated from one to ten, changes across the days of the week, and the pattern is one many will recognise.\n\nMood climbs steadily through the working week. It starts at its lowest on Monday (5.4), then rises gently through Tuesday, Wednesday and Thursday, before jumping sharply on Friday (7.6). The peak comes on Saturday, at 8.1, the happiest day by a clear margin.\n\nWhat is most interesting is Sunday. Rather than staying high, mood shows a noticeable dip to 6.8 — still above the weekday level, but well below Saturday. A reasonable interpretation is that Saturday represents the height of free time and relaxation, while by Sunday the approaching working week begins to weigh on people, replacing the weekend's ease with a quiet anticipation of Monday.\n\nOne should not read too much into a single chart, but the overall message seems clear: people feel best when free time stretches ahead of them, and slightly worse once it starts running out. The pattern reflects the emotional rhythm of the working week.",
+      "analysis": "Vocabulary: mood-pattern phrasing ('climb steadily', 'a noticeable dip', 'anticipation', 'read into') that interprets sensitively. Grammar: the pivot 'What is most interesting is Sunday' foregrounds the puzzle; hedged reading ('A reasonable interpretation is that…'). Structure: the rising trend → the Saturday peak → the Sunday dip explained → a cautious overall message. Improvements: the best interpretation focuses on the counter-intuitive feature (Sunday's fall despite still being weekend) and reads a human meaning from it, with appropriate caution."
+    },
+    {
+      "id": "vw-30",
+      "modality": "visual",
+      "format": "describe-place",
+      "title": "Describing a described old bookshop",
+      "topic": "culture",
+      "level": "C1",
+      "register": "neutral",
+      "time": "22 min",
+      "length": "170–200 words",
+      "textType": "Descriptive writing",
+      "visualType": "scene (described)",
+      "visualData": "DESCRIBED SCENE: The inside of a tiny, cramped second-hand bookshop. Shelves reach the ceiling, overflowing, with stacks of books also piled on the floor and stairs. A narrow aisle winds between them. Warm lamplight, dust motes in the air, a sleeping cat on a windowsill. An elderly owner reads behind a cluttered desk. Rain streaks the window; it is grey outside but golden within.",
+      "prompt": "Write an atmospheric description of the second-hand bookshop described. Convey its cosy, cluttered character and the contrast between the grey outside and the warmth within. Use specific, sensory detail to make it a place a reader would want to enter.",
+      "audience": "A magazine reader",
+      "purpose": "Evoke a cosy interior and its character",
+      "points": [
+        "The cluttered, overflowing character",
+        "The inside/outside contrast",
+        "Sensory warmth and mood"
+      ],
+      "vocab": [
+        "floor to ceiling",
+        "teeter",
+        "the smell of old paper",
+        "a refuge from",
+        "bathed in",
+        "nooks and crannies"
+      ],
+      "model": "Outside it is grey and raining; inside, the little bookshop glows like a lamp against the weather.\n\nBooks are everywhere. They climb the shelves floor to ceiling, spill onto the stairs, and teeter in precarious stacks on the floor, so that a single narrow aisle winds between them like a path through a paper forest. There is no order that a stranger could name, yet the owner, an elderly man reading behind a desk buried in more books, would surely find any title you asked for in seconds.\n\nThe air carries the smell of old paper — dry, sweet, faintly of dust — and in the lamplight you can see the dust motes turning slowly, bathed in gold. On the windowsill a cat sleeps, undisturbed by the rain streaking the glass beside it.\n\nEvery corner holds its own small world: nooks and crannies stuffed with forgotten novels, cracked spines, and handwritten prices in fading ink.\n\nIt is warm here, and quiet, and wonderfully cluttered — a refuge from the grey street outside. You could lose an hour without noticing, and no one would mind at all.",
+      "analysis": "Vocabulary: cosy-interior phrasing ('floor to ceiling', 'teeter', 'the smell of old paper', 'a refuge from', 'nooks and crannies') that builds character. Grammar: the opening antithesis ('Outside it is grey… inside, the little bookshop glows') sets the contrast the brief asks for; the 'paper forest' image organises the clutter. Structure: the contrast → the overflowing books → smell and light → detail → the inviting mood. Improvements: committing to the inside/outside warmth contrast and closing on an invitation ('You could lose an hour') makes the reader want to enter, which a neutral inventory of shelves would not."
+    },
+    {
+      "id": "vw-31",
+      "modality": "visual",
+      "format": "describe-trends",
+      "title": "Public library visits, 2019–2024",
+      "topic": "culture",
+      "level": "B2+",
+      "register": "formal",
+      "time": "25 min",
+      "length": "170–200 words",
+      "textType": "Trend description (Task 1 style)",
+      "visualType": "Line chart data",
+      "visualData": "Annual visits (thousands)\n2019: 480\n2020: 155\n2021: 240\n2022: 365\n2023: 510\n2024: 545\n\nAdditional note: digital loans rose from 90,000 in 2019 to 310,000 in 2024.",
+      "prompt": "Write a report describing the main changes in physical visits and the additional digital-loan trend. Include an overview, identify the lowest point and compare the final figure with the pre-2020 level. Do not explain causes that are not shown.",
+      "audience": "An IELTS examiner",
+      "purpose": "Summarise a line chart accurately",
+      "points": [
+        "Begin with an overall trend",
+        "Use selected figures, not every number equally",
+        "Compare 2024 with 2019",
+        "Mention digital loans separately"
+      ],
+      "vocab": [
+        "fell sharply",
+        "recovered steadily",
+        "surpassed the previous level",
+        "by contrast",
+        "reached a low",
+        "more than tripled"
+      ],
+      "model": "The line chart shows a severe fall in visits to a public library in 2020, followed by a sustained recovery that eventually lifted attendance above its pre-decline level. Digital borrowing moved in the opposite direction overall, increasing strongly across the period.\n\nPhysical visits stood at 480,000 in 2019 before dropping to just 155,000 in 2020, the lowest figure shown. Attendance then rose to 240,000 in 2021 and 365,000 in 2022, although it remained below the original level at that stage.\n\nThe recovery accelerated in the final two years. Visits reached 510,000 in 2023 and 545,000 in 2024. The last figure was 65,000 higher than in 2019, meaning the library not only recovered the earlier loss but recorded a new peak.\n\nMeanwhile, digital loans increased from 90,000 to 310,000. This was more than a threefold rise and suggests that the expansion of online borrowing continued even after physical attendance returned. Overall, the figures indicate growth in both forms of library use by the end of the period.",
+      "analysis": "The report gives a clear overview, groups the fall and recovery into phases, and avoids inventing reasons for the 2020 change."
+    },
+    {
+      "id": "vw-32",
+      "modality": "visual",
+      "format": "compare-data",
+      "title": "Remote-course satisfaction by feature",
+      "topic": "education",
+      "level": "C1",
+      "register": "formal",
+      "time": "28 min",
+      "length": "190–220 words",
+      "textType": "Comparative data report",
+      "visualType": "Table",
+      "visualData": "Percentage rating each feature “good” or “very good”\n\nFeature | Undergraduate | Postgraduate | Professional learners\nTeaching quality | 78 | 86 | 82\nPlatform reliability | 64 | 71 | 89\nInteraction with peers | 72 | 61 | 48\nSchedule flexibility | 69 | 80 | 94\nTechnical support | 58 | 67 | 85",
+      "prompt": "Write a comparative report. Identify the strongest and weakest ratings for each learner group, then highlight two meaningful contrasts across groups. Use exact figures selectively and do not give personal opinions.",
+      "audience": "An IELTS examiner",
+      "purpose": "Compare a multi-column table",
+      "points": [
+        "Provide an overview",
+        "Compare groups rather than listing columns",
+        "Identify notable highs and lows",
+        "Use percentages accurately"
+      ],
+      "vocab": [
+        "rated most highly",
+        "the widest gap",
+        "respectively",
+        "by comparison",
+        "lagged behind",
+        "stood out"
+      ],
+      "model": "The table compares positive ratings for five aspects of remote courses among undergraduates, postgraduates and professional learners. Overall, teaching was rated well by all three groups, while their views differed most sharply on peer interaction and flexibility.\n\nUndergraduates gave their highest score to teaching quality, at 78%, followed by interaction with peers at 72%. Their weakest rating was for technical support, which only 58% considered good or very good. Postgraduates also preferred teaching, at 86%, although schedule flexibility was close behind on 80%.\n\nProfessional learners showed a different pattern. Flexibility received an exceptionally high 94%, and platform reliability and technical support were also rated strongly, at 89% and 85% respectively. However, only 48% were satisfied with peer interaction, the lowest figure in the table.\n\nThe widest contrast concerned interaction: the undergraduate rating was 24 percentage points above that of professional learners. Technical support showed the reverse relationship, with professionals rating it 27 points higher than undergraduates. Thus, learners studying around employment valued dependable, flexible delivery most, whereas younger students responded more positively to social contact.",
+      "analysis": "The final inference is carefully tied to group differences without claiming facts beyond the table. The report selects contrasts instead of mechanically repeating every cell."
+    },
+    {
+      "id": "vw-33",
+      "modality": "visual",
+      "format": "story-from-image",
+      "title": "Volunteers after the storm",
+      "topic": "environment",
+      "level": "B2+",
+      "register": "neutral",
+      "time": "30 min",
+      "length": "220–260 words",
+      "textType": "Short narrative",
+      "visualType": "Photograph description",
+      "visualData": "A grey morning beside a flooded riverside path. Six volunteers in mismatched waterproof clothing pass sandbags along a human chain. An elderly man stands at the doorway of a small house holding a red kettle. In the foreground, a child has placed a handwritten sign on a fence: “Tea at Number 8”. One volunteer is looking at the sign and laughing despite the rain.",
+      "prompt": "Write a short story inspired by the photograph. Begin during the emergency, use the red kettle or the sign as an important detail, and end with a change in how the narrator understands the neighbourhood. Do not merely describe the image.",
+      "audience": "A creative-writing reader",
+      "purpose": "Build a narrative from visual details",
+      "points": [
+        "Create a narrator and immediate problem",
+        "Use one visual detail as part of the plot",
+        "Include dialogue or a specific action",
+        "End with a meaningful change"
+      ],
+      "vocab": [
+        "waterlogged",
+        "pass along the line",
+        "makeshift",
+        "the rain eased",
+        "without being asked",
+        "belong to a place"
+      ],
+      "model": "By eight in the morning, the river had crossed the path and was pressing against the first garden walls. I arrived in borrowed boots, expecting to be given instructions by someone official. Instead, a woman called Mina pointed at a pile of sandbags and said, “You are number seven. Keep them moving.”\n\nFor the next hour, we passed the weight from hand to hand. I knew none of the people beside me. Rain ran inside my sleeves, and every bag seemed heavier than the last. At Number 8, an elderly man watched from his doorway, unable to lift anything. He held a red kettle as though it were emergency equipment.\n\nThen a child tied a cardboard sign to the fence: “Tea at Number 8”. The absurd formality of it made us laugh. During the next pause, the man filled chipped mugs while the child counted biscuits with great seriousness. Nobody asked who belonged to which house.\n\nBy afternoon, the water had stopped rising. We reinforced the final gate and stood together in the muddy street, too tired to celebrate. I had lived there for eleven months and still called it “the area”, as if I were temporary.\n\nWalking home with the red mug warming my hands, I understood that belonging was not something the neighbourhood granted after enough time. It was something people built, one wet sandbag and one unnecessary cup of tea at a time.",
+      "analysis": "The image details drive the plot: the kettle creates the social pause and the sign becomes the narrator's turning point. The ending interprets, rather than repeats, the scene."
+    },
+    {
+      "id": "vw-34",
+      "modality": "visual",
+      "format": "process-description",
+      "title": "How a household rainwater system works",
+      "topic": "environment",
+      "level": "B2+",
+      "register": "formal",
+      "time": "25 min",
+      "length": "170–200 words",
+      "textType": "Process description",
+      "visualType": "Process diagram in words",
+      "visualData": "Stage 1: Rain falls onto a sloping roof.\nStage 2: Gutters carry water through a leaf screen.\nStage 3: A first-flush pipe diverts the initial dirty water.\nStage 4: Cleaner water enters an underground storage tank.\nStage 5: A pump sends water through a filter.\nStage 6: The water supplies garden taps and toilet cisterns.\nStage 7: If the tank is full, overflow moves to a planted drainage area.\n\nNote: The collected water is not used for drinking.",
+      "prompt": "Describe the process from rainfall to household use. Include an overview, explain the purpose of the first-flush stage, and distinguish normal overflow from the main supply route.",
+      "audience": "An IELTS examiner",
+      "purpose": "Describe a process diagram clearly",
+      "points": [
+        "State the number and broad phases",
+        "Use passive forms accurately",
+        "Explain the diversion stage",
+        "Mention the non-drinking limitation"
+      ],
+      "vocab": [
+        "is channelled",
+        "debris is removed",
+        "initial runoff",
+        "storage tank",
+        "is pumped through",
+        "excess water"
+      ],
+      "model": "The diagram describes a seven-stage system that collects rain from a house roof, removes early contamination, stores the cleaner water and distributes it for non-drinking purposes. Excess water is directed to a planted drainage area.\n\nFirst, rainfall runs down the sloping roof and is channelled through gutters. Before reaching the main pipe, it passes through a leaf screen, where larger debris is removed. The initial runoff is then diverted into a separate first-flush pipe because it is more likely to contain dust and material washed from the roof.\n\nAfter this first portion has been separated, the remaining water enters an underground storage tank. A pump draws water from the tank and sends it through a filter before it reaches the house. It is used for garden taps and toilet cisterns rather than for drinking.\n\nFinally, when the tank reaches capacity, additional rainwater does not enter the household system. Instead, the overflow is carried to a planted drainage area, where it can soak into the ground. Thus, the main route supplies reusable water, while the overflow route safely manages surplus rainfall.",
+      "analysis": "The response identifies the process phases and explains why the first water is diverted. Passive verbs suit a technical process description."
+    },
+    {
+      "id": "vw-35",
+      "modality": "visual",
+      "format": "map-comparison",
+      "title": "A town centre before and after pedestrianisation",
+      "topic": "everyday-life",
+      "level": "C1",
+      "register": "formal",
+      "time": "28 min",
+      "length": "190–220 words",
+      "textType": "Map comparison",
+      "visualType": "Two map descriptions",
+      "visualData": "2015 map:\n- Main Street carried two-way traffic through the centre.\n- A surface car park occupied the central square.\n- The bus station stood on the eastern edge.\n- Four small shops faced Main Street.\n- The river path ended behind the library.\n\n2025 map:\n- Main Street is pedestrian-only between the library and market.\n- The car park has become a tree-lined public square with seating.\n- A multi-storey car park stands beside the ring road.\n- The bus station has moved next to the library.\n- Two shop units have become cafés; a cycle lane follows the river and connects to the market.",
+      "prompt": "Compare the two maps. Give an overview of the central transformation, then describe changes to traffic, transport, public space and commercial use. Use location language accurately.",
+      "audience": "An IELTS examiner",
+      "purpose": "Compare maps over time",
+      "points": [
+        "Summarise the dominant change",
+        "Compare transport arrangements",
+        "Describe replaced and relocated features",
+        "Use past and present forms consistently"
+      ],
+      "vocab": [
+        "was converted into",
+        "was relocated",
+        "on the eastern edge",
+        "pedestrian precinct",
+        "adjacent to",
+        "runs alongside"
+      ],
+      "model": "The maps show that the town centre was transformed between 2015 and 2025 from a traffic-dominated area into a pedestrian precinct. Parking and transport facilities were relocated, while the central square and river corridor gained public and recreational uses.\n\nIn 2015, Main Street carried vehicles in both directions, and a surface car park occupied the square at the heart of the town. By 2025, the section between the library and market had been closed to traffic. The former car park was converted into a tree-lined square containing seating.\n\nVehicle access was not removed completely. A multi-storey car park was built beside the ring road, outside the central pedestrian area. The bus station, previously on the eastern edge, was relocated next to the library, placing public transport closer to the centre.\n\nCommercial and leisure facilities also changed. Of the four small shops facing Main Street, two became cafés overlooking the new square. Finally, the short river path shown behind the library in 2015 was extended into a cycle lane running alongside the river and connecting directly with the market.",
+      "analysis": "The overview identifies pedestrianisation as the organising change. Details are grouped by transport, public space and use rather than described in random map order."
+    },
+    {
+      "id": "vw-36",
+      "modality": "visual",
+      "format": "interpret-data",
+      "title": "Average sleep by age group",
+      "topic": "health",
+      "level": "B2+",
+      "register": "formal",
+      "time": "25 min",
+      "length": "170–200 words",
+      "textType": "Data interpretation",
+      "visualType": "Bar chart data",
+      "visualData": "Average nightly sleep\nAge 16–24: 6 h 48 min\nAge 25–39: 6 h 35 min\nAge 40–54: 6 h 22 min\nAge 55–69: 6 h 51 min\nAge 70+: 7 h 18 min\n\nPercentage reporting daytime tiredness\n16–24: 46%\n25–39: 52%\n40–54: 57%\n55–69: 39%\n70+: 31%",
+      "prompt": "Describe the relationship between age, sleep duration and reported daytime tiredness. Identify the group with the least sleep, the group with the most sleep and the broad pattern. Avoid claiming that the data proves causation.",
+      "audience": "An IELTS examiner",
+      "purpose": "Interpret paired measures responsibly",
+      "points": [
+        "Give an overview of both measures",
+        "Identify highest and lowest figures",
+        "Compare the middle-aged and oldest groups",
+        "Use cautious language about relationships"
+      ],
+      "vocab": [
+        "recorded the shortest duration",
+        "reported fatigue",
+        "an inverse pattern",
+        "coincided with",
+        "cannot establish causation",
+        "age bracket"
+      ],
+      "model": "The data show that average sleep falls from early adulthood to middle age before rising among older groups. Reported daytime tiredness follows a broadly inverse pattern, although the figures indicate an association rather than proving that shorter sleep is the only cause.\n\nPeople aged 40–54 recorded the shortest duration, at 6 hours 22 minutes per night. They also had the highest rate of daytime tiredness, with 57% reporting it. The 25–39 group slept slightly longer, at 6 hours 35 minutes, but fatigue was still common at 52%.\n\nAt the other end of the scale, those aged 70 or above averaged 7 hours 18 minutes, the highest figure shown, and only 31% reported daytime tiredness. Adults aged 55–69 also slept more than the three younger groups and had a lower fatigue rate of 39%.\n\nThe youngest group does not fit the pattern perfectly: although 16–24-year-olds slept 6 hours 48 minutes, longer than people aged 25–54, 46% still felt tired during the day. Overall, less sleep coincided with greater fatigue in the central age brackets, but age and other lifestyle factors may also influence the result.",
+      "analysis": "The report describes correlation cautiously and notes the youngest group's partial exception instead of forcing a perfect pattern."
+    },
+    {
+      "id": "vw-37",
+      "modality": "visual",
+      "format": "story-from-image",
+      "title": "The last train platform",
+      "topic": "travel",
+      "level": "C1",
+      "register": "neutral",
+      "time": "32 min",
+      "length": "230–270 words",
+      "textType": "Short narrative",
+      "visualType": "Photograph description",
+      "visualData": "An almost empty rural railway platform at night. A station clock shows 11:47. A woman in a formal suit holds one shoe in her hand and looks down the track. Beside her is a small cardboard box with air holes. On the opposite platform, a teenage boy holds up a handwritten sign that says “DO NOT GET ON”. The approaching train is visible as two distant lights.",
+      "prompt": "Write a suspenseful short story based on the scene. Explain the box without revealing everything immediately, make the sign central to the conflict, and end within moments of the train arriving.",
+      "audience": "A creative-writing reader",
+      "purpose": "Create suspense from an unusual visual scene",
+      "points": [
+        "Establish why the woman is there",
+        "Delay the explanation of the box",
+        "Use the sign to create a decision",
+        "End with a resolved or deliberately unresolved choice"
+      ],
+      "vocab": [
+        "down the track",
+        "the rails began to hum",
+        "held her breath",
+        "across the platform",
+        "the box shifted",
+        "without looking back"
+      ],
+      "model": "At 11:47, Mara stopped pretending she had not missed the last sensible train. One heel had broken during the run from the wedding, so she stood in one shoe, holding the other like evidence. At her feet, the cardboard box shifted once and became still.\n\nThe platform announcement crackled, naming a destination she had never heard before. Across the tracks, a boy stepped from the shelter. He looked directly at her, then raised a sheet of paper: DO NOT GET ON.\n\nMara glanced towards the station exit. Locked. When she looked back, the boy pointed at the box and shook his head urgently. The air holes had been punched by her brother that afternoon, before he disappeared from the reception and left a message asking her to take “it” to the final stop. She had not opened the lid. She had promised not to.\n\nThe rails began to hum. Two lights rounded the curve, far brighter than an ordinary train should have been. The box shifted again, and this time something inside whispered her name.\n\nMara crouched and pulled at the tape. The boy dropped his sign and ran towards the footbridge, shouting words she could not hear. Wind from the approaching train swept along the platform.\n\nShe had time either to open the box or to board. Not both. At 11:48, Mara chose the lid.",
+      "analysis": "The visual clues become narrative mechanisms: the shoe establishes haste, the sign creates conflict and the box delays the central revelation. The final choice resolves the action while preserving mystery."
+    },
+    {
+      "id": "vw-38",
+      "modality": "visual",
+      "format": "compare-data",
+      "title": "Household energy use by purpose",
+      "topic": "environment",
+      "level": "C1",
+      "register": "formal",
+      "time": "28 min",
+      "length": "190–220 words",
+      "textType": "Pie-chart comparison",
+      "visualType": "Two pie charts",
+      "visualData": "Household energy use\n\n1995:\nSpace heating 52%\nWater heating 21%\nAppliances 12%\nLighting 9%\nCooling 6%\n\n2025:\nSpace heating 34%\nWater heating 18%\nAppliances 27%\nLighting 7%\nCooling 14%",
+      "prompt": "Compare the two distributions. Provide an overview, identify which categories gained or lost share, and quantify the two largest changes. Remember that percentages show proportions, not absolute energy consumption.",
+      "audience": "An IELTS examiner",
+      "purpose": "Compare two pie charts without overclaiming",
+      "points": [
+        "State the major redistribution",
+        "Compare largest increases and decreases",
+        "Use percentage-point language",
+        "Avoid claims about total consumption"
+      ],
+      "vocab": [
+        "accounted for",
+        "percentage points",
+        "nearly doubled",
+        "declined markedly",
+        "combined share",
+        "proportion of use"
+      ],
+      "model": "The charts compare the distribution of household energy use by purpose in 1995 and 2025. Overall, space heating remained the largest category but lost a substantial share, while appliances and cooling became much more prominent.\n\nIn 1995, space heating accounted for 52% of household energy, more than half of the total. By 2025, its share had fallen to 34%, a decline of 18 percentage points and the largest change shown. Water heating also decreased, though more modestly, from 21% to 18%.\n\nAppliance use moved in the opposite direction. Its proportion rose from 12% to 27%, an increase of 15 percentage points, making it the second-largest category in 2025. Cooling more than doubled its share, climbing from 6% to 14%.\n\nLighting was the smallest or second-smallest use in both years and declined slightly from 9% to 7%. Taken together, heating and water heating represented 73% in 1995 but only 52% in 2025, whereas appliances and cooling rose from a combined 18% to 41%. These figures describe a redistribution of the total and do not indicate whether overall household consumption increased or decreased.",
+      "analysis": "The report correctly uses percentage points and explicitly avoids interpreting proportions as total energy volumes."
+    },
+    {
+      "id": "vw-39",
+      "modality": "visual",
+      "format": "explain-causes",
+      "title": "Museum attendance before and after free entry",
+      "topic": "culture",
+      "level": "C1",
+      "register": "formal",
+      "time": "28 min",
+      "length": "190–220 words",
+      "textType": "Evidence-based explanation",
+      "visualType": "Table and notes",
+      "visualData": "Monthly average before free entry: 18,400 visits\nMonthly average after free entry: 29,700 visits\n\nChange by group:\nUnder 18: +92%\nAge 18–34: +74%\nAge 35–64: +41%\nAge 65+: +18%\n\nVisitor survey after the change:\n43% came because admission was free\n28% came after a recommendation\n17% came for a new exhibition\n12% gave another reason",
+      "prompt": "Explain the most plausible reasons for the attendance increase using only the figures and notes provided. Distinguish direct evidence from reasonable inference, and identify which groups changed most.",
+      "audience": "A policy analyst",
+      "purpose": "Explain a change using mixed evidence",
+      "points": [
+        "Quantify the overall increase",
+        "Use survey evidence",
+        "Compare age groups",
+        "Label inference cautiously"
+      ],
+      "vocab": [
+        "rose by roughly",
+        "directly attributed",
+        "strongest response",
+        "may indicate",
+        "word-of-mouth effect",
+        "cannot be determined"
+      ],
+      "model": "Average monthly attendance rose from 18,400 to 29,700 after entry became free, an increase of 11,300 visits or roughly 61%. The survey suggests that removing the price barrier was the largest single reason for the change, since 43% of post-change visitors directly attributed their visit to free admission.\n\nThe response varied considerably by age. Visits by people under eighteen increased by 92%, while the 18–34 group rose by 74%. The gains were smaller among those aged 35–64 and 65 or above, at 41% and 18% respectively. This pattern may indicate that price had been a greater obstacle for younger visitors, although the data do not show their incomes or previous intentions.\n\nRecommendation was the second most common reason, cited by 28%. This points to a possible word-of-mouth effect: free entry may have encouraged initial visits, which then generated further attendance through personal recommendations. A new exhibition also contributed, accounting for 17% of survey responses.\n\nOverall, the figures support a combination of direct price effects, social recommendation and programme interest. However, the survey percentages do not reveal whether these influences overlapped, so the exact contribution of each factor cannot be determined.",
+      "analysis": "The explanation separates the stated survey reasons from cautious inferences about age and word of mouth. It does not claim a single cause explains every visit."
+    },
+    {
+      "id": "vw-40",
+      "modality": "visual",
+      "format": "describe-place",
+      "title": "A coastal village after the storm",
+      "topic": "travel",
+      "level": "C1",
+      "register": "neutral",
+      "time": "30 min",
+      "length": "220–260 words",
+      "textType": "Descriptive writing",
+      "visualType": "Panoramic scene description",
+      "visualData": "A coastal village at first light after a violent storm. Fishing boats lie at unusual angles on the road. Seaweed hangs from a bus-stop sign. The white church on the hill is undamaged, and its bell is ringing. Residents move between houses carrying buckets, brooms and folded blankets. At the harbour wall, a single blue door remains upright although the building around it has collapsed. Sunlight has begun to break through the clouds offshore.",
+      "prompt": "Describe the scene in 220–260 words. Move from the wider landscape to two close details, create a clear emotional atmosphere, and end on an image that suggests what may happen next. Do not turn it into a full plot.",
+      "audience": "A literary reader",
+      "purpose": "Describe a place with controlled atmosphere",
+      "points": [
+        "Organise the viewpoint deliberately",
+        "Use sensory detail",
+        "Balance damage with human activity",
+        "End on a forward-looking image"
+      ],
+      "vocab": [
+        "first light",
+        "strewn across",
+        "salt-stained",
+        "an uneven rhythm",
+        "stood improbably",
+        "the clouds began to lift"
+      ],
+      "model": "At first light, the village looked as though the sea had tried to rearrange it. Boats rested across the road at angles no harbour would permit, their hulls shining with rain. Seaweed hung from the bus-stop sign, and shallow water reflected broken fences, chimney pots and a pale strip of sky.\n\nAbove the damaged roofs, the white church remained untouched on the hill. Its bell travelled through the damp air in an uneven rhythm, not calling people to a service so much as reminding them that the centre of the village still existed. Below, doors opened one after another. Residents emerged carrying buckets, brooms and folded blankets, speaking quietly over the scrape of wood and the distant retreat of waves.\n\nNear the harbour, a blue door stood improbably upright. The house around it had collapsed into stone and splintered beams, yet the door was closed, its brass handle bright with salt. Someone had placed a pair of muddy boots beside it, as if the missing walls were only a temporary inconvenience.\n\nThe air smelled of diesel, wet rope and seaweed. Nothing in the scene was peaceful, but neither was it still. A line formed to clear the road; blankets moved towards the coldest houses; a child collected unbroken cups from the mud.\n\nOffshore, the clouds began to lift. A narrow band of sunlight reached the harbour wall, caught the blue paint and then moved slowly towards the people working below.",
+      "analysis": "The description travels from panorama to church, door and residents. It creates movement without inventing a complete story, and the final light suggests recovery without denying the damage."
+    },
+    {
+      "id": "so-01",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Aunque había estudiado durante semanas, no logró aprobar el…",
+      "topic": "education",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "17 fichas",
+      "textType": "Oración",
+      "spanish": "Aunque había estudiado durante semanas, no logró aprobar el examen final.",
+      "tokens": [
+        "although",
+        "she",
+        "had",
+        "studied",
+        "for",
+        "weeks",
+        ",",
+        "she",
+        "did",
+        "not",
+        "manage",
+        "to",
+        "pass",
+        "the",
+        "final",
+        "exam",
+        "."
+      ],
+      "solution": "although she had studied for weeks, she did not manage to pass the final exam.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "although she had studied for weeks, she did not manage to pass the final exam.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-02",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Como el proyecto se retrasó, el equipo tuvo que trabajar lo…",
+      "topic": "work",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "15 fichas",
+      "textType": "Oración",
+      "spanish": "Como el proyecto se retrasó, el equipo tuvo que trabajar los fines de semana.",
+      "tokens": [
+        "since",
+        "the",
+        "project",
+        "fell",
+        "behind",
+        "schedule",
+        ",",
+        "the",
+        "team",
+        "had",
+        "to",
+        "work",
+        "at",
+        "weekends",
+        "."
+      ],
+      "solution": "since the project fell behind schedule, the team had to work at weekends.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "since the project fell behind schedule, the team had to work at weekends.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-03",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Las emisiones siguieron aumentando; por lo tanto, el gobier…",
+      "topic": "environment",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Las emisiones siguieron aumentando; por lo tanto, el gobierno impuso reglas más estrictas.",
+      "tokens": [
+        "emissions",
+        "kept",
+        "rising",
+        ";",
+        "therefore",
+        ",",
+        "the",
+        "government",
+        "imposed",
+        "stricter",
+        "rules",
+        "."
+      ],
+      "solution": "emissions kept rising; therefore, the government imposed stricter rules.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "emissions kept rising; therefore, the government imposed stricter rules.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-04",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "La aplicación es rápida y, además, resulta sorprendentement…",
+      "topic": "technology",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "16 fichas",
+      "textType": "Oración",
+      "spanish": "La aplicación es rápida y, además, resulta sorprendentemente fácil de usar.",
+      "tokens": [
+        "the",
+        "app",
+        "is",
+        "fast",
+        "and",
+        ",",
+        "in",
+        "addition",
+        ",",
+        "it",
+        "is",
+        "surprisingly",
+        "easy",
+        "to",
+        "use",
+        "."
+      ],
+      "solution": "the app is fast and, in addition, it is surprisingly easy to use.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the app is fast and, in addition, it is surprisingly easy to use.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-05",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "A pesar de sentirse agotada, siguió entrenando para la mara…",
+      "topic": "health",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "A pesar de sentirse agotada, siguió entrenando para la maratón.",
+      "tokens": [
+        "despite",
+        "feeling",
+        "exhausted",
+        ",",
+        "she",
+        "carried",
+        "on",
+        "training",
+        "for",
+        "the",
+        "marathon",
+        "."
+      ],
+      "solution": "despite feeling exhausted, she carried on training for the marathon.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "despite feeling exhausted, she carried on training for the marathon.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-06",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "A menos que reserves con antelación, no encontrarás alojami…",
+      "topic": "travel",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "A menos que reserves con antelación, no encontrarás alojamiento barato.",
+      "tokens": [
+        "unless",
+        "you",
+        "book",
+        "in",
+        "advance",
+        ",",
+        "you",
+        "will",
+        "not",
+        "find",
+        "cheap",
+        "accommodation",
+        "."
+      ],
+      "solution": "unless you book in advance, you will not find cheap accommodation.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "unless you book in advance, you will not find cheap accommodation.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-07",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Mientras que la novela fue elogiada, la película recibió cr…",
+      "topic": "culture",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Mientras que la novela fue elogiada, la película recibió críticas duras.",
+      "tokens": [
+        "whereas",
+        "the",
+        "novel",
+        "was",
+        "praised",
+        ",",
+        "the",
+        "film",
+        "received",
+        "harsh",
+        "reviews",
+        "."
+      ],
+      "solution": "whereas the novel was praised, the film received harsh reviews.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "whereas the novel was praised, the film received harsh reviews.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-08",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Los investigadores repitieron el experimento para confirmar…",
+      "topic": "science",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Los investigadores repitieron el experimento para confirmar sus hallazgos.",
+      "tokens": [
+        "the",
+        "researchers",
+        "repeated",
+        "the",
+        "experiment",
+        "in",
+        "order",
+        "to",
+        "confirm",
+        "their",
+        "findings",
+        "."
+      ],
+      "solution": "the researchers repeated the experiment in order to confirm their findings.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the researchers repeated the experiment in order to confirm their findings.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-09",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Se me ocurrió una idea mejor después de repasar los datos.",
+      "topic": "work",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Se me ocurrió una idea mejor después de repasar los datos.",
+      "tokens": [
+        "I",
+        "came",
+        "up",
+        "with",
+        "a",
+        "better",
+        "idea",
+        "after",
+        "going",
+        "over",
+        "the",
+        "data",
+        "."
+      ],
+      "solution": "I came up with a better idea after going over the data.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "I came up with a better idea after going over the data.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-10",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Se me acabó la paciencia y decidí dejar de discutir.",
+      "topic": "everyday-life",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Se me acabó la paciencia y decidí dejar de discutir.",
+      "tokens": [
+        "I",
+        "ran",
+        "out",
+        "of",
+        "patience",
+        "and",
+        "decided",
+        "to",
+        "give",
+        "up",
+        "arguing",
+        "."
+      ],
+      "solution": "I ran out of patience and decided to give up arguing.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "I ran out of patience and decided to give up arguing.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-11",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Deberías buscar esas palabras antes de entregar el trabajo.",
+      "topic": "education",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Deberías buscar esas palabras antes de entregar el trabajo.",
+      "tokens": [
+        "you",
+        "should",
+        "look",
+        "up",
+        "those",
+        "words",
+        "before",
+        "handing",
+        "in",
+        "the",
+        "essay",
+        "."
+      ],
+      "solution": "you should look up those words before handing in the essay.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "you should look up those words before handing in the essay.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-12",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Se llevan bien aunque crecieron en ciudades distintas.",
+      "topic": "relationships",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Se llevan bien aunque crecieron en ciudades distintas.",
+      "tokens": [
+        "they",
+        "get",
+        "on",
+        "well",
+        "even",
+        "though",
+        "they",
+        "grew",
+        "up",
+        "in",
+        "different",
+        "cities",
+        "."
+      ],
+      "solution": "they get on well even though they grew up in different cities.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "they get on well even though they grew up in different cities.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-13",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "La reunión se canceló porque el director tuvo que ocuparse…",
+      "topic": "work",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "15 fichas",
+      "textType": "Oración",
+      "spanish": "La reunión se canceló porque el director tuvo que ocuparse de una urgencia.",
+      "tokens": [
+        "the",
+        "meeting",
+        "was",
+        "called",
+        "off",
+        "because",
+        "the",
+        "manager",
+        "had",
+        "to",
+        "deal",
+        "with",
+        "an",
+        "emergency",
+        "."
+      ],
+      "solution": "the meeting was called off because the manager had to deal with an emergency.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the meeting was called off because the manager had to deal with an emergency.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-14",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "El sistema se cayó, así que tuvimos que reiniciarlo manualm…",
+      "topic": "technology",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "15 fichas",
+      "textType": "Oración",
+      "spanish": "El sistema se cayó, así que tuvimos que reiniciarlo manualmente.",
+      "tokens": [
+        "the",
+        "system",
+        "broke",
+        "down",
+        ",",
+        "so",
+        "we",
+        "had",
+        "to",
+        "set",
+        "it",
+        "up",
+        "again",
+        "manually",
+        "."
+      ],
+      "solution": "the system broke down, so we had to set it up again manually.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the system broke down, so we had to set it up again manually.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-15",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Le costó recuperarse de la lesión, pero nunca se rindió.",
+      "topic": "health",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "16 fichas",
+      "textType": "Oración",
+      "spanish": "Le costó recuperarse de la lesión, pero nunca se rindió.",
+      "tokens": [
+        "he",
+        "found",
+        "it",
+        "hard",
+        "to",
+        "get",
+        "over",
+        "the",
+        "injury",
+        ",",
+        "but",
+        "he",
+        "never",
+        "gave",
+        "in",
+        "."
+      ],
+      "solution": "he found it hard to get over the injury, but he never gave in.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "he found it hard to get over the injury, but he never gave in.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-16",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Pasé por tu casa, pero al parecer ya habías salido.",
+      "topic": "everyday-life",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "14 fichas",
+      "textType": "Oración",
+      "spanish": "Pasé por tu casa, pero al parecer ya habías salido.",
+      "tokens": [
+        "I",
+        "dropped",
+        "by",
+        "your",
+        "house",
+        ",",
+        "but",
+        "you",
+        "had",
+        "apparently",
+        "already",
+        "gone",
+        "out",
+        "."
+      ],
+      "solution": "I dropped by your house, but you had apparently already gone out.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "I dropped by your house, but you had apparently already gone out.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-17",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Para cuando llegó el cliente, ya habíamos terminado la pres…",
+      "topic": "work",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "14 fichas",
+      "textType": "Oración",
+      "spanish": "Para cuando llegó el cliente, ya habíamos terminado la presentación.",
+      "tokens": [
+        "by",
+        "the",
+        "time",
+        "the",
+        "client",
+        "arrived",
+        ",",
+        "we",
+        "had",
+        "already",
+        "finished",
+        "the",
+        "presentation",
+        "."
+      ],
+      "solution": "by the time the client arrived, we had already finished the presentation.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "by the time the client arrived, we had already finished the presentation.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-18",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Ha estado preparando el examen desde marzo.",
+      "topic": "education",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "10 fichas",
+      "textType": "Oración",
+      "spanish": "Ha estado preparando el examen desde marzo.",
+      "tokens": [
+        "she",
+        "has",
+        "been",
+        "preparing",
+        "for",
+        "the",
+        "exam",
+        "since",
+        "March",
+        "."
+      ],
+      "solution": "she has been preparing for the exam since March.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "she has been preparing for the exam since March.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-19",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Para el próximo verano habremos visitado seis países.",
+      "topic": "travel",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "10 fichas",
+      "textType": "Oración",
+      "spanish": "Para el próximo verano habremos visitado seis países.",
+      "tokens": [
+        "by",
+        "next",
+        "summer",
+        "we",
+        "will",
+        "have",
+        "visited",
+        "six",
+        "countries",
+        "."
+      ],
+      "solution": "by next summer we will have visited six countries.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "by next summer we will have visited six countries.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-20",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Los resultados fueron publicados antes de que se revisara e…",
+      "topic": "science",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "11 fichas",
+      "textType": "Oración",
+      "spanish": "Los resultados fueron publicados antes de que se revisara el estudio.",
+      "tokens": [
+        "the",
+        "results",
+        "were",
+        "published",
+        "before",
+        "the",
+        "study",
+        "had",
+        "been",
+        "reviewed",
+        "."
+      ],
+      "solution": "the results were published before the study had been reviewed.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the results were published before the study had been reviewed.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-21",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Si hubieran probado el software antes, habrían evitado el f…",
+      "topic": "technology",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "15 fichas",
+      "textType": "Oración",
+      "spanish": "Si hubieran probado el software antes, habrían evitado el fallo.",
+      "tokens": [
+        "if",
+        "they",
+        "had",
+        "tested",
+        "the",
+        "software",
+        "earlier",
+        ",",
+        "they",
+        "would",
+        "have",
+        "avoided",
+        "the",
+        "bug",
+        "."
+      ],
+      "solution": "if they had tested the software earlier, they would have avoided the bug.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "if they had tested the software earlier, they would have avoided the bug.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-22",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Si la gente reciclara más, las ciudades producirían mucha m…",
+      "topic": "environment",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Si la gente reciclara más, las ciudades producirían mucha menos basura.",
+      "tokens": [
+        "if",
+        "people",
+        "recycled",
+        "more",
+        ",",
+        "cities",
+        "would",
+        "produce",
+        "far",
+        "less",
+        "waste",
+        "."
+      ],
+      "solution": "if people recycled more, cities would produce far less waste.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "if people recycled more, cities would produce far less waste.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-23",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Debe de haber olvidado la reunión, porque nunca llega tarde.",
+      "topic": "work",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Debe de haber olvidado la reunión, porque nunca llega tarde.",
+      "tokens": [
+        "he",
+        "must",
+        "have",
+        "forgotten",
+        "the",
+        "meeting",
+        ",",
+        "because",
+        "he",
+        "is",
+        "never",
+        "late",
+        "."
+      ],
+      "solution": "he must have forgotten the meeting, because he is never late.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "he must have forgotten the meeting, because he is never late.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-24",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Me dijo que había estado esperando una disculpa durante meses.",
+      "topic": "relationships",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "14 fichas",
+      "textType": "Oración",
+      "spanish": "Me dijo que había estado esperando una disculpa durante meses.",
+      "tokens": [
+        "she",
+        "told",
+        "me",
+        "that",
+        "she",
+        "had",
+        "been",
+        "waiting",
+        "for",
+        "an",
+        "apology",
+        "for",
+        "months",
+        "."
+      ],
+      "solution": "she told me that she had been waiting for an apology for months.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "she told me that she had been waiting for an apology for months.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-25",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Deberías haber pedido ayuda en lugar de rendirte tan pronto.",
+      "topic": "education",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Deberías haber pedido ayuda en lugar de rendirte tan pronto.",
+      "tokens": [
+        "you",
+        "should",
+        "have",
+        "asked",
+        "for",
+        "help",
+        "instead",
+        "of",
+        "giving",
+        "up",
+        "so",
+        "soon",
+        "."
+      ],
+      "solution": "you should have asked for help instead of giving up so soon.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "you should have asked for help instead of giving up so soon.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-26",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Solía saltarse el desayuno, pero ahora come antes de entrenar.",
+      "topic": "health",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Solía saltarse el desayuno, pero ahora come antes de entrenar.",
+      "tokens": [
+        "he",
+        "used",
+        "to",
+        "skip",
+        "breakfast",
+        ",",
+        "but",
+        "now",
+        "he",
+        "eats",
+        "before",
+        "training",
+        "."
+      ],
+      "solution": "he used to skip breakfast, but now he eats before training.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "he used to skip breakfast, but now he eats before training.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-27",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Compraron una preciosa mesa de madera antigua en el mercado.",
+      "topic": "culture",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "11 fichas",
+      "textType": "Oración",
+      "spanish": "Compraron una preciosa mesa de madera antigua en el mercado.",
+      "tokens": [
+        "they",
+        "bought",
+        "a",
+        "beautiful",
+        "old",
+        "wooden",
+        "table",
+        "at",
+        "the",
+        "market",
+        "."
+      ],
+      "solution": "they bought a beautiful old wooden table at the market.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "they bought a beautiful old wooden table at the market.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-28",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Cuanto más contaminemos, más difícil será revertir el daño.",
+      "topic": "environment",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "15 fichas",
+      "textType": "Oración",
+      "spanish": "Cuanto más contaminemos, más difícil será revertir el daño.",
+      "tokens": [
+        "the",
+        "more",
+        "we",
+        "pollute",
+        ",",
+        "the",
+        "harder",
+        "it",
+        "will",
+        "be",
+        "to",
+        "reverse",
+        "the",
+        "damage",
+        "."
+      ],
+      "solution": "the more we pollute, the harder it will be to reverse the damage.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the more we pollute, the harder it will be to reverse the damage.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-29",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "La falta de comunicación entre departamentos causó una conf…",
+      "topic": "work",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "10 fichas",
+      "textType": "Oración",
+      "spanish": "La falta de comunicación entre departamentos causó una confusión considerable.",
+      "tokens": [
+        "the",
+        "lack",
+        "of",
+        "communication",
+        "between",
+        "departments",
+        "caused",
+        "considerable",
+        "confusion",
+        "."
+      ],
+      "solution": "the lack of communication between departments caused considerable confusion.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the lack of communication between departments caused considerable confusion.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-30",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "El investigador cuyo artículo ganó el premio trabaja en nue…",
+      "topic": "science",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "El investigador cuyo artículo ganó el premio trabaja en nuestra universidad.",
+      "tokens": [
+        "the",
+        "researcher",
+        "whose",
+        "paper",
+        "won",
+        "the",
+        "award",
+        "works",
+        "at",
+        "our",
+        "university",
+        "."
+      ],
+      "solution": "the researcher whose paper won the award works at our university.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the researcher whose paper won the award works at our university.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-31",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Muchos usuarios están preocupados por la cantidad de datos…",
+      "topic": "technology",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Muchos usuarios están preocupados por la cantidad de datos que se recopilan.",
+      "tokens": [
+        "many",
+        "users",
+        "are",
+        "concerned",
+        "about",
+        "the",
+        "amount",
+        "of",
+        "data",
+        "being",
+        "collected",
+        "."
+      ],
+      "solution": "many users are concerned about the amount of data being collected.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "many users are concerned about the amount of data being collected.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-32",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Fue de lejos la experiencia más memorable de todo el viaje.",
+      "topic": "travel",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Fue de lejos la experiencia más memorable de todo el viaje.",
+      "tokens": [
+        "it",
+        "was",
+        "by",
+        "far",
+        "the",
+        "most",
+        "memorable",
+        "experience",
+        "of",
+        "the",
+        "whole",
+        "trip",
+        "."
+      ],
+      "solution": "it was by far the most memorable experience of the whole trip.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "it was by far the most memorable experience of the whole trip.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-33",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Tomar apuntes a mano mejora la retención mucho más de lo es…",
+      "topic": "education",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "11 fichas",
+      "textType": "Oración",
+      "spanish": "Tomar apuntes a mano mejora la retención mucho más de lo esperado.",
+      "tokens": [
+        "taking",
+        "notes",
+        "by",
+        "hand",
+        "improves",
+        "retention",
+        "far",
+        "more",
+        "than",
+        "expected",
+        "."
+      ],
+      "solution": "taking notes by hand improves retention far more than expected.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "taking notes by hand improves retention far more than expected.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-34",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Me dio un consejo excelente que todavía sigo hoy.",
+      "topic": "relationships",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Me dio un consejo excelente que todavía sigo hoy.",
+      "tokens": [
+        "she",
+        "gave",
+        "me",
+        "some",
+        "excellent",
+        "advice",
+        "which",
+        "I",
+        "still",
+        "follow",
+        "today",
+        "."
+      ],
+      "solution": "she gave me some excellent advice which I still follow today.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "she gave me some excellent advice which I still follow today.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-35",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Nunca había visto un equipo tan comprometido con un objetiv…",
+      "topic": "work",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Nunca había visto un equipo tan comprometido con un objetivo común.",
+      "tokens": [
+        "never",
+        "had",
+        "I",
+        "seen",
+        "a",
+        "team",
+        "so",
+        "committed",
+        "to",
+        "a",
+        "common",
+        "goal",
+        "."
+      ],
+      "solution": "never had I seen a team so committed to a common goal.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "never had I seen a team so committed to a common goal.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-36",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Lo que más me preocupa es la velocidad del deshielo.",
+      "topic": "environment",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Lo que más me preocupa es la velocidad del deshielo.",
+      "tokens": [
+        "what",
+        "worries",
+        "me",
+        "most",
+        "is",
+        "the",
+        "speed",
+        "of",
+        "the",
+        "melting",
+        "ice",
+        "."
+      ],
+      "solution": "what worries me most is the speed of the melting ice.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "what worries me most is the speed of the melting ice.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-37",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Hicieron restaurar el teatro antes de reabrirlo al público.",
+      "topic": "culture",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "12 fichas",
+      "textType": "Oración",
+      "spanish": "Hicieron restaurar el teatro antes de reabrirlo al público.",
+      "tokens": [
+        "they",
+        "had",
+        "the",
+        "theatre",
+        "restored",
+        "before",
+        "reopening",
+        "it",
+        "to",
+        "the",
+        "public",
+        "."
+      ],
+      "solution": "they had the theatre restored before reopening it to the public.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "they had the theatre restored before reopening it to the public.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-38",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "El médico sugirió que dejara de fumar de inmediato.",
+      "topic": "health",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "9 fichas",
+      "textType": "Oración",
+      "spanish": "El médico sugirió que dejara de fumar de inmediato.",
+      "tokens": [
+        "the",
+        "doctor",
+        "suggested",
+        "that",
+        "he",
+        "stop",
+        "smoking",
+        "immediately",
+        "."
+      ],
+      "solution": "the doctor suggested that he stop smoking immediately.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "the doctor suggested that he stop smoking immediately.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-39",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Por muy avanzado que sea el algoritmo, sigue cometiendo err…",
+      "topic": "technology",
+      "level": "C1",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Por muy avanzado que sea el algoritmo, sigue cometiendo errores básicos.",
+      "tokens": [
+        "however",
+        "advanced",
+        "the",
+        "algorithm",
+        "may",
+        "be",
+        ",",
+        "it",
+        "still",
+        "makes",
+        "basic",
+        "mistakes",
+        "."
+      ],
+      "solution": "however advanced the algorithm may be, it still makes basic mistakes.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "however advanced the algorithm may be, it still makes basic mistakes.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    },
+    {
+      "id": "so-40",
+      "modality": "order",
+      "format": "sentence-ordering",
+      "title": "Ojalá hubiera reservado las entradas cuando todavía eran ba…",
+      "topic": "everyday-life",
+      "level": "B2 alto",
+      "register": "Neutro",
+      "time": "2–3 min",
+      "length": "13 fichas",
+      "textType": "Oración",
+      "spanish": "Ojalá hubiera reservado las entradas cuando todavía eran baratas.",
+      "tokens": [
+        "I",
+        "wish",
+        "I",
+        "had",
+        "booked",
+        "the",
+        "tickets",
+        "while",
+        "they",
+        "were",
+        "still",
+        "cheap",
+        "."
+      ],
+      "solution": "I wish I had booked the tickets while they were still cheap.",
+      "prompt": "Reordená las fichas en inglés para reconstruir la oración equivalente en español. Arrastrá cada ficha a su lugar o tocala para moverla.",
+      "points": [
+        "La puntuación también es una ficha: colocala donde corresponda.",
+        "Usá «Pista» si necesitás fijar la próxima ficha correcta."
+      ],
+      "vocab": [],
+      "model": "I wish I had booked the tickets while they were still cheap.",
+      "analysis": "Comparar el orden del inglés con el español ayuda a interiorizar la posición de sujeto, auxiliar, verbo y complementos, así como el lugar de conectores y adverbios."
+    }
+  ];
+
+  /* ============================================================
+     WRITING — Taller de escritura (120 ejercicios · 3 modalidades)
+     ============================================================ */
+  (function initWriting() {
+    const EX = (typeof ET_WRITING_EXERCISES !== "undefined" && ET_WRITING_EXERCISES) || [];
+    if (!EX.length) return;
+
+    const MOD_LABEL = {
+      prompt: "Escribir desde una consigna",
+      read: "Leer y responder",
+      visual: "Escritura visual",
+      order: "Ordenar la oración"
+    };
+    // ---- element refs ----
+    const elModalityBar = document.querySelector(".wr-modality-bar");
+    const elRandom = $("wrRandom");
+    const elCountFilter = $("wrCountFilter");
+    const elList = $("wrList");
+    const elProgressBadge = $("wrProgressBadge");
+    const elEmpty = $("wrEmpty");
+    const elActive = $("wrActive");
+    const elExModality = $("wrExModality");
+    const elExTitle = $("wrExTitle");
+    const elExMeta = $("wrExMeta");
+    const elMaterial = $("wrMaterial");
+    const elCopyPrompt = $("wrCopyPrompt");
+    const elExPrompt = $("wrExPrompt");
+    const elExPoints = $("wrExPoints");
+    const elTimer = $("wrTimer");
+    const elWordCount = $("wrWordCount");
+    const elAnswerLabel = $("wrAnswerLabel");
+    const elText = $("wrText");
+    const elShortAnswer = $("wrShortAnswer");
+    const elGapSentence = $("wrGapSentence");
+    const elGapInput = $("wrGapInput");
+    const elShortFeedback = $("wrShortFeedback");
+    const elCheckShort = $("wrCheckShort");
+    const elOrder = $("wrOrder");
+    const elOrderSpanish = $("wrOrderSpanish");
+    const elOrderAnswer = $("wrOrderAnswer");
+    const elOrderBank = $("wrOrderBank");
+    const elOrderFeedback = $("wrOrderFeedback");
+    const elOrderCheck = $("wrOrderCheck");
+    const elOrderUndo = $("wrOrderUndo");
+    const elOrderReset = $("wrOrderReset");
+    const elOrderHint = $("wrOrderHint");
+    const elSaveHint = $("wrSaveHint");
+    const elTimerToggle = $("wrTimerToggle");
+    const elClear = $("wrClear");
+    const elToggleVocab = $("wrToggleVocab");
+    const elToggleModel = $("wrToggleModel");
+    const elComplete = $("wrComplete");
+    const elVocabBox = $("wrVocabBox");
+    const elVocabList = $("wrVocabList");
+    const elModelBox = $("wrModelBox");
+    const elExpectedType = $("wrExpectedType");
+    const elModelText = $("wrModelText");
+    const elAnalysisText = $("wrAnalysisText");
+
+    if (!elList || !elModalityBar) return;
+
+    // ---- persistent state ----
+    const DRAFT_PREFIX = "wr_draft_";
+    const COMPLETED_KEY = "wr_completed";
+    const validIds = new Set(EX.map(e => e.id));
+    let completed = new Set(store.get(COMPLETED_KEY, []).filter(id => validIds.has(id)));
+    let current = null;
+    let filtered = EX.slice();
+    let activeModality = "all";
+    let saveTimer = null;
+    let timerId = null;
+    let timerSeconds = 0;
+    let timerRunning = false;
+    persistCompleted(); // removes obsolete IDs from the former fourth modality
+
+    // ---- helpers ----
+    function persistCompleted() { store.set(COMPLETED_KEY, Array.from(completed)); }
+    function draftKey(id) { return DRAFT_PREFIX + id; }
+    function getDraft(id) { return store.get(draftKey(id), ""); }
+    function setDraft(id, val) { store.set(draftKey(id), val); }
+    function delDraft(id) { store.del(draftKey(id)); }
+    function isShortExercise(e = current) { return !!(e && e.responseMode === "short-fill"); }
+    function isOrderExercise(e = current) { return !!(e && e.modality === "order"); }
+    function answerControl(e = current) { return isShortExercise(e) ? elGapInput : elText; }
+    function getAnswerValue() { const c = answerControl(); return c ? c.value : ""; }
+    function setAnswerValue(value) { const c = answerControl(); if (c) c.value = value || ""; }
+    function normaliseShort(value) {
+      return String(value || "").toLowerCase().replace(/[’]/g, "'")
+        .replace(/[^a-z0-9' -]/g, " ").replace(/\s+/g, " ").trim();
+    }
+
+    function fmtTime(total) {
+      const m = Math.floor(total / 60), s = total % 60;
+      return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+    }
+
+
+    // ---- filtering ----
+    function applyFilters() {
+      const m = activeModality;
+      filtered = EX.filter(e => m === "all" || e.modality === m);
+      elModalityBar.querySelectorAll(".wr-mod-chip").forEach(btn => {
+        const on = btn.getAttribute("data-modality") === m;
+        btn.classList.toggle("is-active", on);
+        btn.setAttribute("aria-checked", on ? "true" : "false");
+      });
+      renderList();
+      updateFilterCount();
+    }
+
+    function updateFilterCount() {
+      const n = filtered.length;
+      elCountFilter.textContent = n + (n === 1 ? " actividad" : " actividades");
+    }
+
+    function updateProgressBadge() {
+      elProgressBadge.textContent = completed.size + " / " + EX.length + " completadas";
+    }
+
+    // ---- render list ----
+    function renderList() {
+      if (!filtered.length) {
+        elList.innerHTML = '<li class="wr-list-empty">No hay actividades en esta modalidad.</li>';
+        return;
+      }
+      let html = "";
+      filtered.forEach(e => {
+        const isDone = completed.has(e.id);
+        const isSel = current && current.id === e.id;
+        const hasDraft = !!getDraft(e.id);
+        html += '<li class="wr-list-item' + (isSel ? " is-selected" : "") + (isDone ? " is-done" : "") +
+          '" role="option" tabindex="0" data-id="' + esc(e.id) + '" aria-selected="' + (isSel ? "true" : "false") + '">' +
+          '<span class="wr-item-row">' +
+          '<span class="wr-dot wr-dot-' + esc(e.modality) + '" role="img" aria-label="' + esc(MOD_LABEL[e.modality] || "") + '"></span>' +
+          '<span class="wr-item-title">' + esc(e.title) + "</span>" +
+          (hasDraft ? '<span class="wr-item-flag" title="Borrador guardado">✎</span>' : "") +
+          (isDone ? '<span class="wr-item-flag wr-done-flag" title="Completada">✓</span>' : "") +
+          "</span></li>";
+      });
+      elList.innerHTML = html;
+    }
+
+    // ---- render source material ----
+    function renderMaterial(e) {
+      let html = "";
+      if (e.modality === "read" && e.passage) {
+        html = '<div class="wr-material-label">Texto de lectura</div>' +
+          '<div class="wr-material-body wr-prewrap">' + esc(e.passage) + "</div>";
+        if (e.task) html += '<div class="wr-material-task"><strong>Tarea:</strong> ' + esc(e.task) + "</div>";
+      } else if (e.modality === "visual" && e.visualData) {
+        html = '<div class="wr-material-label">Material visual — ' + esc(e.visualType || "descripción") + "</div>" +
+          '<div class="wr-material-body wr-prewrap">' + esc(e.visualData) + "</div>";
+      }
+      if (html) {
+        elMaterial.innerHTML = html;
+        elMaterial.classList.remove("hidden");
+      } else {
+        elMaterial.innerHTML = "";
+        elMaterial.classList.add("hidden");
+      }
+    }
+
+    function configureAnswerMode(e) {
+      const orderMode = isOrderExercise(e);
+      const shortMode = !orderMode && isShortExercise(e);
+      const textMode = !orderMode && !shortMode;
+
+      elText.classList.toggle("hidden", !textMode);
+      elShortAnswer.classList.toggle("hidden", !shortMode);
+      elCheckShort.classList.toggle("hidden", !shortMode);
+      elOrder.classList.toggle("hidden", !orderMode);
+      elShortFeedback.textContent = "";
+      elShortFeedback.className = "wr-short-feedback";
+
+      // En modo "ordenar" el resto de herramientas de redacción no aplica.
+      elWordCount.classList.toggle("hidden", orderMode);
+      elClear.classList.toggle("hidden", orderMode);
+      elToggleVocab.classList.toggle("hidden", orderMode);
+      elCopyPrompt.classList.toggle("hidden", orderMode);
+
+      elAnswerLabel.classList.toggle("hidden", orderMode);
+      elAnswerLabel.textContent = shortMode ? "Tu respuesta breve" : "Tu texto";
+      elAnswerLabel.htmlFor = shortMode ? "wrGapInput" : "wrText";
+
+      if (shortMode) {
+        elGapSentence.textContent = e.gapSentence || e.prompt;
+        elGapInput.placeholder = e.length || "1–2 words";
+        elGapInput.setAttribute("aria-label", "Respuesta breve de una o dos palabras");
+      }
+      if (orderMode) buildOrderExercise(e);
+    }
+
+    /* ============================================================
+       ORDENAR LA ORACIÓN — arrastrar / tocar fichas
+       ============================================================ */
+    let orderState = null; // { tokens, answer[], bank[], history[], hinted }
+
+    function shuffled(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = a[i]; a[i] = a[j]; a[j] = t;
+      }
+      return a;
+    }
+
+    function buildOrderExercise(e) {
+      const tokens = (e.tokens || []).slice();
+      elOrderSpanish.textContent = e.spanish || "";
+
+      // Cada ficha es {key, word}: key único porque las palabras pueden repetirse.
+      const pieces = tokens.map((w, i) => ({ key: "t" + i, word: w }));
+      let bank = shuffled(pieces);
+      // Evita que el barajado devuelva el orden correcto por casualidad.
+      if (pieces.length > 1 && bank.every((p, i) => p.key === pieces[i].key)) bank = shuffled(pieces);
+
+      orderState = { tokens: pieces, answer: [], bank: bank, history: [], hinted: 0 };
+      // Restaura progreso guardado, si lo hay.
+      const saved = store.get(draftKey(e.id), null);
+      if (saved && Array.isArray(saved.answer)) {
+        const byKey = {};
+        pieces.forEach(p => { byKey[p.key] = p; });
+        const ans = saved.answer.map(k => byKey[k]).filter(Boolean);
+        const used = new Set(ans.map(p => p.key));
+        orderState.answer = ans;
+        orderState.bank = orderState.bank.filter(p => !used.has(p.key));
+      }
+      renderOrder();
+      elOrderFeedback.textContent = "";
+      elOrderFeedback.className = "wr-order-feedback";
+    }
+
+    function tokenHTML(piece, zone, index) {
+      const isPunct = /^[.,;:!?]$/.test(piece.word);
+      return '<button type="button" class="wr-token' + (isPunct ? " is-punct" : "") +
+        '" draggable="true" role="listitem" data-key="' + esc(piece.key) +
+        '" data-zone="' + zone + '" data-index="' + index + '">' + esc(piece.word) + "</button>";
+    }
+
+    function renderOrder() {
+      if (!orderState) return;
+      elOrderAnswer.innerHTML = orderState.answer.length
+        ? orderState.answer.map((p, i) => tokenHTML(p, "answer", i)).join("")
+        : '<span class="wr-order-placeholder">Arrastrá o tocá las fichas para construir la oración…</span>';
+      elOrderBank.innerHTML = orderState.bank.length
+        ? orderState.bank.map((p, i) => tokenHTML(p, "bank", i)).join("")
+        : '<span class="wr-order-placeholder">No quedan fichas.</span>';
+    }
+
+    function pushHistory() {
+      if (!orderState) return;
+      orderState.history.push({
+        answer: orderState.answer.map(p => p.key),
+        bank: orderState.bank.map(p => p.key)
+      });
+      if (orderState.history.length > 60) orderState.history.shift();
+    }
+
+    function saveOrderProgress() {
+      if (!current || !orderState) return;
+      if (orderState.answer.length) {
+        store.set(draftKey(current.id), { answer: orderState.answer.map(p => p.key) });
+      } else {
+        store.del(draftKey(current.id));
+      }
+      renderList();
+    }
+
+    // Mueve una ficha entre zonas. targetIndex: posición de inserción en destino.
+    function moveToken(key, toZone, targetIndex) {
+      if (!orderState) return;
+      const fromAnswer = orderState.answer.findIndex(p => p.key === key);
+      const fromBank = orderState.bank.findIndex(p => p.key === key);
+      let piece = null;
+      pushHistory();
+      if (fromAnswer > -1) piece = orderState.answer.splice(fromAnswer, 1)[0];
+      else if (fromBank > -1) piece = orderState.bank.splice(fromBank, 1)[0];
+      if (!piece) { orderState.history.pop(); return; }
+
+      const dest = toZone === "answer" ? orderState.answer : orderState.bank;
+      let idx = (typeof targetIndex === "number" && targetIndex >= 0) ? targetIndex : dest.length;
+      if (idx > dest.length) idx = dest.length;
+      dest.splice(idx, 0, piece);
+
+      renderOrder();
+      saveOrderProgress();
+      elOrderFeedback.textContent = "";
+      elOrderFeedback.className = "wr-order-feedback";
+    }
+
+    function checkOrder() {
+      if (!orderState || !current) return;
+      const total = orderState.tokens.length;
+      if (orderState.answer.length < total) {
+        elOrderFeedback.textContent = "Todavía faltan fichas por colocar (" +
+          orderState.answer.length + " de " + total + ").";
+        elOrderFeedback.className = "wr-order-feedback is-warn";
+        return;
+      }
+      // Marca cada ficha como correcta o incorrecta según su posición.
+      const nodes = elOrderAnswer.querySelectorAll(".wr-token");
+      let correct = 0;
+      orderState.answer.forEach((p, i) => {
+        const ok = orderState.tokens[i] && p.word === orderState.tokens[i].word;
+        if (ok) correct++;
+        const n = nodes[i];
+        if (n) { n.classList.toggle("is-correct", ok); n.classList.toggle("is-wrong", !ok); }
+      });
+      if (correct === total) {
+        elOrderFeedback.textContent = "¡Correcto! " + current.solution;
+        elOrderFeedback.className = "wr-order-feedback is-ok";
+        if (typeof logActivity === "function") logActivity();
+      } else {
+        elOrderFeedback.textContent = correct + " de " + total +
+          " fichas en su lugar. Las marcadas en rojo están fuera de posición.";
+        elOrderFeedback.className = "wr-order-feedback is-warn";
+      }
+    }
+
+    function undoOrder() {
+      if (!orderState || !orderState.history.length) return;
+      const snap = orderState.history.pop();
+      const byKey = {};
+      orderState.tokens.forEach(p => { byKey[p.key] = p; });
+      orderState.answer = snap.answer.map(k => byKey[k]).filter(Boolean);
+      orderState.bank = snap.bank.map(k => byKey[k]).filter(Boolean);
+      renderOrder();
+      saveOrderProgress();
+      elOrderFeedback.textContent = "";
+      elOrderFeedback.className = "wr-order-feedback";
+    }
+
+    function resetOrder() {
+      if (!current || !isOrderExercise(current)) return;
+      store.del(draftKey(current.id));
+      buildOrderExercise(current);
+    }
+
+    // Coloca la próxima ficha correcta en su posición.
+    function hintOrder() {
+      if (!orderState) return;
+      const pos = orderState.answer.findIndex((p, i) =>
+        !orderState.tokens[i] || p.word !== orderState.tokens[i].word);
+      const target = pos === -1 ? orderState.answer.length : pos;
+      if (target >= orderState.tokens.length) return;
+      const needed = orderState.tokens[target].word;
+      // Busca una ficha con esa palabra fuera de posición (banco primero).
+      let src = orderState.bank.findIndex(p => p.word === needed);
+      if (src > -1) {
+        pushHistory();
+        const piece = orderState.bank.splice(src, 1)[0];
+        orderState.answer.splice(target, 0, piece);
+      } else {
+        const inAns = orderState.answer.findIndex((p, i) => i >= target && p.word === needed);
+        if (inAns === -1) return;
+        pushHistory();
+        const piece = orderState.answer.splice(inAns, 1)[0];
+        orderState.answer.splice(target, 0, piece);
+      }
+      orderState.hinted++;
+      renderOrder();
+      saveOrderProgress();
+      const n = elOrderAnswer.querySelectorAll(".wr-token")[target];
+      if (n) n.classList.add("is-hint");
+      elOrderFeedback.textContent = "Se colocó la ficha «" + needed + "» en su lugar.";
+      elOrderFeedback.className = "wr-order-feedback";
+    }
+
+    /* ---- interacción: click/tap ---- */
+    function onOrderClick(ev) {
+      const tok = ev.target.closest(".wr-token");
+      if (!tok) return;
+      ev.preventDefault();
+      const key = tok.getAttribute("data-key");
+      const zone = tok.getAttribute("data-zone");
+      // Tocar una ficha del banco la envía al final de la respuesta; y viceversa.
+      moveToken(key, zone === "bank" ? "answer" : "bank", undefined);
+    }
+    elOrderAnswer.addEventListener("click", onOrderClick);
+    elOrderBank.addEventListener("click", onOrderClick);
+
+    /* ---- interacción: teclado ---- */
+    function onOrderKey(ev) {
+      const tok = ev.target.closest(".wr-token");
+      if (!tok) return;
+      const key = tok.getAttribute("data-key");
+      const zone = tok.getAttribute("data-zone");
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        moveToken(key, zone === "bank" ? "answer" : "bank", undefined);
+        return;
+      }
+      if (zone !== "answer") return;
+      const i = orderState ? orderState.answer.findIndex(p => p.key === key) : -1;
+      if (i < 0) return;
+      if (ev.key === "ArrowLeft" && i > 0) { ev.preventDefault(); moveToken(key, "answer", i - 1); focusKey(key); }
+      if (ev.key === "ArrowRight" && i < orderState.answer.length - 1) { ev.preventDefault(); moveToken(key, "answer", i + 1); focusKey(key); }
+    }
+    function focusKey(key) {
+      const n = elOrderAnswer.querySelector('.wr-token[data-key="' + key + '"]');
+      if (n) n.focus();
+    }
+    elOrderAnswer.addEventListener("keydown", onOrderKey);
+    elOrderBank.addEventListener("keydown", onOrderKey);
+
+    /* ---- interacción: drag & drop ---- */
+    let dragKey = null;
+    function onDragStart(ev) {
+      const tok = ev.target.closest(".wr-token");
+      if (!tok) return;
+      dragKey = tok.getAttribute("data-key");
+      tok.classList.add("is-dragging");
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = "move";
+        try { ev.dataTransfer.setData("text/plain", dragKey); } catch (err) {}
+      }
+    }
+    function onDragEnd(ev) {
+      const tok = ev.target.closest(".wr-token");
+      if (tok) tok.classList.remove("is-dragging");
+      clearDropMarkers();
+      dragKey = null;
+    }
+    function clearDropMarkers() {
+      [elOrderAnswer, elOrderBank].forEach(z => {
+        z.classList.remove("is-drop-target");
+        z.querySelectorAll(".wr-token").forEach(t => t.classList.remove("drop-before", "drop-after"));
+      });
+    }
+    // Calcula el índice de inserción según la posición horizontal del cursor.
+    // Índice de inserción teniendo en cuenta las filas (las fichas se envuelven
+    // en varios renglones, así que hay que comparar primero el eje Y y luego el X).
+    function insertionIndex(zoneEl, listLen, clientX, clientY) {
+      const toks = [...zoneEl.querySelectorAll(".wr-token")];
+      if (!toks.length) return 0;
+      const rects = toks.map(t => t.getBoundingClientRect());
+
+      // Agrupa las fichas en filas según su posición vertical.
+      const rows = [];
+      rects.forEach((r, i) => {
+        const row = rows.find(x => Math.abs(x.top - r.top) <= Math.max(6, r.height * 0.5));
+        if (row) { row.items.push(i); row.bottom = Math.max(row.bottom, r.bottom); }
+        else rows.push({ top: r.top, bottom: r.bottom, items: [i] });
+      });
+
+      // Encuentra la fila bajo el cursor; si está por encima o por debajo de todas,
+      // usa la primera o la última respectivamente.
+      let row = null;
+      for (const rw of rows) {
+        if (clientY < rw.bottom) { row = rw; break; }
+      }
+      if (!row) row = rows[rows.length - 1];
+
+      // Dentro de la fila, decide por la mitad horizontal de cada ficha.
+      for (const i of row.items) {
+        const r = rects[i];
+        if (clientX < r.left + r.width / 2) return i;
+      }
+      // A la derecha de la última ficha de la fila: insertar justo después.
+      return row.items[row.items.length - 1] + 1;
+    }
+    function onDragOver(ev) {
+      if (!dragKey) return;
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      const zoneEl = ev.currentTarget;
+      zoneEl.classList.add("is-drop-target");
+      const isAnswer = zoneEl === elOrderAnswer;
+      const len = orderState ? (isAnswer ? orderState.answer.length : orderState.bank.length) : 0;
+      const idx = insertionIndex(zoneEl, len, ev.clientX, ev.clientY);
+      const toks = [...zoneEl.querySelectorAll(".wr-token")];
+      toks.forEach(t => t.classList.remove("drop-before", "drop-after"));
+      if (toks.length) {
+        if (idx >= toks.length) toks[toks.length - 1].classList.add("drop-after");
+        else toks[idx].classList.add("drop-before");
+      }
+    }
+    function onDrop(ev) {
+      if (!dragKey) return;
+      ev.preventDefault();
+      const zoneEl = ev.currentTarget;
+      const isAnswer = zoneEl === elOrderAnswer;
+      const len = orderState ? (isAnswer ? orderState.answer.length : orderState.bank.length) : 0;
+      let idx = insertionIndex(zoneEl, len, ev.clientX, ev.clientY);
+      // Si se reordena dentro de la misma zona y la ficha salía de antes del destino,
+      // el splice previo desplaza el índice una posición.
+      if (orderState) {
+        const list = isAnswer ? orderState.answer : orderState.bank;
+        const from = list.findIndex(p => p.key === dragKey);
+        if (from > -1 && from < idx) idx--;
+      }
+      moveToken(dragKey, isAnswer ? "answer" : "bank", idx);
+      clearDropMarkers();
+      dragKey = null;
+    }
+    [elOrderAnswer, elOrderBank].forEach(z => {
+      z.addEventListener("dragstart", onDragStart);
+      z.addEventListener("dragend", onDragEnd);
+      z.addEventListener("dragover", onDragOver);
+      z.addEventListener("dragleave", () => z.classList.remove("is-drop-target"));
+      z.addEventListener("drop", onDrop);
+    });
+
+    elOrderCheck.addEventListener("click", checkOrder);
+    elOrderUndo.addEventListener("click", undoOrder);
+    elOrderReset.addEventListener("click", resetOrder);
+    elOrderHint.addEventListener("click", hintOrder);
+
+    // ---- select an exercise ----
+    function selectExercise(id) {
+      const e = EX.find(x => x.id === id);
+      if (!e) return;
+      flushDraft();
+      resetTimer();
+      current = e;
+
+      elExModality.className = "wr-dot wr-dot-" + e.modality;
+      elExModality.setAttribute("aria-label", MOD_LABEL[e.modality] || "");
+      elExModality.setAttribute("title", MOD_LABEL[e.modality] || "");
+      elExTitle.textContent = e.title;
+      elExMeta.textContent = isOrderExercise(e)
+        ? MOD_LABEL[e.modality] + " · " + e.time + " · " + e.length
+        : "Tipo de texto: " + e.textType + " · " + e.time + " · " + e.length;
+
+      renderMaterial(e);
+      configureAnswerMode(e);
+      elExPrompt.textContent = e.prompt;
+
+      let pts = "";
+      (e.points || []).forEach(p => { pts += "<li>" + esc(p) + "</li>"; });
+      elExPoints.innerHTML = pts;
+      elExPoints.classList.toggle("hidden", !(e.points && e.points.length));
+
+      let vhtml = "";
+      (e.vocab || []).forEach(v => { vhtml += "<li>" + esc(v) + "</li>"; });
+      elVocabList.innerHTML = vhtml;
+      elVocabBox.classList.add("hidden");
+      elToggleVocab.textContent = "Mostrar vocabulario útil";
+      elToggleVocab.setAttribute("aria-expanded", "false");
+
+      elExpectedType.textContent = e.textType;
+      elModelText.textContent = e.model;
+      elAnalysisText.textContent = e.analysis;
+      elModelBox.classList.add("hidden");
+      elToggleModel.textContent = "Mostrar respuesta modelo";
+      elToggleModel.setAttribute("aria-expanded", "false");
+
+      elText.value = "";
+      elGapInput.value = "";
+      if (isOrderExercise(e)) {
+        // El progreso de "ordenar" se guarda como objeto, no como texto.
+        elSaveHint.textContent = "";
+      } else {
+        const d = getDraft(e.id);
+        setAnswerValue(typeof d === "string" ? d : "");
+        updateWordCount();
+        elSaveHint.textContent = (typeof d === "string" && d) ? "Borrador restaurado" : "";
+      }
+
+      updateCompleteButton();
+      elEmpty.classList.add("hidden");
+      elActive.classList.remove("hidden");
+      renderList();
+      const ctl = answerControl(e);
+      if (ctl && !isOrderExercise(e)) ctl.focus();
+    }
+
+    function updateCompleteButton() {
+      if (!current) return;
+      const done = completed.has(current.id);
+      elComplete.textContent = done ? "✓ Completada" : "Marcar como completada";
+      elComplete.classList.toggle("is-done", done);
+      elComplete.setAttribute("aria-pressed", done ? "true" : "false");
+    }
+
+    function updateWordCount() {
+      const n = words(getAnswerValue()).length;
+      elWordCount.textContent = n + (n === 1 ? " palabra" : " palabras");
+    }
+
+    // ---- draft autosave ----
+    function scheduleSave() {
+      if (!current || isOrderExercise()) return; // "ordenar" guarda su propio estado
+      if (saveTimer) clearTimeout(saveTimer);
+      elSaveHint.textContent = "Guardando…";
+      saveTimer = setTimeout(() => {
+        if (!current) return;
+        const val = getAnswerValue();
+        if (val.trim()) { setDraft(current.id, val); elSaveHint.textContent = "Borrador guardado"; }
+        else { delDraft(current.id); elSaveHint.textContent = ""; }
+        renderList();
+      }, 600);
+    }
+
+    function flushDraft() {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      if (!current || isOrderExercise()) return;
+      const val = getAnswerValue();
+      if (val.trim()) setDraft(current.id, val); else delDraft(current.id);
+    }
+
+    // ---- timer ----
+    function tickTimer() { timerSeconds++; elTimer.textContent = fmtTime(timerSeconds); }
+    function startTimer() {
+      if (timerRunning) return;
+      timerRunning = true;
+      elTimer.hidden = false;
+      elTimerToggle.textContent = "Pausar tiempo";
+      timerId = setInterval(tickTimer, 1000);
+    }
+    function stopTimer() {
+      timerRunning = false;
+      if (timerId) { clearInterval(timerId); timerId = null; }
+      elTimerToggle.textContent = "Reanudar tiempo";
+    }
+    function resetTimer() {
+      if (timerId) { clearInterval(timerId); timerId = null; }
+      timerRunning = false;
+      timerSeconds = 0;
+      elTimer.hidden = true;
+      elTimer.textContent = "00:00";
+      elTimerToggle.textContent = "Iniciar tiempo";
+    }
+
+    // ---- events ----
+    elModalityBar.addEventListener("click", (ev) => {
+      const chip = ev.target.closest(".wr-mod-chip");
+      if (!chip) return;
+      activeModality = chip.getAttribute("data-modality") || "all";
+      applyFilters();
+    });
+
+    elRandom.addEventListener("click", () => {
+      if (!filtered.length) return;
+      const pick = filtered[Math.floor(Math.random() * filtered.length)];
+      selectExercise(pick.id);
+    });
+
+    elList.addEventListener("click", (ev) => {
+      const li = ev.target.closest(".wr-list-item");
+      if (li) selectExercise(li.getAttribute("data-id"));
+    });
+    elList.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const li = ev.target.closest(".wr-list-item");
+      if (li) { ev.preventDefault(); selectExercise(li.getAttribute("data-id")); }
+    });
+
+    [elText, elGapInput].forEach(control => {
+      control.addEventListener("input", () => {
+        updateWordCount();
+        scheduleSave();
+        if (control === elGapInput) {
+          elShortFeedback.textContent = "";
+          elShortFeedback.className = "wr-short-feedback";
+        }
+      });
+    });
+
+    elCheckShort.addEventListener("click", () => {
+      if (!isShortExercise() || !current) return;
+      const value = normaliseShort(elGapInput.value);
+      const accepted = (current.acceptedAnswers || []).map(normaliseShort);
+      const correct = value && accepted.includes(value);
+      elShortFeedback.className = "wr-short-feedback " + (correct ? "is-correct" : "is-wrong");
+      elShortFeedback.textContent = correct
+        ? "✓ Correcto. La respuesta coincide con el texto."
+        : "Todavía no. Revisá el pasaje y respetá el límite de una o dos palabras.";
+    });
+
+    elCopyPrompt.addEventListener("click", () => {
+      if (!current) return;
+      const txt = current.prompt;
+      const done = () => {
+        elCopyPrompt.textContent = "¡Copiado!";
+        setTimeout(() => { elCopyPrompt.textContent = "Copiar consigna"; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(done).catch(done);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = txt; document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        document.body.removeChild(ta); done();
+      }
+    });
+
+    elTimerToggle.addEventListener("click", () => { if (timerRunning) stopTimer(); else startTimer(); });
+
+    elClear.addEventListener("click", () => {
+      if (!current) return;
+      setAnswerValue("");
+      updateWordCount();
+      delDraft(current.id);
+      elSaveHint.textContent = "Borrador eliminado";
+      elShortFeedback.textContent = "";
+      elShortFeedback.className = "wr-short-feedback";
+      renderList();
+      answerControl().focus();
+    });
+
+    elToggleVocab.addEventListener("click", () => {
+      const hidden = elVocabBox.classList.toggle("hidden");
+      elToggleVocab.textContent = hidden ? "Mostrar vocabulario útil" : "Ocultar vocabulario útil";
+      elToggleVocab.setAttribute("aria-expanded", hidden ? "false" : "true");
+    });
+
+    elToggleModel.addEventListener("click", () => {
+      const hidden = elModelBox.classList.toggle("hidden");
+      elToggleModel.textContent = hidden ? "Mostrar respuesta modelo" : "Ocultar respuesta modelo";
+      elToggleModel.setAttribute("aria-expanded", hidden ? "false" : "true");
+    });
+
+    elComplete.addEventListener("click", () => {
+      if (!current) return;
+      if (completed.has(current.id)) completed.delete(current.id);
+      else {
+        completed.add(current.id);
+        if (typeof logActivity === "function") logActivity();
+      }
+      persistCompleted();
+      updateCompleteButton();
+      updateProgressBadge();
+      renderList();
+    });
+
+    window.addEventListener("beforeunload", flushDraft);
+
+    applyFilters();
+    updateProgressBadge();
+  })();
+
+  /* ============================================================
+     READING — TFNG + short answer
+     ============================================================ */
+            const readingPassages = [
+    {
+      "title": "The man who decided to walk the world",
+      "body": [
+        "When Arturo Benet was nineteen, a close friend died in a car accident on a road they had driven together dozens of times. The loss did not push him into grief so much as into a strange, restless clarity. He began to measure his own life in decades rather than years, and the arithmetic frightened him. Within a week he had written a single sentence in a notebook: walk every continent before I turn forty.",
+        "It took him six years to leave. He finished a degree in geology he no longer wanted, worked nights in a warehouse, and saved with the grim discipline of someone paying off a debt. Friends assumed the plan had quietly died. In fact he was reading maps, learning to repair boots, and teaching himself enough Portuguese and Arabic to ask for water and directions.",
+        "He set out from a coastal town in northern Spain in the spring of 2016, pushing a converted stroller rather than carrying a rucksack. The choice looked absurd to onlookers, but it spared his spine and let him carry twenty kilos of water across dry country. He walked south through Morocco, then east along the Mediterranean, averaging thirty-five kilometres a day and burning through a pair of boots every eleven weeks.",
+        "A dog joined him outside a village in Tunisia and never left. He had originally wanted an animal for protection; what he got was a companion who slept against his back on cold nights and refused to walk when he had a fever, effectively forcing rest days. Crossing borders with her proved far simpler than he feared, once a veterinarian in Tunis issued the paperwork.",
+        "The difficulties were rarely the ones he had rehearsed. Bandits and wild animals never materialised. What wore him down were the small administrative cruelties: a visa refused for a missing stamp, a month lost in a provincial office, a border closed for reasons nobody would explain. Twice he came close to abandoning the walk entirely, and both times it was the impossibility of explaining the decision to himself, rather than any surge of courage, that kept him going.",
+        "He also discovered that walking changes the way information arrives. A traveller in a car sees a region as a sequence of destinations; a walker experiences it as a slow gradient, where the accent, the bread and the shape of the roofs shift so gradually that no single day contains a border. He came to distrust the tidy summaries he had read before leaving.",
+        "Benet reached his ninth country in the spring of 2022 and has not set a finishing date. Asked what he will do afterwards, he tends to change the subject. The honest answer, he admitted once, is that the walk stopped being a project some years ago and became simply the way he lives, which makes the question of its ending harder than anyone expects."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Benet left on his journey immediately after his friend died.",
+          "a": "False",
+          "why": "The passage says it took him six years to leave; he finished a degree and worked first."
+        },
+        {
+          "q": "He chose a stroller because it reduced strain on his back.",
+          "a": "True",
+          "why": "The text states the choice spared his spine and let him carry water."
+        },
+        {
+          "q": "The dog was originally intended to serve a practical purpose.",
+          "a": "True",
+          "why": "He had wanted an animal for protection."
+        },
+        {
+          "q": "Attacks by bandits were among his most serious problems.",
+          "a": "False",
+          "why": "The passage says bandits never materialised; the difficulties were administrative."
+        },
+        {
+          "q": "Benet earns money by writing about his journey.",
+          "a": "Not Given",
+          "why": "How he finances the walk after leaving is never mentioned."
+        }
+      ],
+      "short": [
+        {
+          "q": "How often did Benet need to replace his boots?",
+          "a": "every eleven weeks"
+        },
+        {
+          "q": "In which country did the dog join him?",
+          "a": "Tunisia"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What does the writer suggest about Benet's reaction to his friend's death?",
+          "options": [
+            "It made him withdraw from other people for several years.",
+            "It produced an urgent awareness of how short life is.",
+            "It convinced him that travelling by car was dangerous.",
+            "It caused him to abandon his university studies at once."
+          ],
+          "a": 1,
+          "why": "The first paragraph describes a 'restless clarity' and his fear at measuring life in decades — an urgent awareness of time, not withdrawal."
+        },
+        {
+          "q": "According to the fifth paragraph, what most threatened the journey?",
+          "options": [
+            "Physical exhaustion and repeated illness.",
+            "The hostility of people he met on the road.",
+            "Bureaucratic obstacles such as visas and closed borders.",
+            "The cost of replacing his equipment."
+          ],
+          "a": 2,
+          "why": "The paragraph lists visas refused, months lost in offices and closed borders as what wore him down."
+        },
+        {
+          "q": "What point does the writer make about walking in the sixth paragraph?",
+          "options": [
+            "It is a more reliable way of measuring distance.",
+            "It reveals that regions change gradually rather than at fixed lines.",
+            "It allows a traveller to visit more destinations.",
+            "It is the only honest way to understand a foreign culture."
+          ],
+          "a": 1,
+          "why": "The paragraph contrasts a driver's sequence of destinations with a walker's slow gradient where no single day contains a border."
+        },
+        {
+          "q": "How does Benet now regard the walk?",
+          "options": [
+            "As a project he is eager to complete.",
+            "As a mistake he is reluctant to admit.",
+            "As a way of life rather than a task with an end.",
+            "As a duty he owes to his late friend."
+          ],
+          "a": 2,
+          "why": "The final paragraph says it stopped being a project and became the way he lives."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "When Arturo Benet was nineteen, a close friend died in a car accident on",
+            "p": "uén artero benet uós naintín, a klóus frend dáid in a kar aksident on"
+          },
+          {
+            "t": "a road they had driven together dozens of times.",
+            "p": "a róud déi jad driven tuguéder dosens ov táims."
+          },
+          {
+            "t": "The loss did not push him into grief so much as into a strange,",
+            "p": "de los did not push jim íntu grif sóu mach as íntu a stréinch,"
+          },
+          {
+            "t": "restless clarity. He began to measure his own life in decades rather",
+            "p": "restles klariti. ji began tu méshur jis óun láif in dékeids ráder"
+          },
+          {
+            "t": "than years, and the arithmetic frightened him.",
+            "p": "dan yirs, end de arismetik fráitend jim."
+          },
+          {
+            "t": "Within a week he had written a single sentence in a notebook:",
+            "p": "uidín a uik ji jad riten a singol sentens in a notebuk:"
+          },
+          {
+            "t": "walk every continent before I turn forty.",
+            "p": "uók évri kontinent bifór ái tern forti."
+          }
+        ],
+        [
+          {
+            "t": "It took him six years to leave. He finished a degree in geology he no",
+            "p": "it tuk jim siks yirs tu léiv. ji finished a degri in yeoloyi ji nóu"
+          },
+          {
+            "t": "longer wanted, worked nights in a warehouse,",
+            "p": "lonyer uanted, uérkt náits in a uarejoiús,"
+          },
+          {
+            "t": "and saved with the grim discipline of someone paying off a debt.",
+            "p": "end séivd uíd de grim disipláin ov somóun péing of a debt."
+          },
+          {
+            "t": "Friends assumed the plan had quietly died. In fact he was reading maps,",
+            "p": "frends asumd de plan jad kuitli dáid. in fakt ji uós ríding maps,"
+          },
+          {
+            "t": "learning to repair boots, and teaching himself enough Portuguese and",
+            "p": "lirning tu repéar buts, end tiching jimself ináf portuguís end"
+          },
+          {
+            "t": "Arabic to ask for water and directions.",
+            "p": "arabik tu ask for uóter end derekshons."
+          }
+        ],
+        [
+          {
+            "t": "He set out from a coastal town in northern Spain in the spring of 2016,",
+            "p": "ji set áut from a kóustal tóun in norsern spéin in de spring ov 2016,"
+          },
+          {
+            "t": "pushing a converted stroller rather than carrying a rucksack.",
+            "p": "pushing a konverted stroler ráder dan karying a ruksak."
+          },
+          {
+            "t": "The choice looked absurd to onlookers, but it spared his spine and let",
+            "p": "de choáik loóukt abserd tu onloóukers, bat it spéerd jis spáin end let"
+          },
+          {
+            "t": "him carry twenty kilos of water across dry country.",
+            "p": "jim kari tuénti kilos ov uóter acrós dri cántri."
+          },
+          {
+            "t": "He walked south through Morocco, then east along the Mediterranean,",
+            "p": "ji uókt sos zru morokko, den ist alóng de mediteranin,"
+          },
+          {
+            "t": "averaging thirty-five kilometres a day and burning through a pair of",
+            "p": "averéiying serti-fáiv kilometres a déi end berning zru a péar ov"
+          },
+          {
+            "t": "boots every eleven weeks.",
+            "p": "buts évri iléven uiks."
+          }
+        ],
+        [
+          {
+            "t": "A dog joined him outside a village in Tunisia and never left.",
+            "p": "a dog yoáind jim otsáid a vílich in tunisia end néver left."
+          },
+          {
+            "t": "He had originally wanted an animal for protection;",
+            "p": "ji jad oriyinali uanted an animal for protekshon;"
+          },
+          {
+            "t": "what he got was a companion who slept against his back on cold nights",
+            "p": "uót ji got uós a kompanion ju slept eguénst jis bak on kóuld náits"
+          },
+          {
+            "t": "and refused to walk when he had a fever, effectively forcing rest days.",
+            "p": "end refust tu uók uén ji jad a fever, efektiveli forsing rest déis."
+          },
+          {
+            "t": "Crossing borders with her proved far simpler than he feared,",
+            "p": "krosing borders uíd jer pruvd far simpler dan ji féerd,"
+          },
+          {
+            "t": "once a veterinarian in Tunis issued the paperwork.",
+            "p": "uáns a veterinarian in tunis isued de paperuork."
+          }
+        ],
+        [
+          {
+            "t": "The difficulties were rarely the ones he had rehearsed.",
+            "p": "de difikultis uér rareli de uáns ji jad rejirst."
+          },
+          {
+            "t": "Bandits and wild animals never materialised.",
+            "p": "bandits end uáild animals néver materialáist."
+          },
+          {
+            "t": "What wore him down were the small administrative cruelties:",
+            "p": "uót uóer jim dóun uér de smal administratáiv krueltis:"
+          },
+          {
+            "t": "a visa refused for a missing stamp, a month lost in a provincial office,",
+            "p": "a visa refust for a mising stamp, a manz lost in a provinshal ófis,"
+          },
+          {
+            "t": "a border closed for reasons nobody would explain.",
+            "p": "a border klóust for risons nobodi vud ekspléin."
+          },
+          {
+            "t": "Twice he came close to abandoning the walk entirely,",
+            "p": "tuáik ji kéim klóus tu abandóuning de uók entereli,"
+          },
+          {
+            "t": "and both times it was the impossibility of explaining the decision to",
+            "p": "end bóuz táims it uós de imposibiliti ov eksplaáining de desishon tu"
+          },
+          {
+            "t": "himself, rather than any surge of courage, that kept him going.",
+            "p": "jimself, ráder dan éni sery ov kérich, dat kept jim going."
+          }
+        ],
+        [
+          {
+            "t": "He also discovered that walking changes the way information arrives.",
+            "p": "ji ólsou diskoverd dat uóking chéinches de uéi informashon aráivs."
+          },
+          {
+            "t": "A traveller in a car sees a region as a sequence of destinations;",
+            "p": "a traveler in a kar sis a reyion as a skuens ov destinashons;"
+          },
+          {
+            "t": "a walker experiences it as a slow gradient, where the accent,",
+            "p": "a uóker eksperinses it as a slo gradint, uér de aksent,"
+          },
+          {
+            "t": "the bread and the shape of the roofs shift so gradually that no single",
+            "p": "de bred end de shéip ov de rufs shift sóu graduali dat nóu singol"
+          },
+          {
+            "t": "day contains a border. He came to distrust the tidy summaries he had",
+            "p": "déi kontéins a border. ji kéim tu distrust de tidi sumaris ji jad"
+          },
+          {
+            "t": "read before leaving.",
+            "p": "rid bifór léiving."
+          }
+        ],
+        [
+          {
+            "t": "Benet reached his ninth country in the spring of 2022 and has not set a",
+            "p": "benet riched jis nins cántri in de spring ov 2022 end jas not set a"
+          },
+          {
+            "t": "finishing date. Asked what he will do afterwards,",
+            "p": "finishing déit. askt uót ji uíl du afteruards,"
+          },
+          {
+            "t": "he tends to change the subject. The honest answer,",
+            "p": "ji tends tu chéinch de sábyect. de ónest ánser,"
+          },
+          {
+            "t": "he admitted once, is that the walk stopped being a project some years",
+            "p": "ji admited uáns, is dat de uók stopt bing a próyect sam yirs"
+          },
+          {
+            "t": "ago and became simply the way he lives, which makes the question of its",
+            "p": "ago end bikéim símpli de uéi ji livs, uích méiks de kuéschon ov its"
+          },
+          {
+            "t": "ending harder than anyone expects.",
+            "p": "ending jarder dan anióun ekspekts."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The town that turned off its lights",
+      "body": [
+        "Ardmoor is not a remarkable place. It sits in a shallow valley in the north of England, has a population of just under four thousand, and until recently was known chiefly for a bridge that appears on regional postcards. In 2019 it became, unexpectedly, the subject of academic papers, television segments and a steady trickle of visitors who arrive after dark and leave before breakfast.",
+        "The change began with a budget shortfall. Faced with repairing an ageing street-lighting network, the council calculated that full replacement would consume most of a decade's capital funding. A junior officer suggested, half in jest, that they might simply switch some of it off. The proposal was politically awkward — nobody wants to be the councillor who made the streets dark — but a trial was approved for a single winter on three residential roads.",
+        "Residents were, predictably, alarmed. A public meeting produced warnings about burglary, traffic accidents and children walking home from clubs. The council agreed to monitor incidents closely and to restore the lighting immediately if anything went wrong. What followed was closer to an anticlimax than a catastrophe: over the trial period, recorded crime on the three roads did not rise, and the small number of collisions was consistent with previous years.",
+        "The interesting result was one nobody had set out to measure. Within weeks, residents began reporting that they were sleeping better. A local doctor, initially sceptical, noticed a modest fall in requests for sleep medication among patients on those streets. None of this constituted proof, and the sample was far too small for confident conclusions, but it prompted a university team to design a fuller study.",
+        "That study, published three years later, was careful in its claims. It found a measurable improvement in self-reported sleep quality but could not rule out the possibility that residents were simply reporting what they expected to find, having read about the trial in the local press. Its authors were clear that a single town proves very little, and that the effect might vanish in a city where light arrives from many directions at once.",
+        "Meanwhile Ardmoor acquired something it had never had: a sky. Astronomy groups began organising visits, a pub started opening late for what it called stargazing suppers, and the bridge on the postcards was quietly displaced by photographs of the Milky Way above the valley. The council, which had acted purely to save money, found itself accidentally in possession of a tourist attraction.",
+        "Not everyone is pleased. Some residents dislike the visitors, others still find the walk from the bus stop uncomfortable, and a campaign to restore lighting on one road succeeded in 2023. The council's own position remains resolutely unromantic. Asked whether Ardmoor had discovered something important about modern life, the officer who first made the suggestion replied that they had discovered a way to avoid replacing four hundred lamp posts."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Ardmoor switched off its lights mainly for environmental reasons.",
+          "a": "False",
+          "why": "The change began with a budget shortfall and the cost of replacing the network."
+        },
+        {
+          "q": "Crime increased significantly during the trial period.",
+          "a": "False",
+          "why": "Recorded crime on the three roads did not rise."
+        },
+        {
+          "q": "The university study proved conclusively that darkness improves sleep.",
+          "a": "False",
+          "why": "The study was careful, could not rule out expectation effects, and said one town proves little."
+        },
+        {
+          "q": "Lighting has been restored on one of the roads.",
+          "a": "True",
+          "why": "A campaign to restore lighting on one road succeeded in 2023."
+        },
+        {
+          "q": "The council has since advised other towns to copy the scheme.",
+          "a": "Not Given",
+          "why": "The passage never says the council advised others."
+        }
+      ],
+      "short": [
+        {
+          "q": "What was Ardmoor previously known for?",
+          "a": "a bridge"
+        },
+        {
+          "q": "What did the pub begin hosting in the evenings?",
+          "a": "stargazing suppers"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why was the original proposal described as 'politically awkward'?",
+          "options": [
+            "It would have required raising local taxes.",
+            "No councillor wished to be blamed for darkening the streets.",
+            "It had been suggested by someone without authority.",
+            "It contradicted a promise made at the previous election."
+          ],
+          "a": 1,
+          "why": "The text says nobody wants to be the councillor who made the streets dark."
+        },
+        {
+          "q": "How does the writer characterise the outcome of the winter trial?",
+          "options": [
+            "As a disaster that confirmed residents' fears.",
+            "As an undramatic result in which predicted harms did not occur.",
+            "As proof that street lighting serves no purpose.",
+            "As too brief to produce any usable information."
+          ],
+          "a": 1,
+          "why": "It is described as 'closer to an anticlimax than a catastrophe', with no rise in crime."
+        },
+        {
+          "q": "What limitation of the university study does the writer emphasise?",
+          "options": [
+            "The researchers had no medical training.",
+            "Residents may have reported the results they anticipated.",
+            "The council refused to share its crime figures.",
+            "The study lasted only a single winter."
+          ],
+          "a": 1,
+          "why": "The study could not rule out that residents reported what they expected, having read about the trial."
+        },
+        {
+          "q": "What is the effect of the officer's remark in the final paragraph?",
+          "options": [
+            "It confirms that the council planned the outcome from the start.",
+            "It deflates the grander interpretations placed on the story.",
+            "It suggests the scheme will soon be abandoned.",
+            "It criticises the residents who opposed the trial."
+          ],
+          "a": 1,
+          "why": "The reply is 'resolutely unromantic', reducing the story to avoiding the replacement of lamp posts."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Ardmoor is not a remarkable place. It sits in a shallow valley in the",
+            "p": "ardmúar is not a remarkabol pléis. it sits in a shalo vali in de"
+          },
+          {
+            "t": "north of England, has a population of just under four thousand,",
+            "p": "nors ov england, jas a populashon ov chast ánder for záusand,"
+          },
+          {
+            "t": "and until recently was known chiefly for a bridge that appears on",
+            "p": "end antíl resentli uós nóun chífli for a brich dat apirs on"
+          },
+          {
+            "t": "regional postcards. In 2019 it became, unexpectedly,",
+            "p": "reyional postkards. in 2019 it bikéim, unekspektedli,"
+          },
+          {
+            "t": "the subject of academic papers, television segments and a steady trickle",
+            "p": "de sábyect ov akademik péipers, televishon segments end a stidi trikkol"
+          },
+          {
+            "t": "of visitors who arrive after dark and leave before breakfast.",
+            "p": "ov visitors ju aráiv áfter dark end léiv bifór brikfast."
+          }
+        ],
+        [
+          {
+            "t": "The change began with a budget shortfall. Faced with repairing an ageing",
+            "p": "de chéinch began uíd a báchet shortfal. féist uíd repaáering an aying"
+          },
+          {
+            "t": "street-lighting network, the council calculated that full replacement",
+            "p": "strit-láiting netuork, de konsil kalkuléited dat ful repléisement"
+          },
+          {
+            "t": "would consume most of a decade's capital funding.",
+            "p": "vud konsiúm móust ov a dékeids kapital funding."
+          },
+          {
+            "t": "A junior officer suggested, half in jest, that they might simply switch",
+            "p": "a yunior ofáiser sagchésted, jaf in yest, dat déi máit símpli suich"
+          },
+          {
+            "t": "some of it off. The proposal was politically awkward — nobody wants to",
+            "p": "sam ov it of. de proposal uós politikali okuard — nobodi uants tu"
+          },
+          {
+            "t": "be the councillor who made the streets dark — but a trial was approved",
+            "p": "bi de konsilor ju méid de strits dark — bat a trial uós apróuvd"
+          },
+          {
+            "t": "for a single winter on three residential roads.",
+            "p": "for a singol uinter on zri residenshal róuds."
+          }
+        ],
+        [
+          {
+            "t": "Residents were, predictably, alarmed. A public meeting produced warnings",
+            "p": "residents uér, prediktabli, alarmd. a publik miting produst uarnings"
+          },
+          {
+            "t": "about burglary, traffic accidents and children walking home from clubs.",
+            "p": "abáut berglari, trafik aksidents end chíldren uóking jóum from klubs."
+          },
+          {
+            "t": "The council agreed to monitor incidents closely and to restore the",
+            "p": "de konsil agrid tu monitor insidents kloseli end tu restóer de"
+          },
+          {
+            "t": "lighting immediately if anything went wrong.",
+            "p": "láiting imediateli if énizing uent rong."
+          },
+          {
+            "t": "What followed was closer to an anticlimax than a catastrophe:",
+            "p": "uót folóued uós klóuser tu an antiklimaks dan a katastrof:"
+          },
+          {
+            "t": "over the trial period, recorded crime on the three roads did not rise,",
+            "p": "óuver de trial period, rekorded kráim on de zri róuds did not ráis,"
+          },
+          {
+            "t": "and the small number of collisions was consistent with previous years.",
+            "p": "end de smal number ov kolishons uós konsistent uíd previas yirs."
+          }
+        ],
+        [
+          {
+            "t": "The interesting result was one nobody had set out to measure.",
+            "p": "de interesting result uós uán nobodi jad set áut tu méshur."
+          },
+          {
+            "t": "Within weeks, residents began reporting that they were sleeping better.",
+            "p": "uidín uiks, residents began reporting dat déi uér sliping beter."
+          },
+          {
+            "t": "A local doctor, initially sceptical, noticed a modest fall in requests",
+            "p": "a lokal doktor, initiali septikal, notáist a modest fal in rkuests"
+          },
+          {
+            "t": "for sleep medication among patients on those streets.",
+            "p": "for slip medikashon amáng patints on dóus strits."
+          },
+          {
+            "t": "None of this constituted proof, and the sample was far too small for",
+            "p": "nan ov dis konstituted pruf, end de sampol uós far tu smal for"
+          },
+          {
+            "t": "confident conclusions, but it prompted a university team to design a",
+            "p": "konfident konklushons, bat it prompted a universiti tim tu disáin a"
+          },
+          {
+            "t": "fuller study.",
+            "p": "fuler studi."
+          }
+        ],
+        [
+          {
+            "t": "That study, published three years later, was careful in its claims.",
+            "p": "dat studi, published zri yirs léiter, uós kareful in its kléims."
+          },
+          {
+            "t": "It found a measurable improvement in self-reported sleep quality but",
+            "p": "it fond a miserabol impróuvement in self-reported slip kualiti bat"
+          },
+          {
+            "t": "could not rule out the possibility that residents were simply reporting",
+            "p": "cud not riúl áut de posibiliti dat residents uér símpli reporting"
+          },
+          {
+            "t": "what they expected to find, having read about the trial in the local",
+            "p": "uót déi ekspekted tu fáind, jáving rid abáut de trial in de lokal"
+          },
+          {
+            "t": "press. Its authors were clear that a single town proves very little,",
+            "p": "pres. its osors uér klíar dat a singol tóun pruvs véri litol,"
+          },
+          {
+            "t": "and that the effect might vanish in a city where light arrives from many",
+            "p": "end dat de efekt máit vanish in a siti uér láit aráivs from méni"
+          },
+          {
+            "t": "directions at once.",
+            "p": "derekshons at uáns."
+          }
+        ],
+        [
+          {
+            "t": "Meanwhile Ardmoor acquired something it had never had:",
+            "p": "minuáil ardmúar akkuáerd sámzing it jad néver jad:"
+          },
+          {
+            "t": "a sky. Astronomy groups began organising visits,",
+            "p": "a ski. astronomi grops began organáising visits,"
+          },
+          {
+            "t": "a pub started opening late for what it called stargazing suppers,",
+            "p": "a pub started opening léit for uót it kald stargéising supers,"
+          },
+          {
+            "t": "and the bridge on the postcards was quietly displaced by photographs of",
+            "p": "end de brich on de postkards uós kuitli displéist bái fóutografs ov"
+          },
+          {
+            "t": "the Milky Way above the valley. The council,",
+            "p": "de milki uéi abáv de vali. de konsil,"
+          },
+          {
+            "t": "which had acted purely to save money, found itself accidentally in",
+            "p": "uích jad akted pereli tu séiv máni, fond itself aksidentali in"
+          },
+          {
+            "t": "possession of a tourist attraction.",
+            "p": "poséshon ov a tóurist atrakshon."
+          }
+        ],
+        [
+          {
+            "t": "Not everyone is pleased. Some residents dislike the visitors,",
+            "p": "not everióun is poléist. sam residents disláik de visitors,"
+          },
+          {
+            "t": "others still find the walk from the bus stop uncomfortable,",
+            "p": "áders stil fáind de uók from de bus stop unkomfortabol,"
+          },
+          {
+            "t": "and a campaign to restore lighting on one road succeeded in 2023.",
+            "p": "end a campéin tu restóer láiting on uán róud suksided in 2023."
+          },
+          {
+            "t": "The council's own position remains resolutely unromantic.",
+            "p": "de konsil's óun posishon reméins resoluteli unromantik."
+          },
+          {
+            "t": "Asked whether Ardmoor had discovered something important about modern",
+            "p": "askt uéder ardmúar jad diskoverd sámzing important abáut modern"
+          },
+          {
+            "t": "life, the officer who first made the suggestion replied that they had",
+            "p": "láif, de ofáiser ju férst méid de sagchéschon repláid dat déi jad"
+          },
+          {
+            "t": "discovered a way to avoid replacing four hundred lamp posts.",
+            "p": "diskoverd a uéi tu avoid repléising for jándred lamp posts."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "Why we misremember what we read",
+      "body": [
+        "Most people assume that reading works something like photography: a text enters the mind and a faithful copy is stored, fading slowly over time. Decades of experimental work suggest something less flattering and considerably more interesting. What we retain is not the text but a reconstruction of it, assembled from fragments, expectations and the gist of what we believe the writer intended.",
+        "One of the earliest demonstrations involved asking participants to read a short story from an unfamiliar culture and retell it after intervals of days, weeks and months. The retellings did not simply lose detail. They actively changed, smoothing away the elements that made no sense to the readers and replacing them with material that fitted their own assumptions about how stories work. Participants were confident that they were reporting accurately.",
+        "This tendency has practical consequences. Readers routinely remember having encountered information that was merely implied, and they remember it as strongly as material that was explicitly stated. If a passage describes a driver braking sharply and a pedestrian lying in the road, many readers will later recall reading that the car struck the pedestrian, even though no such sentence appeared.",
+        "Expertise changes what is remembered but does not eliminate distortion. Specialists reading in their own field retain far more of the substance of an argument, because they have existing structures into which new material can be fitted. However, the same structures make them more likely to remember a text as agreeing with their prior position than it actually did. Reconstruction is not the enemy of expertise; it is part of how expertise operates.",
+        "The effect is amplified by the confidence readers place in fluency. Text that is easy to process — clear typography, familiar vocabulary, a rhythm that carries the eye forward — is judged more truthful and better remembered than text that requires effort. Researchers have repeatedly shown that making a passage slightly harder to read can improve later recall, a finding that irritates almost everyone who encounters it.",
+        "None of this means memory is unreliable in a way that should alarm us. A system that stored every text verbatim would be enormously expensive and largely useless, since most of what we read matters only in summary. Reconstruction is efficient. The difficulty arises when we treat a reconstructed memory as though it were a recording, particularly in disputes about what a document actually said.",
+        "The practical remedy is unglamorous. Rereading a text before relying on it, noting quotations at the time rather than later, and remaining suspicious of memories that conveniently support one's own case are all more effective than any technique for improving retention. The problem is not that we forget too much. It is that we remember with such confidence."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Reading stores an accurate copy of a text in the mind.",
+          "a": "False",
+          "why": "The passage argues we store a reconstruction, not the text itself."
+        },
+        {
+          "q": "Participants in the retelling study knew their accounts had changed.",
+          "a": "False",
+          "why": "They were confident they were reporting accurately."
+        },
+        {
+          "q": "Experts are entirely free from memory distortion.",
+          "a": "False",
+          "why": "Expertise changes what is remembered but does not eliminate distortion."
+        },
+        {
+          "q": "Harder-to-read text can sometimes be remembered better.",
+          "a": "True",
+          "why": "Making a passage slightly harder to read can improve later recall."
+        },
+        {
+          "q": "The research described was funded by publishing companies.",
+          "a": "Not Given",
+          "why": "No funding source is mentioned anywhere in the passage."
+        }
+      ],
+      "short": [
+        {
+          "q": "What do readers often recall encountering, though it was only suggested?",
+          "a": "implied information"
+        },
+        {
+          "q": "According to the last paragraph, what quality of our memories causes the real difficulty?",
+          "a": "confidence"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What comparison does the writer reject in the first paragraph?",
+          "options": [
+            "Reading as a form of conversation.",
+            "Reading as a photographic record.",
+            "Reading as a skill that declines with age.",
+            "Reading as a substitute for direct experience."
+          ],
+          "a": 1,
+          "why": "The paragraph opens with the photography assumption and calls the evidence 'less flattering'."
+        },
+        {
+          "q": "What does the example of the driver and pedestrian illustrate?",
+          "options": [
+            "That readers forget dramatic events more quickly.",
+            "That implied information is later recalled as though stated.",
+            "That eyewitness accounts are usually accurate.",
+            "That short passages are remembered better than long ones."
+          ],
+          "a": 1,
+          "why": "Readers recall that the car struck the pedestrian although no such sentence appeared."
+        },
+        {
+          "q": "What does the writer say about reconstruction in the sixth paragraph?",
+          "options": [
+            "It is a flaw that better education could correct.",
+            "It is efficient, and only problematic when mistaken for a recording.",
+            "It affects casual readers but not professionals.",
+            "It has been exaggerated by recent research."
+          ],
+          "a": 1,
+          "why": "Reconstruction is called efficient; the difficulty arises when it is treated as a recording."
+        },
+        {
+          "q": "How would the writer's proposed remedy best be described?",
+          "options": [
+            "Ambitious but impractical.",
+            "Modest and procedural rather than clever.",
+            "Dependent on new technology.",
+            "Suitable only for academic readers."
+          ],
+          "a": 1,
+          "why": "The remedy is called 'unglamorous': rereading, noting quotations at the time, and staying suspicious."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Most people assume that reading works something like photography:",
+            "p": "móust pípol asiúm dat ríding uérks sámzing láik fotógrafi:"
+          },
+          {
+            "t": "a text enters the mind and a faithful copy is stored,",
+            "p": "a tekst enters de máind end a féisful kopi is stóerd,"
+          },
+          {
+            "t": "fading slowly over time. Decades of experimental work suggest something",
+            "p": "féiding slóuli óuver táim. dékeids ov eksperimental uérk sagchést sámzing"
+          },
+          {
+            "t": "less flattering and considerably more interesting.",
+            "p": "les flatering end konsiderabli mor interesting."
+          },
+          {
+            "t": "What we retain is not the text but a reconstruction of it,",
+            "p": "uót uí retéin is not de tekst bat a rekonstrukshon ov it,"
+          },
+          {
+            "t": "assembled from fragments, expectations and the gist of what we believe",
+            "p": "asembld from fragments, ekspektashons end de yist ov uót uí beliív"
+          },
+          {
+            "t": "the writer intended.",
+            "p": "de ráiter intended."
+          }
+        ],
+        [
+          {
+            "t": "One of the earliest demonstrations involved asking participants to read",
+            "p": "uán ov de irlist demonstrashons involvd asking partisipants tu rid"
+          },
+          {
+            "t": "a short story from an unfamiliar culture and retell it after intervals",
+            "p": "a short stori from an unfamiliar cálcher end retel it áfter intervals"
+          },
+          {
+            "t": "of days, weeks and months. The retellings did not simply lose detail.",
+            "p": "ov déis, uiks end manzs. de retelings did not símpli lóus detéil."
+          },
+          {
+            "t": "They actively changed, smoothing away the elements that made no sense to",
+            "p": "déi aktiveli chéinchd, smusing oéi de elements dat méid nóu sens tu"
+          },
+          {
+            "t": "the readers and replacing them with material that fitted their own",
+            "p": "de ríders end repléising dem uíd material dat fited déar óun"
+          },
+          {
+            "t": "assumptions about how stories work. Participants were confident that",
+            "p": "asumpshons abáut jáu storis uérk. partisipants uér konfident dat"
+          },
+          {
+            "t": "they were reporting accurately.",
+            "p": "déi uér reporting akserateli."
+          }
+        ],
+        [
+          {
+            "t": "This tendency has practical consequences. Readers routinely remember",
+            "p": "dis tendensi jas praktikal konskuenses. ríders rotineli remember"
+          },
+          {
+            "t": "having encountered information that was merely implied,",
+            "p": "jáving enkonterd informashon dat uós mereli impláid,"
+          },
+          {
+            "t": "and they remember it as strongly as material that was explicitly stated.",
+            "p": "end déi remember it as strongli as material dat uós eksplisitli stéited."
+          },
+          {
+            "t": "If a passage describes a driver braking sharply and a pedestrian lying",
+            "p": "if a paséig deskráibs a dráiver bréiking sharpli end a pedestrian lying"
+          },
+          {
+            "t": "in the road, many readers will later recall reading that the car struck",
+            "p": "in de róud, méni ríders uíl léiter rekal ríding dat de kar struk"
+          },
+          {
+            "t": "the pedestrian, even though no such sentence appeared.",
+            "p": "de pedestrian, íven dóu nóu sach sentens apéerd."
+          }
+        ],
+        [
+          {
+            "t": "Expertise changes what is remembered but does not eliminate distortion.",
+            "p": "ekspertáis chéinches uót is rememberd bat das not eliminéit distorshon."
+          },
+          {
+            "t": "Specialists reading in their own field retain far more of the substance",
+            "p": "spesialists ríding in déar óun fild retéin far mor ov de substans"
+          },
+          {
+            "t": "of an argument, because they have existing structures into which new",
+            "p": "ov an argument, bicós déi jav eksisting strukchers íntu uích neu"
+          },
+          {
+            "t": "material can be fitted. However, the same structures make them more",
+            "p": "material can bi fited. jauéver, de séim strukchers méik dem mor"
+          },
+          {
+            "t": "likely to remember a text as agreeing with their prior position than it",
+            "p": "likeli tu remember a tekst as agring uíd déar prior posishon dan it"
+          },
+          {
+            "t": "actually did. Reconstruction is not the enemy of expertise;",
+            "p": "aktuali did. rekonstrukshon is not de enemi ov ekspertáis;"
+          },
+          {
+            "t": "it is part of how expertise operates.",
+            "p": "it is part ov jáu ekspertáis óuperéits."
+          }
+        ],
+        [
+          {
+            "t": "The effect is amplified by the confidence readers place in fluency.",
+            "p": "de efekt is amplifáid bái de konfidens ríders pléis in fluensi."
+          },
+          {
+            "t": "Text that is easy to process — clear typography,",
+            "p": "tekst dat is isi tu próuses — klíar typografi,"
+          },
+          {
+            "t": "familiar vocabulary, a rhythm that carries the eye forward — is judged",
+            "p": "familiar vokabulari, a rjysm dat karis de ái foruard — is yuchd"
+          },
+          {
+            "t": "more truthful and better remembered than text that requires effort.",
+            "p": "mor trusful end beter rememberd dan tekst dat rkuáers efort."
+          },
+          {
+            "t": "Researchers have repeatedly shown that making a passage slightly harder",
+            "p": "resíarchers jav repitedli shóun dat méiking a paséig sláitli jarder"
+          },
+          {
+            "t": "to read can improve later recall, a finding that irritates almost",
+            "p": "tu rid can impróuv léiter rekal, a finding dat eritéits ólmoust"
+          },
+          {
+            "t": "everyone who encounters it.",
+            "p": "everióun ju enkonters it."
+          }
+        ],
+        [
+          {
+            "t": "None of this means memory is unreliable in a way that should alarm us.",
+            "p": "nan ov dis mins memori is unreliabol in a uéi dat shud alarm as."
+          },
+          {
+            "t": "A system that stored every text verbatim would be enormously expensive",
+            "p": "a system dat stóerd évri tekst verbatim vud bi enormasli ekspénsiv"
+          },
+          {
+            "t": "and largely useless, since most of what we read matters only in summary.",
+            "p": "end laryeli useles, sins móust ov uót uí rid maters óunli in sumari."
+          },
+          {
+            "t": "Reconstruction is efficient. The difficulty arises when we treat a",
+            "p": "rekonstrukshon is efisint. de difikulti arises uén uí trit a"
+          },
+          {
+            "t": "reconstructed memory as though it were a recording,",
+            "p": "rekonstrukted memori as dóu it uér a rekording,"
+          },
+          {
+            "t": "particularly in disputes about what a document actually said.",
+            "p": "partikularli in dispiúts abáut uót a dokument aktuali sed."
+          }
+        ],
+        [
+          {
+            "t": "The practical remedy is unglamorous. Rereading a text before relying on",
+            "p": "de praktikal remedi is unglamoras. reréiding a tekst bifór relying on"
+          },
+          {
+            "t": "it, noting quotations at the time rather than later,",
+            "p": "it, nóuting kuotashons at de táim ráder dan léiter,"
+          },
+          {
+            "t": "and remaining suspicious of memories that conveniently support one's own",
+            "p": "end remaáining suspishas ov memoris dat konvenintli suport uáns óun"
+          },
+          {
+            "t": "case are all more effective than any technique for improving retention.",
+            "p": "kéis ar ol mor iféktiv dan éni teknikue for impróuving retenshon."
+          },
+          {
+            "t": "The problem is not that we forget too much. It is that we remember with",
+            "p": "de problem is not dat uí foryet tu mach. it is dat uí remember uíd"
+          },
+          {
+            "t": "such confidence.",
+            "p": "sach konfidens."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The return of the night train",
+      "body": [
+        "For most of the 1990s the sleeper train looked like a museum piece. Budget airlines were undercutting rail fares on almost every European route, and operators were quietly withdrawing overnight services that filled expensive rolling stock with too few paying passengers. By 2010 a traveller wanting to sleep between Paris and Vienna had markedly fewer options than their grandparents had enjoyed.",
+        "The reversal, when it came, was driven less by nostalgia than by arithmetic. Rising awareness of aviation emissions coincided with a generation of travellers for whom a night spent moving was a night not spent paying for a hotel. Austrian operators, who had never fully abandoned the model, began buying up the carriages other companies were discarding and rebuilding routes across the continent.",
+        "The economics remain difficult. A sleeper carriage carries perhaps a third of the passengers of a seated one, requires cleaning staff, bedding and catering, and earns revenue for only part of each day. Track access charges in some countries are calculated in ways that penalise services crossing multiple borders at night. Several new routes have launched to enthusiastic press coverage and closed within two years.",
+        "Passengers, meanwhile, have proved harder to categorise than the operators expected. Early planning assumed a market of environmentally motivated travellers willing to accept discomfort for a lower carbon footprint. The actual demand has come substantially from people who dislike airports, families avoiding the logistics of early flights, and business travellers who value arriving in a city centre at breakfast rather than at an airport at dawn.",
+        "This has changed what is being built. New carriages emphasise privacy over capacity, with single-occupancy pods that would have seemed extravagant a decade ago. Operators have discovered that a passenger who sleeps badly does not return, and that the difference between a tolerable night and a good one is largely a matter of noise, temperature and whether a stranger is sleeping half a metre away.",
+        "Critics point out that the environmental case is less clean-cut than campaigners suggest. A full night train comfortably outperforms a short-haul flight, but a half-empty one on an electrified line powered by fossil fuels does not, and the comparison shifts again where aviation is efficient and the rail route is circuitous. The honest position is that night trains are usually better, sometimes much better, and occasionally no better at all.",
+        "What is not in dispute is that the service has stopped shrinking. Routes are being restored faster than they are being withdrawn for the first time in three decades, and manufacturers have order books for sleeper stock extending into the 2030s. Whether this represents a durable shift or a fashionable interval will not be clear for some years, though the carriages being ordered now will still be running when the answer arrives."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Sleeper services declined in the 1990s because of competition from cheap flights.",
+          "a": "True",
+          "why": "Budget airlines were undercutting rail fares and operators withdrew services."
+        },
+        {
+          "q": "The revival was motivated mainly by nostalgia for older travel.",
+          "a": "False",
+          "why": "The passage says it was driven less by nostalgia than by arithmetic."
+        },
+        {
+          "q": "Every new night-train route launched since 2010 has been successful.",
+          "a": "False",
+          "why": "Several routes closed within two years."
+        },
+        {
+          "q": "Night trains are always better for the environment than flying.",
+          "a": "False",
+          "why": "The passage says occasionally they are no better at all."
+        },
+        {
+          "q": "Most sleeper passengers now travel for work rather than leisure.",
+          "a": "Not Given",
+          "why": "The passage lists several groups but never gives their relative proportions."
+        }
+      ],
+      "short": [
+        {
+          "q": "Which country's operators bought carriages that others were discarding?",
+          "a": "Austria"
+        },
+        {
+          "q": "Roughly what fraction of a seated carriage's passengers does a sleeper carry?",
+          "a": "a third"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What does the writer identify as a structural problem for sleeper operators?",
+          "options": [
+            "A shortage of qualified drivers for night services.",
+            "Low passenger density combined with high servicing costs.",
+            "Passenger reluctance to book tickets in advance.",
+            "The unavailability of suitable carriages."
+          ],
+          "a": 1,
+          "why": "The third paragraph cites a third of the passengers, cleaning, bedding, catering and limited daily revenue."
+        },
+        {
+          "q": "How did actual demand differ from what operators had predicted?",
+          "options": [
+            "It was far smaller than forecast.",
+            "It came largely from travellers with practical rather than environmental motives.",
+            "It was concentrated entirely among older passengers.",
+            "It appeared only on routes shorter than expected."
+          ],
+          "a": 1,
+          "why": "Demand came from people who dislike airports, families and business travellers, not mainly the environmentally motivated."
+        },
+        {
+          "q": "Why have new carriages been designed with fewer beds per compartment?",
+          "options": [
+            "Regulations now limit the number of passengers per carriage.",
+            "Poor sleep discourages passengers from travelling again.",
+            "Single pods are cheaper to manufacture.",
+            "Operators want to reduce cleaning requirements."
+          ],
+          "a": 1,
+          "why": "Operators discovered that a passenger who sleeps badly does not return."
+        },
+        {
+          "q": "What is the writer's overall position in the final paragraph?",
+          "options": [
+            "The revival is certain to continue indefinitely.",
+            "The revival is real, but its durability is still unknown.",
+            "The revival has already begun to reverse.",
+            "The revival matters less than improvements to aviation."
+          ],
+          "a": 1,
+          "why": "Routes are being restored, but whether it is durable or fashionable 'will not be clear for some years'."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "For most of the 1990s the sleeper train looked like a museum piece.",
+            "p": "for móust ov de 1990s de sliper tréin loóukt láik a museum piík."
+          },
+          {
+            "t": "Budget airlines were undercutting rail fares on almost every European",
+            "p": "báchet éarláins uér underkuting réil féers on ólmoust évri iropin"
+          },
+          {
+            "t": "route, and operators were quietly withdrawing overnight services that",
+            "p": "roiút, end operators uér kuitli uisdroing overnáit sérvises dat"
+          },
+          {
+            "t": "filled expensive rolling stock with too few paying passengers.",
+            "p": "fild ekspénsiv roling stok uíd tu fiú péing pasenyers."
+          },
+          {
+            "t": "By 2010 a traveller wanting to sleep between Paris and Vienna had",
+            "p": "bái 2010 a traveler uanting tu slip bituín paris end vina jad"
+          },
+          {
+            "t": "markedly fewer options than their grandparents had enjoyed.",
+            "p": "markedli feuer opshons dan déar grandparents jad enyoied."
+          }
+        ],
+        [
+          {
+            "t": "The reversal, when it came, was driven less by nostalgia than by",
+            "p": "de reversal, uén it kéim, uós driven les bái nostalyia dan bái"
+          },
+          {
+            "t": "arithmetic. Rising awareness of aviation emissions coincided with a",
+            "p": "arismetik. ráising oarenes ov aviashon emishons koinkáided uíd a"
+          },
+          {
+            "t": "generation of travellers for whom a night spent moving was a night not",
+            "p": "yenerashon ov travelers for jum a náit spent múving uós a náit not"
+          },
+          {
+            "t": "spent paying for a hotel. Austrian operators,",
+            "p": "spent péing for a jotel. ostrian operators,"
+          },
+          {
+            "t": "who had never fully abandoned the model, began buying up the carriages",
+            "p": "ju jad néver fuli abandóund de model, began buying ap de kariéigs"
+          },
+          {
+            "t": "other companies were discarding and rebuilding routes across the",
+            "p": "áder kompanis uér diskarding end rebuilding roiúts acrós de"
+          },
+          {
+            "t": "continent.",
+            "p": "kontinent."
+          }
+        ],
+        [
+          {
+            "t": "The economics remain difficult. A sleeper carriage carries perhaps a",
+            "p": "de ekonomiks reméin difikult. a sliper kariéig karis perjáps a"
+          },
+          {
+            "t": "third of the passengers of a seated one, requires cleaning staff,",
+            "p": "zerd ov de pasenyers ov a séited uán, rkuáers koléining staf,"
+          },
+          {
+            "t": "bedding and catering, and earns revenue for only part of each day.",
+            "p": "beding end katering, end irns revenue for óunli part ov ich déi."
+          },
+          {
+            "t": "Track access charges in some countries are calculated in ways that",
+            "p": "trak akses charchs in sam cántris ar kalkuléited in uéis dat"
+          },
+          {
+            "t": "penalise services crossing multiple borders at night.",
+            "p": "penaláis sérvises krosing multipol borders at náit."
+          },
+          {
+            "t": "Several new routes have launched to enthusiastic press coverage and",
+            "p": "séveral neu roiúts jav lonched tu ensusiastik pres kóuveréig end"
+          },
+          {
+            "t": "closed within two years.",
+            "p": "klóust uidín tu yirs."
+          }
+        ],
+        [
+          {
+            "t": "Passengers, meanwhile, have proved harder to categorise than the",
+            "p": "pasenyers, minuáil, jav pruvd jarder tu kategoráis dan de"
+          },
+          {
+            "t": "operators expected. Early planning assumed a market of environmentally",
+            "p": "operators ekspekted. irli planing asumd a market ov enveronmentali"
+          },
+          {
+            "t": "motivated travellers willing to accept discomfort for a lower carbon",
+            "p": "motivéited travelers uiling tu aksept diskomfort for a lóuer karbon"
+          },
+          {
+            "t": "footprint. The actual demand has come substantially from people who",
+            "p": "futprint. de aktual demand jas cam substantiali from pípol ju"
+          },
+          {
+            "t": "dislike airports, families avoiding the logistics of early flights,",
+            "p": "disláik éarports, familis avoáiding de loyistiks ov irli fláits,"
+          },
+          {
+            "t": "and business travellers who value arriving in a city centre at breakfast",
+            "p": "end bísnes travelers ju value aráiving in a siti sentr at brikfast"
+          },
+          {
+            "t": "rather than at an airport at dawn.",
+            "p": "ráder dan at an éarport at don."
+          }
+        ],
+        [
+          {
+            "t": "This has changed what is being built. New carriages emphasise privacy",
+            "p": "dis jas chéinchd uót is bing bilt. neu kariéigs emfasáis privasi"
+          },
+          {
+            "t": "over capacity, with single-occupancy pods that would have seemed",
+            "p": "óuver kapasiti, uíd singol-okkupansi pods dat vud jav simd"
+          },
+          {
+            "t": "extravagant a decade ago. Operators have discovered that a passenger who",
+            "p": "ekstravagant a dékeid ago. operators jav diskoverd dat a pasenyer ju"
+          },
+          {
+            "t": "sleeps badly does not return, and that the difference between a",
+            "p": "slips badli das not retern, end dat de diferens bituín a"
+          },
+          {
+            "t": "tolerable night and a good one is largely a matter of noise,",
+            "p": "tolerabol náit end a gud uán is laryeli a mater ov noáis,"
+          },
+          {
+            "t": "temperature and whether a stranger is sleeping half a metre away.",
+            "p": "temperacher end uéder a stranyer is sliping jaf a metr oéi."
+          }
+        ],
+        [
+          {
+            "t": "Critics point out that the environmental case is less clean-cut than",
+            "p": "kritiks point áut dat de enveronmental kéis is les klin-kut dan"
+          },
+          {
+            "t": "campaigners suggest. A full night train comfortably outperforms a",
+            "p": "kampéigners sagchést. a ful náit tréin komfortabli otperforms a"
+          },
+          {
+            "t": "short-haul flight, but a half-empty one on an electrified line powered",
+            "p": "short-jol fláit, bat a jalf-empti uán on an elektrifáid láin póuerd"
+          },
+          {
+            "t": "by fossil fuels does not, and the comparison shifts again where aviation",
+            "p": "bái fosil fuels das not, end de komparison shifts eguén uér aviashon"
+          },
+          {
+            "t": "is efficient and the rail route is circuitous.",
+            "p": "is efisint end de réil roiút is serkuitas."
+          },
+          {
+            "t": "The honest position is that night trains are usually better,",
+            "p": "de ónest posishon is dat náit tréins ar iúshuali beter,"
+          },
+          {
+            "t": "sometimes much better, and occasionally no better at all.",
+            "p": "sometáims mach beter, end okkashonali nóu beter at ol."
+          }
+        ],
+        [
+          {
+            "t": "What is not in dispute is that the service has stopped shrinking.",
+            "p": "uót is not in dispiút is dat de sérvis jas stopt shrinking."
+          },
+          {
+            "t": "Routes are being restored faster than they are being withdrawn for the",
+            "p": "roiúts ar bing restóerd faster dan déi ar bing uisdron for de"
+          },
+          {
+            "t": "first time in three decades, and manufacturers have order books for",
+            "p": "férst táim in zri dékeids, end manufakterers jav order buks for"
+          },
+          {
+            "t": "sleeper stock extending into the 2030s. Whether this represents a",
+            "p": "sliper stok ekstending íntu de 2030s. uéder dis represents a"
+          },
+          {
+            "t": "durable shift or a fashionable interval will not be clear for some",
+            "p": "derabol shift or a fashionabol interval uíl not bi klíar for sam"
+          },
+          {
+            "t": "years, though the carriages being ordered now will still be running when",
+            "p": "yirs, dóu de kariéigs bing orderd náu uíl stil bi runing uén"
+          },
+          {
+            "t": "the answer arrives.",
+            "p": "de ánser aráivs."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The apprentice and the algorithm",
+      "body": [
+        "Delia Marchetti restores violins in a workshop her grandfather opened in 1948. The work is unhurried and largely unchanged: hide glue, hand planes, varnish mixed in small quantities and applied over weeks. She has taken four apprentices in thirty years and has strong views about how long it takes to learn to hear when a repair is finished.",
+        "Two years ago a graduate student arrived with a proposal. He had trained a model on recordings of instruments before and after restoration, and believed it could predict the acoustic effect of a given repair. Marchetti agreed to the collaboration, she says, mostly out of curiosity and partly because refusing would have made her feel like her own teachers, who had regarded electric lighting in the workshop as a threat to craftsmanship.",
+        "The results were mixed in an instructive way. On narrow questions — whether thinning a particular plate would brighten an instrument, how a soundpost adjustment would shift the response — the model was often right, and occasionally right in ways that surprised her. On broader judgements it was useless, not because its answers were wrong but because it could not identify which question mattered for a given instrument.",
+        "That distinction has become the centre of how she now teaches. An apprentice can be given the model's output as a starting point, but the exercise she sets is to explain why the suggestion is appropriate or inappropriate for the violin on the bench. The tool, she found, is most useful precisely when the student is forced to argue with it.",
+        "There have been costs. The youngest apprentice, comfortable with software, developed a habit of consulting the model before touching the instrument, and Marchetti eventually restricted its use for several months. Her concern was not that the answers were poor but that the sequence had inverted: the tool was replacing the initial act of looking closely rather than following it. She describes the correction as the hardest teaching she has done.",
+        "The graduate student, for his part, has revised his own ambitions. He had imagined building something that would eventually make expertise unnecessary and now describes the goal as building something that makes expertise faster to acquire. Whether that is a genuine change of view or a diplomatic reframing after two years in a workshop, he does not say, and Marchetti does not press him.",
+        "She is due to retire within the decade and is unsentimental about what will survive her. The workshop will probably close, since the economics of the trade no longer support a single-craftsman business in that city. What she hopes to leave is four people who can tell the difference between a suggestion and a judgement, which she regards as the only part of the training that was ever difficult."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Marchetti agreed to the collaboration purely for financial reasons.",
+          "a": "False",
+          "why": "She agreed out of curiosity and reluctance to resemble her own teachers."
+        },
+        {
+          "q": "The model performed well on narrowly defined technical questions.",
+          "a": "True",
+          "why": "On narrow questions it was often right and sometimes surprisingly so."
+        },
+        {
+          "q": "She restricted the youngest apprentice's use of the tool.",
+          "a": "True",
+          "why": "She restricted its use for several months."
+        },
+        {
+          "q": "The graduate student now says his aim is to speed up the learning of expertise.",
+          "a": "True",
+          "why": "He describes the goal as making expertise faster to acquire."
+        },
+        {
+          "q": "Marchetti has published a book about violin restoration.",
+          "a": "Not Given",
+          "why": "No publication by her is mentioned in the passage."
+        }
+      ],
+      "short": [
+        {
+          "q": "In what year did Marchetti's grandfather open the workshop?",
+          "a": "1948"
+        },
+        {
+          "q": "What did her own teachers regard as a threat to craftsmanship?",
+          "a": "electric lighting"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What was the model unable to do, according to the third paragraph?",
+          "options": [
+            "Produce answers that were technically accurate.",
+            "Determine which question was relevant for a particular instrument.",
+            "Process recordings made before a restoration.",
+            "Predict the effect of a soundpost adjustment."
+          ],
+          "a": 1,
+          "why": "On broader judgements it could not identify which question mattered for a given instrument."
+        },
+        {
+          "q": "How does Marchetti use the tool in her teaching?",
+          "options": [
+            "She asks apprentices to reproduce its recommendations exactly.",
+            "She requires apprentices to justify or reject its suggestions.",
+            "She uses it to assess apprentices' finished work.",
+            "She reserves it for the most experienced apprentices."
+          ],
+          "a": 1,
+          "why": "The exercise is to explain why the suggestion is appropriate or inappropriate for that violin."
+        },
+        {
+          "q": "What specifically worried Marchetti about the youngest apprentice?",
+          "options": [
+            "That he trusted answers which were frequently wrong.",
+            "That he consulted the tool instead of first examining the instrument.",
+            "That he worked more slowly than the other apprentices.",
+            "That he intended to leave the trade for software."
+          ],
+          "a": 1,
+          "why": "The tool was replacing the initial act of looking closely rather than following it."
+        },
+        {
+          "q": "What does Marchetti most hope to pass on?",
+          "options": [
+            "The continuation of the workshop as a business.",
+            "A documented method for restoring instruments.",
+            "The ability to distinguish a suggestion from a judgement.",
+            "A rejection of computational tools in the trade."
+          ],
+          "a": 2,
+          "why": "She hopes to leave four people who can tell the difference between a suggestion and a judgement."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Delia Marchetti restores violins in a workshop her grandfather opened in",
+            "p": "delia marcheti restóers violins in a uorkshop jer grandfaser opend in"
+          },
+          {
+            "t": "1948. The work is unhurried and largely unchanged:",
+            "p": "1948. de uérk is unjeráid end laryeli unchanyd:"
+          },
+          {
+            "t": "hide glue, hand planes, varnish mixed in small quantities and applied",
+            "p": "jáid glue, jand pléins, varnish mikst in smal kuantitis end apláid"
+          },
+          {
+            "t": "over weeks. She has taken four apprentices in thirty years and has",
+            "p": "óuver uiks. shi jas taken for aprentises in zérti yirs end jas"
+          },
+          {
+            "t": "strong views about how long it takes to learn to hear when a repair is",
+            "p": "strong vius abáut jáu long it téiks tu lirn tu jíar uén a repéar is"
+          },
+          {
+            "t": "finished.",
+            "p": "finished."
+          }
+        ],
+        [
+          {
+            "t": "Two years ago a graduate student arrived with a proposal.",
+            "p": "tu yirs ago a graduat student aráivd uíd a proposal."
+          },
+          {
+            "t": "He had trained a model on recordings of instruments before and after",
+            "p": "ji jad traáind a model on rekordings ov instruments bifór end áfter"
+          },
+          {
+            "t": "restoration, and believed it could predict the acoustic effect of a",
+            "p": "restorashon, end belivd it cud predikt de akostik efekt ov a"
+          },
+          {
+            "t": "given repair. Marchetti agreed to the collaboration,",
+            "p": "guíven repéar. marcheti agrid tu de kolaborashon,"
+          },
+          {
+            "t": "she says, mostly out of curiosity and partly because refusing would have",
+            "p": "shi ses, mostli áut ov seriositi end partli bicós refusing vud jav"
+          },
+          {
+            "t": "made her feel like her own teachers, who had regarded electric lighting",
+            "p": "méid jer fil láik jer óun tichers, ju jad regarded elektrik láiting"
+          },
+          {
+            "t": "in the workshop as a threat to craftsmanship.",
+            "p": "in de uorkshop as a srit tu kraftsmanship."
+          }
+        ],
+        [
+          {
+            "t": "The results were mixed in an instructive way.",
+            "p": "de results uér mikst in an instruktáiv uéi."
+          },
+          {
+            "t": "On narrow questions — whether thinning a particular plate would brighten",
+            "p": "on naro kuéschons — uéder sining a partikular pléit vud bráiten"
+          },
+          {
+            "t": "an instrument, how a soundpost adjustment would shift the response — the",
+            "p": "an instrument, jáu a sondpost adyustment vud shift de respons — de"
+          },
+          {
+            "t": "model was often right, and occasionally right in ways that surprised",
+            "p": "model uós ófen ráit, end okkashonali ráit in uéis dat serpráist"
+          },
+          {
+            "t": "her. On broader judgements it was useless, not because its answers were",
+            "p": "jer. on broéider yuchments it uós useles, not bicós its ánsers uér"
+          },
+          {
+            "t": "wrong but because it could not identify which question mattered for a",
+            "p": "rong bat bicós it cud not identifi uích kuéschon materd for a"
+          },
+          {
+            "t": "given instrument.",
+            "p": "guíven instrument."
+          }
+        ],
+        [
+          {
+            "t": "That distinction has become the centre of how she now teaches.",
+            "p": "dat distinkshon jas bicám de sentr ov jáu shi náu tiches."
+          },
+          {
+            "t": "An apprentice can be given the model's output as a starting point,",
+            "p": "an aprentáik can bi guíven de model's otput as a starting point,"
+          },
+          {
+            "t": "but the exercise she sets is to explain why the suggestion is",
+            "p": "bat de ekserkáis shi sets is tu ekspléin uái de sagchéschon is"
+          },
+          {
+            "t": "appropriate or inappropriate for the violin on the bench.",
+            "p": "apropriéit or inapropriéit for de violin on de bench."
+          },
+          {
+            "t": "The tool, she found, is most useful precisely when the student is forced",
+            "p": "de tul, shi fond, is móust useful presiseli uén de student is forst"
+          },
+          {
+            "t": "to argue with it.",
+            "p": "tu argue uíd it."
+          }
+        ],
+        [
+          {
+            "t": "There have been costs. The youngest apprentice,",
+            "p": "déar jav bin kosts. de yonyest aprentáik,"
+          },
+          {
+            "t": "comfortable with software, developed a habit of consulting the model",
+            "p": "komfortabol uíd softuéer, develóupt a jabit ov konsulting de model"
+          },
+          {
+            "t": "before touching the instrument, and Marchetti eventually restricted its",
+            "p": "bifór toching de instrument, end marcheti eventuali restrikted its"
+          },
+          {
+            "t": "use for several months. Her concern was not that the answers were poor",
+            "p": "iús for séveral manzs. jer konsern uós not dat de ánsers uér púar"
+          },
+          {
+            "t": "but that the sequence had inverted: the tool was replacing the initial",
+            "p": "bat dat de skuens jad inverted: de tul uós repléising de inishal"
+          },
+          {
+            "t": "act of looking closely rather than following it.",
+            "p": "akt ov loóuking kloseli ráder dan folóuing it."
+          },
+          {
+            "t": "She describes the correction as the hardest teaching she has done.",
+            "p": "shi deskráibs de korekshon as de jardest tiching shi jas dan."
+          }
+        ],
+        [
+          {
+            "t": "The graduate student, for his part, has revised his own ambitions.",
+            "p": "de graduat student, for jis part, jas reváist jis óun ambishons."
+          },
+          {
+            "t": "He had imagined building something that would eventually make expertise",
+            "p": "ji jad imagáind bílding sámzing dat vud eventuali méik ekspertáis"
+          },
+          {
+            "t": "unnecessary and now describes the goal as building something that makes",
+            "p": "unesesari end náu deskráibs de góul as bílding sámzing dat méiks"
+          },
+          {
+            "t": "expertise faster to acquire. Whether that is a genuine change of view or",
+            "p": "ekspertáis faster tu akkuáer. uéder dat is a yenuáin chéinch ov viu or"
+          },
+          {
+            "t": "a diplomatic reframing after two years in a workshop,",
+            "p": "a diplomatik refréiming áfter tu yirs in a uorkshop,"
+          },
+          {
+            "t": "he does not say, and Marchetti does not press him.",
+            "p": "ji das not séi, end marcheti das not pres jim."
+          }
+        ],
+        [
+          {
+            "t": "She is due to retire within the decade and is unsentimental about what",
+            "p": "shi is due tu retáer uidín de dékeid end is unsentimental abáut uót"
+          },
+          {
+            "t": "will survive her. The workshop will probably close,",
+            "p": "uíl serváiv jer. de uorkshop uíl probabli klóus,"
+          },
+          {
+            "t": "since the economics of the trade no longer support a single-craftsman",
+            "p": "sins de ekonomiks ov de tréid nóu lonyer suport a singol-kraftsman"
+          },
+          {
+            "t": "business in that city. What she hopes to leave is four people who can",
+            "p": "bísnes in dat siti. uót shi jóups tu léiv is for pípol ju can"
+          },
+          {
+            "t": "tell the difference between a suggestion and a judgement,",
+            "p": "tel de diferens bituín a sagchéschon end a yuchment,"
+          },
+          {
+            "t": "which she regards as the only part of the training that was ever",
+            "p": "uích shi regards as de óunli part ov de traáining dat uós ever"
+          },
+          {
+            "t": "difficult.",
+            "p": "difikult."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "What the seed vaults are really for",
+      "body": [
+        "The image is familiar from a hundred news reports: a concrete entrance protruding from a snow-covered slope, lit blue against an Arctic sky, behind which humanity's crops are said to be stored against catastrophe. The framing is dramatic and, in most respects, misleading. Seed vaults are not primarily an insurance policy against the end of the world. They are working infrastructure for a slow, unglamorous and continuous problem.",
+        "That problem is loss. Agricultural varieties disappear constantly and undramatically — a farmer retires, a regional gene bank loses funding, a storage freezer fails over a public holiday. Most of what has been lost in the past century vanished this way rather than through any single disaster. The vaults exist because distributed collections are individually fragile, even when the world is entirely at peace.",
+        "The material stored is also less exotic than the reporting implies. A vault holds duplicates of samples already kept elsewhere, deposited by national and institutional gene banks that retain ownership. Nothing is confiscated, nothing is bought, and the vault itself does not decide what is worth preserving. It functions less like an ark than like an off-site backup, with all the tedium that comparison suggests.",
+        "Withdrawals happen, and they are informative. The first significant withdrawal was made not after a global catastrophe but by a research centre that had been forced to relocate from a war zone and needed to rebuild collections it could no longer reach. The samples were regrown, and duplicates were returned to storage. The system worked exactly as designed, which is why the event received relatively little attention.",
+        "There are real limitations, and specialists discuss them more openly than the public reporting suggests. Many important crops cannot be stored as dried seed at all — bananas, potatoes and cassava among them — and require living collections in fields or laboratories, which are far more vulnerable. Seeds also do not keep indefinitely; samples must be periodically regrown, which is expensive and introduces slow genetic change.",
+        "A deeper criticism concerns what preservation means. A seed stored at minus eighteen degrees retains its genetic material but not the knowledge that accompanied it: which soils it suited, when it was planted, how it was prepared, what it tasted like. Varieties conserved without that context can be revived botanically while remaining, in every practical sense, lost. Some programmes now collect cultivation records alongside samples, though this is far harder to standardise.",
+        "None of this diminishes the case for the vaults, which are inexpensive relative to almost any other agricultural investment and have already proved useful. It does suggest that the popular framing gets the emphasis wrong. The value is not in the dramatic scenario the photographs invite us to imagine, but in the far likelier one in which nothing spectacular happens and things are quietly lost anyway."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Seed vaults were built mainly to prepare for a global catastrophe.",
+          "a": "False",
+          "why": "The passage says this framing is misleading; they address continuous, undramatic loss."
+        },
+        {
+          "q": "Depositing institutions keep ownership of their samples.",
+          "a": "True",
+          "why": "Gene banks deposit duplicates and retain ownership."
+        },
+        {
+          "q": "The first major withdrawal followed a worldwide disaster.",
+          "a": "False",
+          "why": "It was made by a research centre that had relocated from a war zone."
+        },
+        {
+          "q": "Some important crops cannot be preserved as dried seed.",
+          "a": "True",
+          "why": "Bananas, potatoes and cassava require living collections."
+        },
+        {
+          "q": "The vaults are more expensive than most agricultural investments.",
+          "a": "False",
+          "why": "They are described as inexpensive relative to almost any other agricultural investment."
+        }
+      ],
+      "short": [
+        {
+          "q": "At what temperature are the seeds stored?",
+          "a": "minus eighteen degrees"
+        },
+        {
+          "q": "What comparison does the writer prefer to an ark?",
+          "a": "an off-site backup"
+        }
+      ],
+      "choice": [
+        {
+          "q": "How does most loss of agricultural varieties occur?",
+          "options": [
+            "Through wars and large-scale natural disasters.",
+            "Through gradual, unremarkable failures of funding and equipment.",
+            "Through deliberate decisions by national governments.",
+            "Through the spread of commercial monoculture alone."
+          ],
+          "a": 1,
+          "why": "The second paragraph lists retirement, lost funding and freezer failures as the usual causes."
+        },
+        {
+          "q": "Why did the first major withdrawal attract little attention?",
+          "options": [
+            "The organisation involved requested confidentiality.",
+            "The samples turned out to be unusable.",
+            "The system behaved exactly as it was intended to.",
+            "It happened before the vault was widely known."
+          ],
+          "a": 2,
+          "why": "The passage says the system worked exactly as designed, which is why it received little attention."
+        },
+        {
+          "q": "What is the 'deeper criticism' raised in the sixth paragraph?",
+          "options": [
+            "That storage temperatures are insufficiently low.",
+            "That genetic material is preserved without the knowledge of how to use it.",
+            "That too few varieties are being collected.",
+            "That regrowing samples is prohibitively expensive."
+          ],
+          "a": 1,
+          "why": "Seeds retain genetic material but not the soils, timing, preparation and taste that accompanied them."
+        },
+        {
+          "q": "What does the writer conclude about the popular image of seed vaults?",
+          "options": [
+            "It is accurate but incomplete.",
+            "It places the emphasis on the wrong scenario.",
+            "It has discouraged funding for the vaults.",
+            "It should be replaced with a focus on living collections."
+          ],
+          "a": 1,
+          "why": "The final paragraph says the popular framing gets the emphasis wrong."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "The image is familiar from a hundred news reports:",
+            "p": "de ímich is familiar from a jándred neus reports:"
+          },
+          {
+            "t": "a concrete entrance protruding from a snow-covered slope,",
+            "p": "a konkrít entrans protruding from a sno-koverd slóup,"
+          },
+          {
+            "t": "lit blue against an Arctic sky, behind which humanity's crops are said",
+            "p": "lit blue eguénst an arktik ski, bijáind uích jumaniti's krops ar sed"
+          },
+          {
+            "t": "to be stored against catastrophe. The framing is dramatic and,",
+            "p": "tu bi stóerd eguénst katastrof. de fréiming is dramatik end,"
+          },
+          {
+            "t": "in most respects, misleading. Seed vaults are not primarily an insurance",
+            "p": "in móust respekts, misléiding. sid volts ar not primarili an inserans"
+          },
+          {
+            "t": "policy against the end of the world. They are working infrastructure for",
+            "p": "polisi eguénst de end ov de uérld. déi ar uérking infrastrukcher for"
+          },
+          {
+            "t": "a slow, unglamorous and continuous problem.",
+            "p": "a slo, unglamoras end kontinuas problem."
+          }
+        ],
+        [
+          {
+            "t": "That problem is loss. Agricultural varieties disappear constantly and",
+            "p": "dat problem is los. agrikulteral varitis disapíar konstantli end"
+          },
+          {
+            "t": "undramatically — a farmer retires, a regional gene bank loses funding,",
+            "p": "undramatikali — a farmer retáers, a reyional gín bank loses funding,"
+          },
+          {
+            "t": "a storage freezer fails over a public holiday.",
+            "p": "a stórich friser féils óuver a publik jolidéi."
+          },
+          {
+            "t": "Most of what has been lost in the past century vanished this way rather",
+            "p": "móust ov uót jas bin lost in de past séncheri vanished dis uéi ráder"
+          },
+          {
+            "t": "than through any single disaster. The vaults exist because distributed",
+            "p": "dan zru éni singol disaster. de volts eksist bicós distributed"
+          },
+          {
+            "t": "collections are individually fragile, even when the world is entirely at",
+            "p": "kolekshons ar individuali fragáil, íven uén de uérld is entereli at"
+          },
+          {
+            "t": "peace.",
+            "p": "péik."
+          }
+        ],
+        [
+          {
+            "t": "The material stored is also less exotic than the reporting implies.",
+            "p": "de material stóerd is ólsou les eksotik dan de reporting implis."
+          },
+          {
+            "t": "A vault holds duplicates of samples already kept elsewhere,",
+            "p": "a volt jolds duplikéits ov samples alridi kept elseuír,"
+          },
+          {
+            "t": "deposited by national and institutional gene banks that retain",
+            "p": "deposáited bái nashonal end institushonal gín banks dat retéin"
+          },
+          {
+            "t": "ownership. Nothing is confiscated, nothing is bought,",
+            "p": "óunership. názing is konfiskéited, názing is bot,"
+          },
+          {
+            "t": "and the vault itself does not decide what is worth preserving.",
+            "p": "end de volt itself das not dekáid uót is uérz preserving."
+          },
+          {
+            "t": "It functions less like an ark than like an off-site backup,",
+            "p": "it funkshons les láik an ark dan láik an of-sáit bakup,"
+          },
+          {
+            "t": "with all the tedium that comparison suggests.",
+            "p": "uíd ol de tedium dat komparison sagchésts."
+          }
+        ],
+        [
+          {
+            "t": "Withdrawals happen, and they are informative.",
+            "p": "uisdroals japen, end déi ar informatáiv."
+          },
+          {
+            "t": "The first significant withdrawal was made not after a global catastrophe",
+            "p": "de férst signifikant uisdroal uós méid not áfter a global katastrof"
+          },
+          {
+            "t": "but by a research centre that had been forced to relocate from a war",
+            "p": "bat bái a resíarch sentr dat jad bin forst tu relokéit from a uór"
+          },
+          {
+            "t": "zone and needed to rebuild collections it could no longer reach.",
+            "p": "sóun end nided tu rebuáild kolekshons it cud nóu lonyer rich."
+          },
+          {
+            "t": "The samples were regrown, and duplicates were returned to storage.",
+            "p": "de samples uér regróun, end duplikéits uér reternd tu stórich."
+          },
+          {
+            "t": "The system worked exactly as designed, which is why the event received",
+            "p": "de system uérkt eksaktli as disáind, uích is uái de event resáivd"
+          },
+          {
+            "t": "relatively little attention.",
+            "p": "relativeli litol atenshon."
+          }
+        ],
+        [
+          {
+            "t": "There are real limitations, and specialists discuss them more openly",
+            "p": "déar ar rial limitashons, end spesialists diskus dem mor openli"
+          },
+          {
+            "t": "than the public reporting suggests. Many important crops cannot be",
+            "p": "dan de publik reporting sagchésts. méni important krops kanot bi"
+          },
+          {
+            "t": "stored as dried seed at all — bananas, potatoes and cassava among them —",
+            "p": "stóerd as dráid sid at ol — bananas, potatóus end kasava amáng dem —"
+          },
+          {
+            "t": "and require living collections in fields or laboratories,",
+            "p": "end rkuáer líving kolekshons in filds or laboratoris,"
+          },
+          {
+            "t": "which are far more vulnerable. Seeds also do not keep indefinitely;",
+            "p": "uích ar far mor vulnerabol. sids ólsou du not kip indefiniteli;"
+          },
+          {
+            "t": "samples must be periodically regrown, which is expensive and introduces",
+            "p": "samples mast bi periodikali regróun, uích is ekspénsiv end introduses"
+          },
+          {
+            "t": "slow genetic change.",
+            "p": "slo yenetik chéinch."
+          }
+        ],
+        [
+          {
+            "t": "A deeper criticism concerns what preservation means.",
+            "p": "a diper kritisism konserns uót preservashon mins."
+          },
+          {
+            "t": "A seed stored at minus eighteen degrees retains its genetic material but",
+            "p": "a sid stóerd at minus eáitin degris retéins its yenetik material bat"
+          },
+          {
+            "t": "not the knowledge that accompanied it: which soils it suited,",
+            "p": "not de nólich dat akkompanáid it: uích soils it suáited,"
+          },
+          {
+            "t": "when it was planted, how it was prepared, what it tasted like.",
+            "p": "uén it uós planted, jáu it uós prepéerd, uót it tasted láik."
+          },
+          {
+            "t": "Varieties conserved without that context can be revived botanically",
+            "p": "varitis konservd uidáut dat kontekst can bi reváivd botanikali"
+          },
+          {
+            "t": "while remaining, in every practical sense, lost.",
+            "p": "uáil remaáining, in évri praktikal sens, lost."
+          },
+          {
+            "t": "Some programmes now collect cultivation records alongside samples,",
+            "p": "sam programes náu kolekt kultivashon rekords alongsáid samples,"
+          },
+          {
+            "t": "though this is far harder to standardise.",
+            "p": "dóu dis is far jarder tu standardáis."
+          }
+        ],
+        [
+          {
+            "t": "None of this diminishes the case for the vaults,",
+            "p": "nan ov dis diminishes de kéis for de volts,"
+          },
+          {
+            "t": "which are inexpensive relative to almost any other agricultural",
+            "p": "uích ar inekspensáiv rélativ tu ólmoust éni áder agrikulteral"
+          },
+          {
+            "t": "investment and have already proved useful. It does suggest that the",
+            "p": "investment end jav alridi pruvd useful. it das sagchést dat de"
+          },
+          {
+            "t": "popular framing gets the emphasis wrong. The value is not in the",
+            "p": "popular fréiming yets de emfasis rong. de value is not in de"
+          },
+          {
+            "t": "dramatic scenario the photographs invite us to imagine,",
+            "p": "dramatik senario de fóutografs inváit as tu imáyin,"
+          },
+          {
+            "t": "but in the far likelier one in which nothing spectacular happens and",
+            "p": "bat in de far likelir uán in uích názing spektakular japens end"
+          },
+          {
+            "t": "things are quietly lost anyway.",
+            "p": "sings ar kuitli lost anyuéi."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The bakery that refused to grow",
+      "body": [
+        "Every weekday at ten past four, a light goes on above a narrow shopfront on Calle Herrera, and Pilar Ossorio starts her day. She has done this for twenty-six years. The bakery produces roughly two hundred loaves before noon and then closes, regardless of how many customers are still queueing outside.",
+        "Investors have approached her four times. The pitch is always similar: a second branch, then a third, a central production unit, perhaps eventually a supermarket contract. Ossorio listens politely and declines. Her reasoning is not sentimental, and she becomes impatient when interviewers try to make it so.",
+        "The argument she gives is technical. Her dough ferments for eighteen hours at a temperature she adjusts by feel, according to the weather and the flour of that particular week. Scaling the operation would require standardising those variables, and standardising them would produce a different loaf. She is uninterested in producing a different loaf.",
+        "Economists who study small firms describe this position as unusual but not irrational. A business that maximises quality within a fixed output can be more profitable per unit than one that expands and dilutes what made it valuable. The complication is that such firms are fragile: they depend on one person, and they cannot absorb a bad year.",
+        "Ossorio is aware of this. She has trained two bakers who now run their own operations elsewhere in the city, deliberately choosing candidates who wanted their own businesses rather than employees who might stay. Her succession plan, if it can be called one, is that the method survives in several places without her name attached.",
+        "Her customers include people who queue for forty minutes and people who find the whole arrangement absurd. She has been accused of manufactured scarcity, a charge she rejects on the grounds that she would need to sell more, not less, to make the accusation profitable. The bakery earns a comfortable living and nothing beyond that.",
+        "What she will not discuss is retirement. She turns sixty-four next year and has said only that she will stop when the loaves stop being right, which she believes she will notice before her customers do. Whether that is confidence or a way of avoiding the question is not clear, possibly not even to her."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Ossorio has turned down offers to expand her business.",
+          "a": "True",
+          "why": "Investors have approached her four times and she declines each time."
+        },
+        {
+          "q": "She explains her refusal in emotional rather than practical terms.",
+          "a": "False",
+          "why": "Her reasoning is described as technical, not sentimental, and she resents being made sentimental."
+        },
+        {
+          "q": "Economists consider her position completely irrational.",
+          "a": "False",
+          "why": "They describe it as unusual but not irrational."
+        },
+        {
+          "q": "She trained bakers who went on to open their own businesses.",
+          "a": "True",
+          "why": "She trained two bakers who now run their own operations elsewhere."
+        },
+        {
+          "q": "The bakery has been featured in national television programmes.",
+          "a": "Not Given",
+          "why": "Interviewers are mentioned but no television coverage is described."
+        }
+      ],
+      "short": [
+        {
+          "q": "For how many hours does the dough ferment?",
+          "a": "eighteen hours"
+        },
+        {
+          "q": "Approximately how many loaves does the bakery make each morning?",
+          "a": "two hundred"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Which of these best summarises Ossorio's technical objection to expanding?",
+          "options": [
+            "Consistent mass production would alter the product itself.",
+            "Larger premises would be too costly to maintain.",
+            "She would be unable to find reliable staff.",
+            "Supermarket contracts pay less than direct sales."
+          ],
+          "a": 0,
+          "why": "Scaling would require standardising variables she adjusts by feel, producing a different loaf."
+        },
+        {
+          "q": "What weakness do economists identify in firms like hers?",
+          "options": [
+            "They cannot charge premium prices.",
+            "They rely on one individual and cannot survive setbacks easily.",
+            "They generate less profit for each item sold.",
+            "They lose customers to larger competitors over time."
+          ],
+          "a": 1,
+          "why": "Such firms are fragile: they depend on one person and cannot absorb a bad year."
+        },
+        {
+          "q": "Why does Ossorio dismiss the accusation of creating artificial scarcity?",
+          "options": [
+            "Because her prices have never increased.",
+            "Because her customers have never complained.",
+            "Because profiting from scarcity would require selling greater quantities.",
+            "Because other bakeries in the city use the same method."
+          ],
+          "a": 2,
+          "why": "She notes she would need to sell more, not less, to make the accusation profitable."
+        },
+        {
+          "q": "How does the writer present Ossorio's attitude to retirement?",
+          "options": [
+            "As a decision she has delegated to her former trainees.",
+            "As something she has already scheduled for next year.",
+            "As carefully planned in consultation with her successors.",
+            "As a subject she treats with unresolved vagueness."
+          ],
+          "a": 3,
+          "why": "She will not discuss it and gives an answer that may be confidence or avoidance, unclear even to her."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Every weekday at ten past four, a light goes on above a narrow shopfront",
+            "p": "évri uíkdei at ten past for, a láit góus on abáv a naro shopfront"
+          },
+          {
+            "t": "on Calle Herrera, and Pilar Ossorio starts her day.",
+            "p": "on kal jerera, end pilar osorio starts jer déi."
+          },
+          {
+            "t": "She has done this for twenty-six years. The bakery produces roughly two",
+            "p": "shi jas dan dis for tuenti-siks yirs. de béikeri prodiúses ráfli tu"
+          },
+          {
+            "t": "hundred loaves before noon and then closes, regardless of how many",
+            "p": "jándred lóuvs bifór nun end den klóuses, regardles ov jáu méni"
+          },
+          {
+            "t": "customers are still queueing outside.",
+            "p": "cástomers ar stil kueuing otsáid."
+          }
+        ],
+        [
+          {
+            "t": "Investors have approached her four times. The pitch is always similar:",
+            "p": "investors jav apróuched jer for táims. de pich is aluéis similar:"
+          },
+          {
+            "t": "a second branch, then a third, a central production unit,",
+            "p": "a sécond branch, den a zerd, a sentral produkshon unit,"
+          },
+          {
+            "t": "perhaps eventually a supermarket contract. Ossorio listens politely and",
+            "p": "perjáps eventuali a supermarket kontrakt. osorio listens politeli end"
+          },
+          {
+            "t": "declines. Her reasoning is not sentimental, and she becomes impatient",
+            "p": "dekláins. jer risóuning is not sentimental, end shi bicáms impatint"
+          },
+          {
+            "t": "when interviewers try to make it so.",
+            "p": "uén interviuers tri tu méik it sóu."
+          }
+        ],
+        [
+          {
+            "t": "The argument she gives is technical. Her dough ferments for eighteen",
+            "p": "de argument shi gáivs is teknikal. jer dóu ferments for eáitin"
+          },
+          {
+            "t": "hours at a temperature she adjusts by feel, according to the weather and",
+            "p": "áuars at a temperacher shi adyusts bái fil, akkording tu de uéder end"
+          },
+          {
+            "t": "the flour of that particular week. Scaling the operation would require",
+            "p": "de fláuar ov dat partikular uik. skéiling de operashon vud rkuáer"
+          },
+          {
+            "t": "standardising those variables, and standardising them would produce a",
+            "p": "standardáising dóus variables, end standardáising dem vud prodiús a"
+          },
+          {
+            "t": "different loaf. She is uninterested in producing a different loaf.",
+            "p": "dífrent lóuf. shi is uninterested in produsing a dífrent lóuf."
+          }
+        ],
+        [
+          {
+            "t": "Economists who study small firms describe this position as unusual but",
+            "p": "ekonomists ju studi smal ferms deskráib dis posishon as unusual bat"
+          },
+          {
+            "t": "not irrational. A business that maximises quality within a fixed output",
+            "p": "not erashonal. a bísnes dat maksimises kualiti uidín a fikst otput"
+          },
+          {
+            "t": "can be more profitable per unit than one that expands and dilutes what",
+            "p": "can bi mor prófitabol per unit dan uán dat ekspands end diliúts uót"
+          },
+          {
+            "t": "made it valuable. The complication is that such firms are fragile:",
+            "p": "méid it valuabol. de komplikashon is dat sach ferms ar fragáil:"
+          },
+          {
+            "t": "they depend on one person, and they cannot absorb a bad year.",
+            "p": "déi depend on uán person, end déi kanot absórb a bad íar."
+          }
+        ],
+        [
+          {
+            "t": "Ossorio is aware of this. She has trained two bakers who now run their",
+            "p": "osorio is oéer ov dis. shi jas traáind tu béikers ju náu run déar"
+          },
+          {
+            "t": "own operations elsewhere in the city, deliberately choosing candidates",
+            "p": "óun operashons elseuír in de siti, deliberateli choóusing kandidéits"
+          },
+          {
+            "t": "who wanted their own businesses rather than employees who might stay.",
+            "p": "ju uanted déar óun bísneses ráder dan emplois ju máit stéi."
+          },
+          {
+            "t": "Her succession plan, if it can be called one,",
+            "p": "jer sakséshon plan, if it can bi kald uán,"
+          },
+          {
+            "t": "is that the method survives in several places without her name attached.",
+            "p": "is dat de mézod serváivs in séveral pléises uidáut jer néim atached."
+          }
+        ],
+        [
+          {
+            "t": "Her customers include people who queue for forty minutes and people who",
+            "p": "jer cástomers inkliúd pípol ju kiú for forti miniúts end pípol ju"
+          },
+          {
+            "t": "find the whole arrangement absurd. She has been accused of manufactured",
+            "p": "fáind de uóul aranyement abserd. shi jas bin akkust ov manufakterd"
+          },
+          {
+            "t": "scarcity, a charge she rejects on the grounds that she would need to",
+            "p": "skérsiti, a chary shi reyekts on de gronds dat shi vud nid tu"
+          },
+          {
+            "t": "sell more, not less, to make the accusation profitable.",
+            "p": "sel mor, not les, tu méik de akkusashon prófitabol."
+          },
+          {
+            "t": "The bakery earns a comfortable living and nothing beyond that.",
+            "p": "de béikeri irns a komfortabol líving end názing beyond dat."
+          }
+        ],
+        [
+          {
+            "t": "What she will not discuss is retirement. She turns sixty-four next year",
+            "p": "uót shi uíl not diskus is ritáiarment. shi terns siksti-fáuar nekst íar"
+          },
+          {
+            "t": "and has said only that she will stop when the loaves stop being right,",
+            "p": "end jas sed óunli dat shi uíl stop uén de lóuvs stop bing ráit,"
+          },
+          {
+            "t": "which she believes she will notice before her customers do.",
+            "p": "uích shi beliívs shi uíl nóutis bifór jer cástomers du."
+          },
+          {
+            "t": "Whether that is confidence or a way of avoiding the question is not",
+            "p": "uéder dat is konfidens or a uéi ov avoáiding de kuéschon is not"
+          },
+          {
+            "t": "clear, possibly not even to her.",
+            "p": "klíar, posibli not íven tu jer."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "Rivers that were given legal personhood",
+      "body": [
+        "In 2017 a river in New Zealand was granted the legal status of a person. The Whanganui was not made human, and the law did not pretend otherwise. What it acquired was standing: the capacity to hold rights, to own property in its own name, and crucially to be represented in court by appointed guardians when harmed.",
+        "The idea sounds novel and is not. Corporations have held legal personhood for centuries, as have ships, temples and estates in various jurisdictions. Legal systems have never restricted personhood to human beings; they have simply chosen which non-humans deserved it. Extending the category to a watercourse changed the membership list, not the underlying mechanism.",
+        "The practical motivation was procedural. Under conventional environmental law, someone wishing to defend a river must demonstrate personal injury: that pollution damaged their health, their property or their livelihood. If nobody can show such harm, the damage goes unchallenged. Granting the river standing removes that requirement, because the injured party is the river itself.",
+        "Similar arrangements have since appeared in Ecuador, Colombia, Bangladesh and parts of the United States, with markedly different outcomes. Where courts already functioned well and guardians were adequately funded, cases have been brought and occasionally won. Where enforcement was weak beforehand, personhood has changed very little, which suggests the mechanism amplifies existing institutional capacity rather than substituting for it.",
+        "Critics raise a problem that supporters find harder to dismiss than they admit: who speaks for the river, and what happens when guardians disagree with the communities living along it? A river has no preferences. Its interests must be inferred, and inference is a form of authorship. The guardian's judgement inevitably becomes the river's voice.",
+        "There is also a question of scope. A river is relatively easy to delimit, though even its boundaries are contested where tributaries and aquifers are concerned. An ecosystem is harder. A climate system is harder still. Lawyers who welcome the Whanganui precedent tend to become cautious when asked where the principle ends.",
+        "None of these objections has slowed the trend. Roughly forty jurisdictions have now adopted some version of rights-of-nature legislation, and the number of filed cases is growing faster than the number of successful ones. Whether the trend amounts to a lasting legal innovation or a symbolic gesture with limited practical force is still unsettled, and candid advocates admit as much."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "The Whanganui law treats the river as a human being.",
+          "a": "False",
+          "why": "The river was not made human; it acquired legal standing, and the law did not pretend otherwise."
+        },
+        {
+          "q": "Legal personhood for non-humans existed long before 2017.",
+          "a": "True",
+          "why": "Corporations, ships, temples and estates have held it for centuries."
+        },
+        {
+          "q": "Rights-of-nature laws have produced identical results in every country.",
+          "a": "False",
+          "why": "Outcomes have been markedly different depending on institutional strength."
+        },
+        {
+          "q": "Supporters find the question of representation easy to answer.",
+          "a": "False",
+          "why": "Critics raise a problem supporters find harder to dismiss than they admit."
+        },
+        {
+          "q": "The Whanganui guardians are elected by public vote.",
+          "a": "Not Given",
+          "why": "Guardians are mentioned but how they are chosen is never stated."
+        }
+      ],
+      "short": [
+        {
+          "q": "Under conventional environmental law, what must a claimant demonstrate?",
+          "a": "personal injury"
+        },
+        {
+          "q": "Approximately how many jurisdictions have adopted rights-of-nature legislation?",
+          "a": "forty"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What procedural difficulty does granting a river personhood solve?",
+          "options": [
+            "It removes the need for a claimant to prove harm to themselves.",
+            "It reduces the cost of bringing environmental cases.",
+            "It allows international courts to hear domestic disputes.",
+            "It prevents companies from operating near watercourses."
+          ],
+          "a": 0,
+          "why": "Standing removes the requirement to demonstrate personal injury, because the river is the injured party."
+        },
+        {
+          "q": "What does the variation between countries suggest to the writer?",
+          "options": [
+            "That the legislation is usually drafted carelessly.",
+            "That personhood strengthens existing institutions rather than replacing them.",
+            "That courts resist applying the principle to rivers.",
+            "That the approach works only in wealthy nations."
+          ],
+          "a": 1,
+          "why": "The mechanism amplifies existing institutional capacity rather than substituting for it."
+        },
+        {
+          "q": "What does the writer mean by saying that inference is 'a form of authorship'?",
+          "options": [
+            "Communities should record their own histories of the river.",
+            "Court judgements are published for public scrutiny.",
+            "Guardians unavoidably shape what the river is said to want.",
+            "Legal documents must be written by specialists."
+          ],
+          "a": 2,
+          "why": "A river has no preferences; interests must be inferred, so the guardian's judgement becomes its voice."
+        },
+        {
+          "q": "Why do supportive lawyers become cautious about the scope of the principle?",
+          "options": [
+            "Because governments have threatened to repeal the laws.",
+            "Because rivers are the only ecosystems worth protecting.",
+            "Because the costs of guardianship rise sharply.",
+            "Because larger systems are far more difficult to define legally."
+          ],
+          "a": 3,
+          "why": "Ecosystems and climate systems are progressively harder to delimit than a river."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "In 2017 a river in New Zealand was granted the legal status of a person.",
+            "p": "in 2017 a ríver in neu siland uós granted de lígal status ov a person."
+          },
+          {
+            "t": "The Whanganui was not made human, and the law did not pretend otherwise.",
+            "p": "de uanganui uós not méid juman, end de lo did not pretend oseruáis."
+          },
+          {
+            "t": "What it acquired was standing: the capacity to hold rights,",
+            "p": "uót it akkuáerd uós stánding: de kapasiti tu jóuld ráits,"
+          },
+          {
+            "t": "to own property in its own name, and crucially to be represented in",
+            "p": "tu óun properti in its óun néim, end krusiali tu bi represented in"
+          },
+          {
+            "t": "court by appointed guardians when harmed.",
+            "p": "cort bái apointed gárdians uén jarmd."
+          }
+        ],
+        [
+          {
+            "t": "The idea sounds novel and is not. Corporations have held legal",
+            "p": "de idi sonds novel end is not. corporéishons jav jeld lígal"
+          },
+          {
+            "t": "personhood for centuries, as have ships, temples and estates in various",
+            "p": "personjud for séncheris, as jav ships, temples end estéits in varias"
+          },
+          {
+            "t": "jurisdictions. Legal systems have never restricted personhood to human",
+            "p": "yurisdíkshons. lígal systems jav néver restrikted personjud tu juman"
+          },
+          {
+            "t": "beings; they have simply chosen which non-humans deserved it.",
+            "p": "bings; déi jav símpli chosen uích non-jumans deservd it."
+          },
+          {
+            "t": "Extending the category to a watercourse changed the membership list,",
+            "p": "ekstending de kategori tu a uaterkóurs chéinchd de membership list,"
+          },
+          {
+            "t": "not the underlying mechanism.",
+            "p": "not de underlying mchanism."
+          }
+        ],
+        [
+          {
+            "t": "The practical motivation was procedural. Under conventional",
+            "p": "de praktikal motivashon uós prosederal. ánder convénshonal"
+          },
+          {
+            "t": "environmental law, someone wishing to defend a river must demonstrate",
+            "p": "enveronmental lo, somóun uishing tu defend a ríver mast demonstréit"
+          },
+          {
+            "t": "personal injury: that pollution damaged their health,",
+            "p": "personal inyeri: dat polushon daméiyd déar jils,"
+          },
+          {
+            "t": "their property or their livelihood. If nobody can show such harm,",
+            "p": "déar properti or déar livelijud. if nobodi can shóu sach jarm,"
+          },
+          {
+            "t": "the damage goes unchallenged. Granting the river standing removes that",
+            "p": "de daméig góus unchalenyd. granting de ríver stánding remóuvs dat"
+          },
+          {
+            "t": "requirement, because the injured party is the river itself.",
+            "p": "rkuáerement, bicós de inyerd parti is de ríver itself."
+          }
+        ],
+        [
+          {
+            "t": "Similar arrangements have since appeared in Ecuador,",
+            "p": "similar aranyements jav sins apéerd in ekuador,"
+          },
+          {
+            "t": "Colombia, Bangladesh and parts of the United States,",
+            "p": "kolombia, bangladsh end parts ov de unáited stéits,"
+          },
+          {
+            "t": "with markedly different outcomes. Where courts already functioned well",
+            "p": "uíd markedli dífrent otkóums. uér corts alridi funktióund uel"
+          },
+          {
+            "t": "and guardians were adequately funded, cases have been brought and",
+            "p": "end gárdians uér adkuateli funded, kéises jav bin brot end"
+          },
+          {
+            "t": "occasionally won. Where enforcement was weak beforehand,",
+            "p": "okkashonali uon. uér enfórsment uós uik beforejand,"
+          },
+          {
+            "t": "personhood has changed very little, which suggests the mechanism",
+            "p": "personjud jas chéinchd véri litol, uích sagchésts de mchanism"
+          },
+          {
+            "t": "amplifies existing institutional capacity rather than substituting for",
+            "p": "amplifis eksisting institushonal kapasiti ráder dan substituting for"
+          },
+          {
+            "t": "it.",
+            "p": "it."
+          }
+        ],
+        [
+          {
+            "t": "Critics raise a problem that supporters find harder to dismiss than they",
+            "p": "kritiks raáis a problem dat suporters fáind jarder tu dismis dan déi"
+          },
+          {
+            "t": "admit: who speaks for the river, and what happens when guardians",
+            "p": "admit: ju spiks for de ríver, end uót japens uén gárdians"
+          },
+          {
+            "t": "disagree with the communities living along it?",
+            "p": "disagri uíd de komunitis líving alóng it?"
+          },
+          {
+            "t": "A river has no preferences. Its interests must be inferred,",
+            "p": "a ríver jas nóu preferenses. its interests mast bi inferd,"
+          },
+          {
+            "t": "and inference is a form of authorship. The guardian's judgement",
+            "p": "end inferens is a form ov osorship. de gárdians yuchment"
+          },
+          {
+            "t": "inevitably becomes the river's voice.",
+            "p": "inevitabli bicáms de rívers voáik."
+          }
+        ],
+        [
+          {
+            "t": "There is also a question of scope. A river is relatively easy to",
+            "p": "déar is ólsou a kuéschon ov skóup. a ríver is relativeli isi tu"
+          },
+          {
+            "t": "delimit, though even its boundaries are contested where tributaries and",
+            "p": "delimit, dóu íven its bondaris ar kontested uér tributaris end"
+          },
+          {
+            "t": "aquifers are concerned. An ecosystem is harder.",
+            "p": "akuáifers ar consérnd. an ícousistem is jarder."
+          },
+          {
+            "t": "A climate system is harder still. Lawyers who welcome the Whanganui",
+            "p": "a cláimet system is jarder stil. loyers ju uelkóum de uanganui"
+          },
+          {
+            "t": "precedent tend to become cautious when asked where the principle ends.",
+            "p": "presedent tend tu bicám koshas uén askt uér de prinsipol ends."
+          }
+        ],
+        [
+          {
+            "t": "None of these objections has slowed the trend.",
+            "p": "nan ov dís obyekshons jas slóued de trend."
+          },
+          {
+            "t": "Roughly forty jurisdictions have now adopted some version of",
+            "p": "ráfli forti yurisdíkshons jav náu adopted sam vershon ov"
+          },
+          {
+            "t": "rights-of-nature legislation, and the number of filed cases is growing",
+            "p": "ráits-of-nacher leyislashon, end de number ov fáild kéises is gróuing"
+          },
+          {
+            "t": "faster than the number of successful ones. Whether the trend amounts to",
+            "p": "faster dan de number ov suksesful uáns. uéder de trend amonts tu"
+          },
+          {
+            "t": "a lasting legal innovation or a symbolic gesture with limited practical",
+            "p": "a lasting lígal inovashon or a symbolik yescher uíd limáited praktikal"
+          },
+          {
+            "t": "force is still unsettled, and candid advocates admit as much.",
+            "p": "fors is stil unsetld, end kandid advokéits admit as mach."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "An unpopular decision about school timetables",
+      "body": [
+        "The proposal arrived at Fenner Academy in the form of a two-page memo: move the start of the school day from eight to nine-fifteen for pupils aged fourteen and above. The evidence cited was familiar to anyone who follows adolescent sleep research, which is to say it was substantial, replicated and largely ignored by schools for two decades.",
+        "Adolescent circadian rhythms shift later during puberty. Teenagers do not merely prefer to sleep late; the hormonal signals that produce sleepiness arrive around two hours later than in adults, and no amount of earlier bedtimes reliably overrides this. A fourteen-year-old told to sleep at nine will frequently lie awake, not out of defiance but because the biology is not cooperating.",
+        "Fenner's headteacher expected resistance from pupils and received almost none. The resistance came from parents whose working hours depended on the school run, from bus companies operating shared routes with primary schools, and from sports coaches whose fixtures were scheduled against institutions keeping conventional hours. None of these objections concerned the evidence, and none was trivial.",
+        "The compromise that emerged pleased nobody entirely. Older pupils start at nine, younger ones at eight-fifteen, and the school runs a supervised study room from seven-forty for families who cannot adjust their schedules. Roughly a fifth of eligible pupils use it, arriving at the original time and reading quietly until lessons begin.",
+        "Two years of internal data show modest gains: attendance in first-period lessons improved, recorded lateness fell substantially, and teachers report fewer disciplinary incidents before break. Examination results have not moved measurably, a finding the school publishes alongside the positive figures rather than burying, on the grounds that overstating the case would invite a backlash later.",
+        "Other schools have visited and mostly left unconvinced, though rarely because they dispute the science. The obstacle is almost always logistical entanglement: a timetable is connected to transport contracts, staff arrangements, examination boards and the schedules of neighbouring institutions, and a single school changing its hours creates friction across all of them.",
+        "The headteacher's own summary is deflationary. She describes the change as a small improvement purchased at a disproportionate administrative cost, worth doing but not the transformation the research coverage implied. Asked whether she would do it again, she said yes, and then added that she would want to know what the answer was in ten years rather than two."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "The research on adolescent sleep was new when the proposal was made.",
+          "a": "False",
+          "why": "The evidence was familiar, substantial and replicated, though ignored for two decades."
+        },
+        {
+          "q": "Pupils objected strongly to the later start.",
+          "a": "False",
+          "why": "The headteacher expected resistance from pupils and received almost none."
+        },
+        {
+          "q": "The school offers early supervision for families who need it.",
+          "a": "True",
+          "why": "A supervised study room runs from seven-forty."
+        },
+        {
+          "q": "Examination results improved significantly after the change.",
+          "a": "False",
+          "why": "Examination results have not moved measurably."
+        },
+        {
+          "q": "The local council provided funding for the new timetable.",
+          "a": "Not Given",
+          "why": "No funding arrangements are mentioned anywhere."
+        }
+      ],
+      "short": [
+        {
+          "q": "What proportion of eligible pupils use the early study room?",
+          "a": "a fifth"
+        },
+        {
+          "q": "How much later do sleepiness signals arrive in teenagers than in adults?",
+          "a": "two hours"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why does the writer say a teenager may lie awake at nine o'clock?",
+          "options": [
+            "Because their biological signals for sleep have not yet arrived.",
+            "Because they are deliberately disobeying instructions.",
+            "Because they have consumed too much caffeine.",
+            "Because screen use has disrupted their routine."
+          ],
+          "a": 0,
+          "why": "The hormonal signals producing sleepiness arrive later; it is not defiance but biology."
+        },
+        {
+          "q": "What characterised the objections the school actually received?",
+          "options": [
+            "They challenged the reliability of the sleep research.",
+            "They were practical concerns unrelated to the evidence.",
+            "They were dismissed as unreasonable by the headteacher.",
+            "They came mainly from teaching staff."
+          ],
+          "a": 1,
+          "why": "The objections concerned school runs, buses and fixtures; none concerned the evidence and none was trivial."
+        },
+        {
+          "q": "Why does the school publish its disappointing exam data?",
+          "options": [
+            "Because examination boards require full disclosure.",
+            "Because parents demanded access to the figures.",
+            "To avoid a later reaction against an overstated claim.",
+            "To encourage other schools to adopt the timetable."
+          ],
+          "a": 2,
+          "why": "Overstating the case would invite a backlash later."
+        },
+        {
+          "q": "What mainly prevents other schools from copying the change?",
+          "options": [
+            "Opposition from their own pupils.",
+            "Disagreement about the underlying science.",
+            "The cost of running supervised study rooms.",
+            "The interlocking commitments a timetable involves."
+          ],
+          "a": 3,
+          "why": "The obstacle is logistical entanglement across transport, staffing, boards and neighbouring schools."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "The proposal arrived at Fenner Academy in the form of a two-page memo:",
+            "p": "de proposal aráivd at fener akademi in de form ov a tuo-péig memo:"
+          },
+          {
+            "t": "move the start of the school day from eight to nine-fifteen for pupils",
+            "p": "móuv de start ov de skul déi from eáit tu náin-fiftin for piúpils"
+          },
+          {
+            "t": "aged fourteen and above. The evidence cited was familiar to anyone who",
+            "p": "éiyd fortín end abáv. de évidens káited uós familiar tu anióun ju"
+          },
+          {
+            "t": "follows adolescent sleep research, which is to say it was substantial,",
+            "p": "folóus adolesent slip resíarch, uích is tu séi it uós substanshal,"
+          },
+          {
+            "t": "replicated and largely ignored by schools for two decades.",
+            "p": "replikéited end laryeli áinóerd bái skuls for tu dékeids."
+          }
+        ],
+        [
+          {
+            "t": "Adolescent circadian rhythms shift later during puberty.",
+            "p": "adolesent serkadian rjysms shift léiter dering puberti."
+          },
+          {
+            "t": "Teenagers do not merely prefer to sleep late;",
+            "p": "tíneiyers du not mereli prefer tu slip léit;"
+          },
+          {
+            "t": "the hormonal signals that produce sleepiness arrive around two hours",
+            "p": "de jormonal signals dat prodiús slipines aráiv aráund tu áuars"
+          },
+          {
+            "t": "later than in adults, and no amount of earlier bedtimes reliably",
+            "p": "léiter dan in adults, end nóu amont ov irlir bédtaims reliabli"
+          },
+          {
+            "t": "overrides this. A fourteen-year-old told to sleep at nine will",
+            "p": "overáids dis. a fóurtin-yíar-óuld tóuld tu slip at náin uíl"
+          },
+          {
+            "t": "frequently lie awake, not out of defiance but because the biology is not",
+            "p": "fríkuentli li oéik, not áut ov defians bat bicós de baióloyi is not"
+          },
+          {
+            "t": "cooperating.",
+            "p": "koóuperéiting."
+          }
+        ],
+        [
+          {
+            "t": "Fenner's headteacher expected resistance from pupils and received almost",
+            "p": "fener's jidticher ekspekted resistans from piúpils end resáivd ólmoust"
+          },
+          {
+            "t": "none. The resistance came from parents whose working hours depended on",
+            "p": "nan. de resistans kéim from parents uóus uérking áuars depended on"
+          },
+          {
+            "t": "the school run, from bus companies operating shared routes with primary",
+            "p": "de skul run, from bus kompanis óuperéiting shéerd roiúts uíd primari"
+          },
+          {
+            "t": "schools, and from sports coaches whose fixtures were scheduled against",
+            "p": "skuls, end from sports cóuches uóus fikschers uér skeduld eguénst"
+          },
+          {
+            "t": "institutions keeping conventional hours. None of these objections",
+            "p": "institushons kiping convénshonal áuars. nan ov dís obyekshons"
+          },
+          {
+            "t": "concerned the evidence, and none was trivial.",
+            "p": "consérnd de évidens, end nan uós trivial."
+          }
+        ],
+        [
+          {
+            "t": "The compromise that emerged pleased nobody entirely.",
+            "p": "de kompromáis dat emeryd poléist nobodi entereli."
+          },
+          {
+            "t": "Older pupils start at nine, younger ones at eight-fifteen,",
+            "p": "older piúpils start at náin, yonyer uáns at eáit-fiftin,"
+          },
+          {
+            "t": "and the school runs a supervised study room from seven-forty for",
+            "p": "end de skul runs a superváist studi rum from seven-forti for"
+          },
+          {
+            "t": "families who cannot adjust their schedules. Roughly a fifth of eligible",
+            "p": "familis ju kanot adyust déar skediúls. ráfli a fifs ov eliyibol"
+          },
+          {
+            "t": "pupils use it, arriving at the original time and reading quietly until",
+            "p": "piúpils iús it, aráiving at de oriyinal táim end ríding kuitli antíl"
+          },
+          {
+            "t": "lessons begin.",
+            "p": "lesons beyin."
+          }
+        ],
+        [
+          {
+            "t": "Two years of internal data show modest gains:",
+            "p": "tu yirs ov internal déita shóu modest géins:"
+          },
+          {
+            "t": "attendance in first-period lessons improved,",
+            "p": "aténdans in ferst-period lesons impróuvd,"
+          },
+          {
+            "t": "recorded lateness fell substantially, and teachers report fewer",
+            "p": "rekorded léitnes fel substantiali, end tichers report feuer"
+          },
+          {
+            "t": "disciplinary incidents before break. Examination results have not moved",
+            "p": "disiplinari insidents bifór brik. eksaminashon results jav not muvd"
+          },
+          {
+            "t": "measurably, a finding the school publishes alongside the positive",
+            "p": "miserabli, a finding de skul publishes alongsáid de positáiv"
+          },
+          {
+            "t": "figures rather than burying, on the grounds that overstating the case",
+            "p": "fíguers ráder dan berying, on de gronds dat overstéiting de kéis"
+          },
+          {
+            "t": "would invite a backlash later.",
+            "p": "vud inváit a baklash léiter."
+          }
+        ],
+        [
+          {
+            "t": "Other schools have visited and mostly left unconvinced,",
+            "p": "áder skuls jav visáited end mostli left unkonvinst,"
+          },
+          {
+            "t": "though rarely because they dispute the science.",
+            "p": "dóu rareli bicós déi dispiút de sins."
+          },
+          {
+            "t": "The obstacle is almost always logistical entanglement:",
+            "p": "de obstakol is ólmoust aluéis loyistikal entanglement:"
+          },
+          {
+            "t": "a timetable is connected to transport contracts,",
+            "p": "a táimteibol is konekted tu tránsport kontrakts,"
+          },
+          {
+            "t": "staff arrangements, examination boards and the schedules of neighbouring",
+            "p": "staf aranyements, eksaminashon bóurds end de skediúls ov náibóuring"
+          },
+          {
+            "t": "institutions, and a single school changing its hours creates friction",
+            "p": "institushons, end a singol skul chanying its áuars kréits frikshon"
+          },
+          {
+            "t": "across all of them.",
+            "p": "acrós ol ov dem."
+          }
+        ],
+        [
+          {
+            "t": "The headteacher's own summary is deflationary.",
+            "p": "de jidticher's óun sumari is deflationari."
+          },
+          {
+            "t": "She describes the change as a small improvement purchased at a",
+            "p": "shi deskráibs de chéinch as a smal impróuvement perchéist at a"
+          },
+          {
+            "t": "disproportionate administrative cost, worth doing but not the",
+            "p": "disproportionéit administratáiv cost, uérz doing bat not de"
+          },
+          {
+            "t": "transformation the research coverage implied.",
+            "p": "transformashon de resíarch kóuveréig impláid."
+          },
+          {
+            "t": "Asked whether she would do it again, she said yes,",
+            "p": "askt uéder shi vud du it eguén, shi sed yes,"
+          },
+          {
+            "t": "and then added that she would want to know what the answer was in ten",
+            "p": "end den aded dat shi vud uónt tu no uót de ánser uós in ten"
+          },
+          {
+            "t": "years rather than two.",
+            "p": "yirs ráder dan tu."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The volunteers who map forgotten graves",
+      "body": [
+        "On the second Saturday of each month, a group of between six and thirty people gathers at the gate of a municipal cemetery on the city's northern edge, carrying trowels, clipboards and a shared spreadsheet on a tablet. They are looking for graves that exist on no register, and they have found more than four thousand.",
+        "The problem they address is administrative rather than mysterious. Burial records in many European cities were kept by parishes, then by municipalities, then by private companies, with each transfer producing losses. Fires, wars, floods and simple carelessness account for the rest. A grave with no record is not hidden; it is merely unindexed, and therefore invisible to anyone searching from a distance.",
+        "The method is unglamorous. Volunteers photograph a headstone, transcribe whatever remains legible, record its position by satellite coordinate, and cross-check the name against surviving registers. Where the stone has weathered past reading, they note the location and move on. Around a third of entries end as coordinates with no name, which the group regards as useful data rather than failure.",
+        "Requests arrive from three main sources. Genealogists form the largest group and are the easiest to help. Legal enquiries, usually connected to inheritance or land title, arrive occasionally and require far more care. The third category consists of families searching for a relative who died abroad, and these cases produce both the longest searches and the strongest reactions when they succeed.",
+        "The group is careful about what it promises. Its published guidance states plainly that most searches fail, that a missing record usually means the information no longer exists anywhere, and that the volunteers cannot investigate causes of death or family circumstances. This restraint has occasionally disappointed enquirers who expected an investigative service rather than an indexing one.",
+        "Municipal authorities have been cooperative but slow. The data the group produces is offered freely, yet incorporating it into official registers requires verification procedures that no department has been funded to carry out. Two cities have absorbed the records; eleven have thanked the volunteers and filed the material without acting on it.",
+        "The founder is dismissive of suggestions that the work is morbid. She points out that a cemetery is a public archive that happens to be outdoors, that the people buried there were indexed once, and that restoring an index is closer to library work than to anything sombre. The monthly gatherings, she adds, are noticeably cheerful."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Missing burial records are mainly the result of administrative changes and accidents.",
+          "a": "True",
+          "why": "Transfers between parishes, municipalities and companies caused losses, along with fires, wars and carelessness."
+        },
+        {
+          "q": "The volunteers abandon a grave entirely if the stone cannot be read.",
+          "a": "False",
+          "why": "They record the location and move on; unnamed coordinates count as useful data."
+        },
+        {
+          "q": "The group promises to investigate how people died.",
+          "a": "False",
+          "why": "Its guidance states the volunteers cannot investigate causes of death."
+        },
+        {
+          "q": "Most cities have formally adopted the volunteers' records.",
+          "a": "False",
+          "why": "Two cities absorbed the records; eleven filed them without acting."
+        },
+        {
+          "q": "The group receives government funding for its equipment.",
+          "a": "Not Given",
+          "why": "No funding for the volunteers is mentioned."
+        }
+      ],
+      "short": [
+        {
+          "q": "How many unregistered graves has the group found?",
+          "a": "more than four thousand"
+        },
+        {
+          "q": "What fraction of entries end without a name?",
+          "a": "a third"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What does the writer mean by describing an unrecorded grave as 'unindexed'?",
+          "options": [
+            "It is physically present but cannot be located through records.",
+            "It lies outside the boundaries of the cemetery.",
+            "It has been deliberately concealed by the authorities.",
+            "It contains no identifiable remains."
+          ],
+          "a": 0,
+          "why": "A grave with no record is not hidden, merely unindexed and therefore invisible to distant searchers."
+        },
+        {
+          "q": "Which category of request is described as most demanding?",
+          "options": [
+            "Requests connected to inheritance and land title.",
+            "Searches for relatives who died in another country.",
+            "Enquiries from genealogists.",
+            "Applications from municipal archivists."
+          ],
+          "a": 1,
+          "why": "Cases involving relatives who died abroad produce the longest searches and strongest reactions."
+        },
+        {
+          "q": "Why has official adoption of the data been limited?",
+          "options": [
+            "Privacy legislation forbids publishing burial data.",
+            "The volunteers charge municipalities for access.",
+            "Departments lack the resources to verify the records.",
+            "The records have been found to contain frequent errors."
+          ],
+          "a": 2,
+          "why": "Incorporating the data requires verification procedures no department has been funded to perform."
+        },
+        {
+          "q": "How does the founder characterise the nature of the work?",
+          "options": [
+            "As a solemn duty owed to the dead.",
+            "As a campaign to pressure local government.",
+            "As a hobby with no wider purpose.",
+            "As essentially a form of archival cataloguing."
+          ],
+          "a": 3,
+          "why": "She calls it closer to library work: restoring an index in an outdoor public archive."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "On the second Saturday of each month, a group of between six and thirty",
+            "p": "on de sécond saterdéi ov ich manz, a grup ov bituín siks end zérti"
+          },
+          {
+            "t": "people gathers at the gate of a municipal cemetery on the city's",
+            "p": "pípol gasers at de géit ov a munisipal sémeteri on de sitis"
+          },
+          {
+            "t": "northern edge, carrying trowels, clipboards and a shared spreadsheet on",
+            "p": "norsern ech, karying tróuels, klipbóurds end a shéerd spridshit on"
+          },
+          {
+            "t": "a tablet. They are looking for graves that exist on no register,",
+            "p": "a tablet. déi ar loóuking for gréivs dat eksist on nóu réyister,"
+          },
+          {
+            "t": "and they have found more than four thousand.",
+            "p": "end déi jav fond mor dan for záusand."
+          }
+        ],
+        [
+          {
+            "t": "The problem they address is administrative rather than mysterious.",
+            "p": "de problem déi adres is administratáiv ráder dan mysterias."
+          },
+          {
+            "t": "Burial records in many European cities were kept by parishes,",
+            "p": "berial rekords in méni iropin sitis uér kept bái parishes,"
+          },
+          {
+            "t": "then by municipalities, then by private companies,",
+            "p": "den bái munisipalitis, den bái privéit kompanis,"
+          },
+          {
+            "t": "with each transfer producing losses. Fires, wars,",
+            "p": "uíd ich transfer produsing loses. fáers, uórs,"
+          },
+          {
+            "t": "floods and simple carelessness account for the rest.",
+            "p": "fluds end simpol karelesnes akkont for de rest."
+          },
+          {
+            "t": "A grave with no record is not hidden; it is merely unindexed,",
+            "p": "a gréiv uíd nóu récord is not jiden; it is mereli unindekst,"
+          },
+          {
+            "t": "and therefore invisible to anyone searching from a distance.",
+            "p": "end serefóer invísibol tu anióun síarching from a distans."
+          }
+        ],
+        [
+          {
+            "t": "The method is unglamorous. Volunteers photograph a headstone,",
+            "p": "de mézod is unglamoras. volantíars fotograf a jédstoun,"
+          },
+          {
+            "t": "transcribe whatever remains legible, record its position by satellite",
+            "p": "transkráib uatever reméins leyibol, récord its posishon bái sátelait"
+          },
+          {
+            "t": "coordinate, and cross-check the name against surviving registers.",
+            "p": "coórdinet, end kros-chek de néim eguénst serváiving réyisters."
+          },
+          {
+            "t": "Where the stone has weathered past reading, they note the location and",
+            "p": "uér de stóun jas uiserd past ríding, déi nóut de lokashon end"
+          },
+          {
+            "t": "move on. Around a third of entries end as coordinates with no name,",
+            "p": "móuv on. aráund a zerd ov entris end as coórdinets uíd nóu néim,"
+          },
+          {
+            "t": "which the group regards as useful data rather than failure.",
+            "p": "uích de grup regards as useful déita ráder dan féiliúr."
+          }
+        ],
+        [
+          {
+            "t": "Requests arrive from three main sources. Genealogists form the largest",
+            "p": "rkuests aráiv from zri méin sóurses. yiniáloyists form de laryest"
+          },
+          {
+            "t": "group and are the easiest to help. Legal enquiries,",
+            "p": "grup end ar de isist tu jelp. lígal enkueris,"
+          },
+          {
+            "t": "usually connected to inheritance or land title,",
+            "p": "iúshuali konekted tu injéritans or land titol,"
+          },
+          {
+            "t": "arrive occasionally and require far more care.",
+            "p": "aráiv okkashonali end rkuáer far mor kéer."
+          },
+          {
+            "t": "The third category consists of families searching for a relative who",
+            "p": "de zerd kategori konsists ov familis síarching for a rélativ ju"
+          },
+          {
+            "t": "died abroad, and these cases produce both the longest searches and the",
+            "p": "dáid abróud, end dís kéises prodiús bóuz de lonyest síarches end de"
+          },
+          {
+            "t": "strongest reactions when they succeed.",
+            "p": "stronyest rikshons uén déi suksid."
+          }
+        ],
+        [
+          {
+            "t": "The group is careful about what it promises.",
+            "p": "de grup is kareful abáut uót it promises."
+          },
+          {
+            "t": "Its published guidance states plainly that most searches fail,",
+            "p": "its published guidans stéits pléinli dat móust síarches féil,"
+          },
+          {
+            "t": "that a missing record usually means the information no longer exists",
+            "p": "dat a mising récord iúshuali mins de informashon nóu lonyer eksists"
+          },
+          {
+            "t": "anywhere, and that the volunteers cannot investigate causes of death or",
+            "p": "anyuír, end dat de volantíars kanot investigéit koses ov dis or"
+          },
+          {
+            "t": "family circumstances. This restraint has occasionally disappointed",
+            "p": "famili serkumstanses. dis restréint jas okkashonali disapointed"
+          },
+          {
+            "t": "enquirers who expected an investigative service rather than an indexing",
+            "p": "enkuáerers ju ekspekted an investigatáiv sérvis ráder dan an indeksing"
+          },
+          {
+            "t": "one.",
+            "p": "uán."
+          }
+        ],
+        [
+          {
+            "t": "Municipal authorities have been cooperative but slow.",
+            "p": "munisipal osoritis jav bin kuperatáiv bat slo."
+          },
+          {
+            "t": "The data the group produces is offered freely,",
+            "p": "de déita de grup prodiúses is oferd frili,"
+          },
+          {
+            "t": "yet incorporating it into official registers requires verification",
+            "p": "yet inkorporéiting it íntu ofishal réyisters rkuáers verifikashon"
+          },
+          {
+            "t": "procedures that no department has been funded to carry out.",
+            "p": "prosediúrs dat nóu department jas bin funded tu kari áut."
+          },
+          {
+            "t": "Two cities have absorbed the records; eleven have thanked the volunteers",
+            "p": "tu sitis jav absorbd de rekords; iléven jav sankt de volantíars"
+          },
+          {
+            "t": "and filed the material without acting on it.",
+            "p": "end fáild de material uidáut akting on it."
+          }
+        ],
+        [
+          {
+            "t": "The founder is dismissive of suggestions that the work is morbid.",
+            "p": "de fonder is dismisáiv ov sagchéschons dat de uérk is morbid."
+          },
+          {
+            "t": "She points out that a cemetery is a public archive that happens to be",
+            "p": "shi points áut dat a sémeteri is a publik árkaiv dat japens tu bi"
+          },
+          {
+            "t": "outdoors, that the people buried there were indexed once,",
+            "p": "otdurs, dat de pípol beráid déar uér indekst uáns,"
+          },
+          {
+            "t": "and that restoring an index is closer to library work than to anything",
+            "p": "end dat restóering an indeks is klóuser tu librari uérk dan tu énizing"
+          },
+          {
+            "t": "sombre. The monthly gatherings, she adds, are noticeably cheerful.",
+            "p": "sombr. de monsli gaserings, shi ads, ar notisibli chirful."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "Why translated fiction sells better than it used to",
+      "body": [
+        "Throughout much of the last century, publishers in English-speaking markets treated translated fiction as a category with a ceiling. The assumption was not entirely unfounded: translation costs money, foreign names complicate marketing, and readers were believed to prefer settings they recognised. Roughly three per cent of published fiction was translated, a figure so stable that it acquired a nickname.",
+        "That figure has been rising, unevenly and from a low base. The reasons offered are numerous and mostly unproven, which has not prevented them from being repeated confidently at industry conferences. Streaming subtitles, international crime series, prize shortlists and the collapse of certain gatekeeping structures all appear on the list.",
+        "One explanation with better evidence behind it concerns the translators themselves. Naming translators on covers, once uncommon, became a public campaign around 2021 and is now standard at several major houses. Books credited this way have sold measurably better, though whether the credit causes the sales or simply marks the houses already investing in promotion is not settled.",
+        "Another factor is structural. Small independent presses, several of them run by former translators, began acquiring rights that larger firms considered uncommercial. Their overheads are lower, their print runs shorter, and they can make a title profitable at sales figures that would embarrass a large publisher. Several of the decade's translated bestsellers began at presses employing fewer than five people.",
+        "The pattern is not uniform across languages. Fiction translated from Japanese, Korean and Spanish has grown sharply. Translation from Arabic, Bengali and most African languages has barely moved, which suggests that the shift reflects the reach of particular cultural exports rather than a general appetite for the unfamiliar. Readers appear to be following films, music and television rather than seeking novelty for its own sake.",
+        "Translators themselves are divided about the change. Some regard the increased visibility as overdue recognition of authorship, since a translated novel is in a meaningful sense written twice. Others worry that celebrity translation encourages publishers to commission by reputation rather than fit, and that a name on a cover is no guarantee of a good match between translator and text.",
+        "What almost everyone agrees on is that the finances stay punishing. Most translators are paid by the word, most rates have not risen with the sales figures, and a translator whose book wins a major prize may still earn less from it than the publicity would suggest. The visibility arrived considerably faster than the money."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Translated fiction once made up a small and stable share of publishing.",
+          "a": "True",
+          "why": "Roughly three per cent, so stable it acquired a nickname."
+        },
+        {
+          "q": "The reasons given for the increase are all well supported by evidence.",
+          "a": "False",
+          "why": "They are numerous and mostly unproven, though confidently repeated."
+        },
+        {
+          "q": "Naming translators on covers has always been standard practice.",
+          "a": "False",
+          "why": "It was once uncommon and became a campaign around 2021."
+        },
+        {
+          "q": "Growth in translated fiction has been similar across all source languages.",
+          "a": "False",
+          "why": "Japanese, Korean and Spanish grew sharply while Arabic and Bengali barely moved."
+        },
+        {
+          "q": "Most translated bestsellers are now published by small presses.",
+          "a": "Not Given",
+          "why": "Several began at small presses, but no overall proportion is given."
+        }
+      ],
+      "short": [
+        {
+          "q": "In roughly which year did the campaign to credit translators begin?",
+          "a": "2021"
+        },
+        {
+          "q": "How are most translators paid?",
+          "a": "by the word"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What uncertainty does the writer note about crediting translators?",
+          "options": [
+            "Whether the credit drives sales or merely identifies well-promoted books.",
+            "Whether the practice will continue after 2021.",
+            "Whether translators want their names published.",
+            "Whether readers actually notice the translator's name."
+          ],
+          "a": 0,
+          "why": "It is unsettled whether credit causes sales or marks houses already investing in promotion."
+        },
+        {
+          "q": "What advantage do small independent presses have?",
+          "options": [
+            "They avoid the cost of acquiring translation rights.",
+            "They can profit from sales too modest for a large publisher.",
+            "They receive subsidies unavailable to larger firms.",
+            "They pay translators substantially higher rates."
+          ],
+          "a": 1,
+          "why": "Lower overheads and shorter runs let them profit at figures that would embarrass a large publisher."
+        },
+        {
+          "q": "What does the uneven growth across languages suggest to the writer?",
+          "options": [
+            "That some languages are inherently harder to translate.",
+            "That prize juries favour European fiction.",
+            "That readers are drawn by wider cultural exports rather than unfamiliarity itself.",
+            "That publishers discriminate against certain regions deliberately."
+          ],
+          "a": 2,
+          "why": "Readers appear to follow films, music and television rather than seeking novelty for its own sake."
+        },
+        {
+          "q": "What concern do some translators raise about increased visibility?",
+          "options": [
+            "That it reduces the author's standing.",
+            "That it exposes them to public criticism.",
+            "That it slows down the translation process.",
+            "That reputation may replace suitability when work is assigned."
+          ],
+          "a": 3,
+          "why": "Celebrity translation may encourage commissioning by reputation rather than fit."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Throughout much of the last century, publishers in English-speaking",
+            "p": "srot mach ov de last séncheri, páblishers in english-spéiking"
+          },
+          {
+            "t": "markets treated translated fiction as a category with a ceiling.",
+            "p": "markets tréited transléited fíkshon as a kategori uíd a síling."
+          },
+          {
+            "t": "The assumption was not entirely unfounded: translation costs money,",
+            "p": "de asumpshon uós not entereli unfonded: translashon kosts máni,"
+          },
+          {
+            "t": "foreign names complicate marketing, and readers were believed to prefer",
+            "p": "foráin néims komplikéit marketing, end ríders uér belivd tu prefer"
+          },
+          {
+            "t": "settings they recognised. Roughly three per cent of published fiction",
+            "p": "setings déi rekonáist. ráfli zri per sent ov published fíkshon"
+          },
+          {
+            "t": "was translated, a figure so stable that it acquired a nickname.",
+            "p": "uós transléited, a fíguer sóu stabol dat it akkuáerd a niknéim."
+          }
+        ],
+        [
+          {
+            "t": "That figure has been rising, unevenly and from a low base.",
+            "p": "dat fíguer jas bin ráising, unevenli end from a lo béis."
+          },
+          {
+            "t": "The reasons offered are numerous and mostly unproven,",
+            "p": "de risons oferd ar numeras end mostli unproven,"
+          },
+          {
+            "t": "which has not prevented them from being repeated confidently at industry",
+            "p": "uích jas not prevented dem from bing rípéited konfidentli at industri"
+          },
+          {
+            "t": "conferences. Streaming subtitles, international crime series,",
+            "p": "konferenses. stréiming subtitles, internashonal kráim seris,"
+          },
+          {
+            "t": "prize shortlists and the collapse of certain gatekeeping structures all",
+            "p": "práis shortlists end de kolaps ov sertéin gatekiping strukchers ol"
+          },
+          {
+            "t": "appear on the list.",
+            "p": "apíar on de list."
+          }
+        ],
+        [
+          {
+            "t": "One explanation with better evidence behind it concerns the translators",
+            "p": "uán eksplanashon uíd beter évidens bijáind it konserns de transléitors"
+          },
+          {
+            "t": "themselves. Naming translators on covers, once uncommon,",
+            "p": "demsélvs. néiming transléitors on cávers, uáns unkomon,"
+          },
+          {
+            "t": "became a public campaign around 2021 and is now standard at several",
+            "p": "bikéim a publik campéin aráund 2021 end is náu standard at séveral"
+          },
+          {
+            "t": "major houses. Books credited this way have sold measurably better,",
+            "p": "mayor joses. buks krdáited dis uéi jav sóuld miserabli beter,"
+          },
+          {
+            "t": "though whether the credit causes the sales or simply marks the houses",
+            "p": "dóu uéder de kredit koses de séils or símpli marks de joses"
+          },
+          {
+            "t": "already investing in promotion is not settled.",
+            "p": "alridi investing in promoshon is not setld."
+          }
+        ],
+        [
+          {
+            "t": "Another factor is structural. Small independent presses,",
+            "p": "anoser faktor is strákchural. smal independent préses,"
+          },
+          {
+            "t": "several of them run by former translators, began acquiring rights that",
+            "p": "séveral ov dem run bái former transléitors, began akkuáering ráits dat"
+          },
+          {
+            "t": "larger firms considered uncommercial. Their overheads are lower,",
+            "p": "laryer ferms konsiderd unkomershal. déar overjids ar lóuer,"
+          },
+          {
+            "t": "their print runs shorter, and they can make a title profitable at sales",
+            "p": "déar print runs shorter, end déi can méik a titol prófitabol at séils"
+          },
+          {
+            "t": "figures that would embarrass a large publisher.",
+            "p": "fíguers dat vud embaras a lary páblisher."
+          },
+          {
+            "t": "Several of the decade's translated bestsellers began at presses",
+            "p": "séveral ov de dékeids transléited béstselars began at préses"
+          },
+          {
+            "t": "employing fewer than five people.",
+            "p": "emploing feuer dan fáiv pípol."
+          }
+        ],
+        [
+          {
+            "t": "The pattern is not uniform across languages.",
+            "p": "de pátern is not uniform acrós lánguiches."
+          },
+          {
+            "t": "Fiction translated from Japanese, Korean and Spanish has grown sharply.",
+            "p": "fíkshon transléited from yapanís, corían end spánish jas gróun sharpli."
+          },
+          {
+            "t": "Translation from Arabic, Bengali and most African languages has barely",
+            "p": "translashon from arabik, bengáli end móust áfrican lánguiches jas bareli"
+          },
+          {
+            "t": "moved, which suggests that the shift reflects the reach of particular",
+            "p": "muvd, uích sagchésts dat de shift reflekts de rich ov partikular"
+          },
+          {
+            "t": "cultural exports rather than a general appetite for the unfamiliar.",
+            "p": "kulteral eksports ráder dan a yeneral apetáit for de unfamiliar."
+          },
+          {
+            "t": "Readers appear to be following films, music and television rather than",
+            "p": "ríders apíar tu bi folóuing films, musik end televishon ráder dan"
+          },
+          {
+            "t": "seeking novelty for its own sake.",
+            "p": "siking novelti for its óun séik."
+          }
+        ],
+        [
+          {
+            "t": "Translators themselves are divided about the change.",
+            "p": "transléitors demsélvs ar diváided abáut de chéinch."
+          },
+          {
+            "t": "Some regard the increased visibility as overdue recognition of",
+            "p": "sam regard de inkréist visibíliti as overdue rekognishon ov"
+          },
+          {
+            "t": "authorship, since a translated novel is in a meaningful sense written",
+            "p": "osorship, sins a transléited novel is in a miningful sens riten"
+          },
+          {
+            "t": "twice. Others worry that celebrity translation encourages publishers to",
+            "p": "tuáik. áders uori dat selebriti translashon enkáuaréigs páblishers tu"
+          },
+          {
+            "t": "commission by reputation rather than fit, and that a name on a cover is",
+            "p": "komishon bái reputashon ráder dan fit, end dat a néim on a cáver is"
+          },
+          {
+            "t": "no guarantee of a good match between translator and text.",
+            "p": "nóu guaranti ov a gud mach bituín transléitor end tekst."
+          }
+        ],
+        [
+          {
+            "t": "What almost everyone agrees on is that the finances stay punishing.",
+            "p": "uót ólmoust everióun agris on is dat de finanses stéi punishing."
+          },
+          {
+            "t": "Most translators are paid by the word, most rates have not risen with",
+            "p": "móust transléitors ar péid bái de uord, móust réits jav not risen uíd"
+          },
+          {
+            "t": "the sales figures, and a translator whose book wins a major prize may",
+            "p": "de séils fíguers, end a transléitor uóus buk uins a mayor práis méi"
+          },
+          {
+            "t": "still earn less from it than the publicity would suggest.",
+            "p": "stil irn les from it dan de publisiti vud sagchést."
+          },
+          {
+            "t": "The visibility arrived considerably faster than the money.",
+            "p": "de visibíliti aráivd konsiderabli faster dan de máni."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The trouble with counting wild animals",
+      "body": [
+        "A newspaper reports that a species has declined by sixty per cent since 1970. The figure is repeated, becomes a campaign slogan, and eventually appears in policy documents. Almost nobody who encounters it asks the awkward preliminary question, which is how anyone knows how many of an animal existed in 1970, or exists now.",
+        "Counting wild populations is difficult in ways that are easy to underestimate. Animals move, hide, migrate and look like one another. They are distributed unevenly across terrain that is frequently inaccessible. A complete census is impossible for all but a handful of large, conspicuous and geographically confined species, and even those are contested.",
+        "What ecologists produce instead are estimates built from samples. A defined area is surveyed intensively, a density is calculated, and that density is extrapolated across the habitat believed to be comparable. Each of those steps introduces uncertainty, and the uncertainties compound. A responsible published figure therefore arrives with a confidence interval attached, often a wide one.",
+        "That interval is the first casualty of communication. A finding that a population lies somewhere between four hundred thousand and one point four million becomes, in a headline, a population of nine hundred thousand. The midpoint is not wrong exactly, but it conveys a precision the underlying work never claimed, and it makes subsequent revisions look like scandals rather than science.",
+        "Newer methods have improved matters without solving the problem. Camera traps, acoustic monitoring, satellite tracking and the analysis of DNA left in soil and water have all reduced the reliance on direct observation. Each brings its own biases: a camera trap records animals that pass a particular point, and animals that avoid open ground pass such points less often.",
+        "The consequence is not that population figures are worthless. Trends are considerably more reliable than absolute numbers, because a method with consistent biases will still show a decline accurately even if its totals are wrong. An ecologist who is unsure whether a population is two hundred thousand or six hundred thousand may be entirely confident that it is falling.",
+        "This distinction rarely survives contact with public debate, where it is treated as an evasion. It is not. Insisting that we know less than we claim, while continuing to act on what the evidence does support, is an ordinary scientific position that happens to be difficult to fit into a headline or a slogan."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "A complete count is possible for most wild species.",
+          "a": "False",
+          "why": "It is impossible for all but a handful of large, conspicuous, confined species."
+        },
+        {
+          "q": "Published population estimates usually include a range of uncertainty.",
+          "a": "True",
+          "why": "A responsible figure arrives with a confidence interval, often wide."
+        },
+        {
+          "q": "Headlines typically preserve the full range of an estimate.",
+          "a": "False",
+          "why": "The interval is the first casualty; a range becomes a single midpoint figure."
+        },
+        {
+          "q": "Newer monitoring methods have eliminated bias from population studies.",
+          "a": "False",
+          "why": "Each new method brings its own biases."
+        },
+        {
+          "q": "Trends in a population can be reliable even when totals are uncertain.",
+          "a": "True",
+          "why": "Consistent biases still show a decline accurately even if totals are wrong."
+        }
+      ],
+      "short": [
+        {
+          "q": "What do ecologists produce instead of a complete census?",
+          "a": "estimates built from samples"
+        },
+        {
+          "q": "What kind of animals are underrepresented by camera traps?",
+          "a": "animals that avoid open ground"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What problem does reporting a midpoint figure create?",
+          "options": [
+            "It implies an accuracy the research never claimed.",
+            "It makes the original study impossible to locate.",
+            "It prevents comparison between different species.",
+            "It exaggerates the size of the population."
+          ],
+          "a": 0,
+          "why": "The midpoint conveys a precision the underlying work never claimed."
+        },
+        {
+          "q": "Why does the writer say revisions come to look like scandals?",
+          "options": [
+            "Because campaign groups reject new evidence.",
+            "Because the public was given falsely precise figures to begin with.",
+            "Because researchers conceal their original methods.",
+            "Because journals rarely publish corrections."
+          ],
+          "a": 1,
+          "why": "Once precision is implied, later corrections appear as failures rather than normal science."
+        },
+        {
+          "q": "What example illustrates the bias of camera traps?",
+          "options": [
+            "They cannot distinguish between similar species.",
+            "They are too expensive to deploy widely.",
+            "They under-record animals that keep away from open areas.",
+            "They fail during periods of bad weather."
+          ],
+          "a": 2,
+          "why": "A camera trap records animals passing a point, and animals avoiding open ground pass less often."
+        },
+        {
+          "q": "What is the writer's view of scientists who stress uncertainty?",
+          "options": [
+            "They should refrain from publishing until certain.",
+            "They are avoiding responsibility for their findings.",
+            "They undermine public trust unnecessarily.",
+            "They are taking an ordinary and defensible position."
+          ],
+          "a": 3,
+          "why": "The final paragraph calls it an ordinary scientific position, not an evasion."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "A newspaper reports that a species has declined by sixty per cent since",
+            "p": "a neuspéiper reports dat a spesis jas dekláind bái siksti per sent sins"
+          },
+          {
+            "t": "1970. The figure is repeated, becomes a campaign slogan,",
+            "p": "1970. de fíguer is rípéited, bicáms a campéin slogan,"
+          },
+          {
+            "t": "and eventually appears in policy documents. Almost nobody who encounters",
+            "p": "end eventuali apirs in polisi dokuments. ólmoust nobodi ju enkonters"
+          },
+          {
+            "t": "it asks the awkward preliminary question, which is how anyone knows how",
+            "p": "it asks de okuard preliminari kuéschon, uích is jáu anióun nóus jáu"
+          },
+          {
+            "t": "many of an animal existed in 1970, or exists now.",
+            "p": "méni ov an animal eksisted in 1970, or eksists náu."
+          }
+        ],
+        [
+          {
+            "t": "Counting wild populations is difficult in ways that are easy to",
+            "p": "konting uáild populashons is difikult in uéis dat ar isi tu"
+          },
+          {
+            "t": "underestimate. Animals move, hide, migrate and look like one another.",
+            "p": "underestiméit. animals móuv, jáid, migréit end luk láik uán anoser."
+          },
+          {
+            "t": "They are distributed unevenly across terrain that is frequently",
+            "p": "déi ar distributed unevenli acrós teréin dat is fríkuentli"
+          },
+          {
+            "t": "inaccessible. A complete census is impossible for all but a handful of",
+            "p": "inaksesibol. a komplít sénsas is imposibol for ol bat a jandful ov"
+          },
+          {
+            "t": "large, conspicuous and geographically confined species,",
+            "p": "lary, konspikuas end yeografikali konfáind spesis,"
+          },
+          {
+            "t": "and even those are contested.",
+            "p": "end íven dóus ar kontested."
+          }
+        ],
+        [
+          {
+            "t": "What ecologists produce instead are estimates built from samples.",
+            "p": "uót ekoloyists prodiús instid ar estiméits bilt from samples."
+          },
+          {
+            "t": "A defined area is surveyed intensively, a density is calculated,",
+            "p": "a defáind ari is serveyd intensiveli, a dénsiti is kalkuléited,"
+          },
+          {
+            "t": "and that density is extrapolated across the habitat believed to be",
+            "p": "end dat dénsiti is ekstrapoléited acrós de jábitat belivd tu bi"
+          },
+          {
+            "t": "comparable. Each of those steps introduces uncertainty,",
+            "p": "komparabol. ich ov dóus steps introduses unsertéinti,"
+          },
+          {
+            "t": "and the uncertainties compound. A responsible published figure therefore",
+            "p": "end de unsertéintis kompond. a responsibol published fíguer serefóer"
+          },
+          {
+            "t": "arrives with a confidence interval attached,",
+            "p": "aráivs uíd a konfidens interval atached,"
+          },
+          {
+            "t": "often a wide one.",
+            "p": "ófen a uáid uán."
+          }
+        ],
+        [
+          {
+            "t": "That interval is the first casualty of communication.",
+            "p": "dat interval is de férst kasualti ov komunikashon."
+          },
+          {
+            "t": "A finding that a population lies somewhere between four hundred thousand",
+            "p": "a finding dat a populashon lis someuír bituín for jándred záusand"
+          },
+          {
+            "t": "and one point four million becomes, in a headline,",
+            "p": "end uán point for milion bicáms, in a jidláin,"
+          },
+          {
+            "t": "a population of nine hundred thousand. The midpoint is not wrong",
+            "p": "a populashon ov náin jándred záusand. de midpoint is not rong"
+          },
+          {
+            "t": "exactly, but it conveys a precision the underlying work never claimed,",
+            "p": "eksaktli, bat it konveys a presishon de underlying uérk néver klaáimd,"
+          },
+          {
+            "t": "and it makes subsequent revisions look like scandals rather than",
+            "p": "end it méiks subskuent revishons luk láik skandals ráder dan"
+          },
+          {
+            "t": "science.",
+            "p": "sins."
+          }
+        ],
+        [
+          {
+            "t": "Newer methods have improved matters without solving the problem.",
+            "p": "neuer mézods jav impróuvd maters uidáut solving de problem."
+          },
+          {
+            "t": "Camera traps, acoustic monitoring, satellite tracking and the analysis",
+            "p": "cámera traps, akostik monitóering, sátelait traking end de analysis"
+          },
+          {
+            "t": "of DNA left in soil and water have all reduced the reliance on direct",
+            "p": "ov dna left in sóil end uóter jav ol redust de relians on derekt"
+          },
+          {
+            "t": "observation. Each brings its own biases: a camera trap records animals",
+            "p": "observashon. ich brings its óun biases: a cámera trap rekords animals"
+          },
+          {
+            "t": "that pass a particular point, and animals that avoid open ground pass",
+            "p": "dat pas a partikular point, end animals dat avoid open grond pas"
+          },
+          {
+            "t": "such points less often.",
+            "p": "sach points les ófen."
+          }
+        ],
+        [
+          {
+            "t": "The consequence is not that population figures are worthless.",
+            "p": "de konskuens is not dat populashon fíguers ar uorsles."
+          },
+          {
+            "t": "Trends are considerably more reliable than absolute numbers,",
+            "p": "trends ar konsiderabli mor reliabol dan absoliút numbers,"
+          },
+          {
+            "t": "because a method with consistent biases will still show a decline",
+            "p": "bicós a mézod uíd konsistent biases uíl stil shóu a dekláin"
+          },
+          {
+            "t": "accurately even if its totals are wrong. An ecologist who is unsure",
+            "p": "akserateli íven if its tóutals ar rong. an ekoloyist ju is unsher"
+          },
+          {
+            "t": "whether a population is two hundred thousand or six hundred thousand may",
+            "p": "uéder a populashon is tu jándred záusand or siks jándred záusand méi"
+          },
+          {
+            "t": "be entirely confident that it is falling.",
+            "p": "bi entereli konfident dat it is faling."
+          }
+        ],
+        [
+          {
+            "t": "This distinction rarely survives contact with public debate,",
+            "p": "dis distinkshon rareli serváivs kontakt uíd publik debéit,"
+          },
+          {
+            "t": "where it is treated as an evasion. It is not.",
+            "p": "uér it is tréited as an evashon. it is not."
+          },
+          {
+            "t": "Insisting that we know less than we claim, while continuing to act on",
+            "p": "insisting dat uí no les dan uí kléim, uáil kontinuing tu akt on"
+          },
+          {
+            "t": "what the evidence does support, is an ordinary scientific position that",
+            "p": "uót de évidens das suport, is an ordinari sintifik posishon dat"
+          },
+          {
+            "t": "happens to be difficult to fit into a headline or a slogan.",
+            "p": "japens tu bi difikult tu fit íntu a jidláin or a slogan."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "A hotel built entirely from what others discarded",
+      "body": [
+        "The Lindhagen opened in 2021 with forty rooms, a restaurant and an unusual constraint: nothing structural or decorative inside it was newly manufactured. Doors came from a demolished hospital, floorboards from a gymnasium, basins from a hotel refurbishment two streets away. The architects describe the project as an experiment in whether such a building could be delivered on a normal commercial timetable.",
+        "It could not, quite. The build ran eleven months over schedule, almost entirely because reclaimed materials arrive when they arrive. A conventional project orders four hundred identical door handles; this one waited for a school to be stripped out. The design had to be revised repeatedly as availability changed, which is the opposite of how construction documents normally work.",
+        "The cost outcome surprised the developers in both directions. Materials were cheap, sometimes free, since demolition contractors frequently pay to dispose of what the Lindhagen collected. Labour, however, was expensive: reclaimed timber must be de-nailed, planed and inspected, and fitting components that were never designed to go together takes skilled hands considerably longer than fitting new ones.",
+        "Guests, according to the operator, divide into three groups. A minority book specifically because of the building's provenance and want to be told the origin of everything. A larger group notices the aesthetic, assumes it is a deliberate style, and is mildly surprised to learn the reason. The third group notices nothing at all, which the architects regard as the most satisfying response.",
+        "Regulation proved to be the sharpest obstacle. Fire certification, structural warranties and insurance are all built around documented product specifications, and a floorboard from an unknown 1950s gymnasium has no specification. Each reclaimed element required individual testing or a certified engineer's sign-off, an expense that would rise steeply on a larger building.",
+        "The architects are therefore cautious about how far the model extends. A boutique hotel is small, has a tolerant client and can absorb delay. A hospital, a school or a housing block has none of those luxuries. Their published conclusion is that the approach suits projects where time is flexible and volumes are low, which describes a small fraction of what gets built.",
+        "What they consider genuinely transferable is less visible than the building. The project produced a catalogue of testing protocols for reclaimed components, and that documentation has been requested by more firms than have enquired about the architecture. The paperwork, not the aesthetic, may turn out to be the durable contribution."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "The Lindhagen was completed on its original schedule.",
+          "a": "False",
+          "why": "The build ran eleven months over schedule."
+        },
+        {
+          "q": "Reclaimed materials were often obtained very cheaply.",
+          "a": "True",
+          "why": "Materials were cheap, sometimes free, as contractors pay to dispose of them."
+        },
+        {
+          "q": "Labour costs were lower than on a conventional build.",
+          "a": "False",
+          "why": "Labour was expensive because of de-nailing, planing and fitting mismatched components."
+        },
+        {
+          "q": "Most guests book the hotel because of how it was built.",
+          "a": "False",
+          "why": "Only a minority book specifically for the provenance."
+        },
+        {
+          "q": "The hotel has won architectural awards for its design.",
+          "a": "Not Given",
+          "why": "No awards are mentioned in the passage."
+        }
+      ],
+      "short": [
+        {
+          "q": "Where did the hotel's doors originally come from?",
+          "a": "a demolished hospital"
+        },
+        {
+          "q": "What did the project produce that other firms have requested?",
+          "a": "testing protocols"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why did the design have to be revised so often?",
+          "options": [
+            "Available salvage determined what could be used.",
+            "The client kept changing the brief.",
+            "The original architects left the project.",
+            "Local planning rules were altered mid-project."
+          ],
+          "a": 0,
+          "why": "Reclaimed materials arrive when they arrive, so the design was revised as availability changed."
+        },
+        {
+          "q": "Which guest reaction do the architects value most?",
+          "options": [
+            "Detailed curiosity about each component's history.",
+            "Complete unawareness of how the building was made.",
+            "Willingness to pay a premium for the concept.",
+            "Admiration for the visual style."
+          ],
+          "a": 1,
+          "why": "The group that notices nothing at all is called the most satisfying response."
+        },
+        {
+          "q": "Why was regulation the sharpest obstacle?",
+          "options": [
+            "Insurance companies rejected the project entirely.",
+            "Reclaimed materials are banned in commercial buildings.",
+            "Certification systems depend on documented specifications that salvage lacks.",
+            "Inspectors refused to visit the site."
+          ],
+          "a": 2,
+          "why": "Fire certification, warranties and insurance assume documented specifications, which salvage has none."
+        },
+        {
+          "q": "What do the architects believe is the project's most transferable outcome?",
+          "options": [
+            "The relationships built with demolition contractors.",
+            "The visual style of the interiors.",
+            "The evidence that costs can be reduced.",
+            "The documented procedures for testing salvaged parts."
+          ],
+          "a": 3,
+          "why": "The catalogue of testing protocols has been requested more than the architecture."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "The Lindhagen opened in 2021 with forty rooms,",
+            "p": "de lindjayen opend in 2021 uíd forti rums,"
+          },
+          {
+            "t": "a restaurant and an unusual constraint: nothing structural or decorative",
+            "p": "a réstorant end an unusual konstréint: názing strákchural or dekoratáiv"
+          },
+          {
+            "t": "inside it was newly manufactured. Doors came from a demolished hospital,",
+            "p": "insáid it uós neuli manufakterd. dors kéim from a demolished jospital,"
+          },
+          {
+            "t": "floorboards from a gymnasium, basins from a hotel refurbishment two",
+            "p": "flórbords from a yymnasium, béisins from a jotel referbishment tu"
+          },
+          {
+            "t": "streets away. The architects describe the project as an experiment in",
+            "p": "strits oéi. de arkitekts deskráib de próyect as an eksperiment in"
+          },
+          {
+            "t": "whether such a building could be delivered on a normal commercial",
+            "p": "uéder sach a bílding cud bi deliverd on a normal komershal"
+          },
+          {
+            "t": "timetable.",
+            "p": "táimteibol."
+          }
+        ],
+        [
+          {
+            "t": "It could not, quite. The build ran eleven months over schedule,",
+            "p": "it cud not, kuáit. de buáild ran iléven manzs óuver skediúl,"
+          },
+          {
+            "t": "almost entirely because reclaimed materials arrive when they arrive.",
+            "p": "ólmoust entereli bicós rikléimd materials aráiv uén déi aráiv."
+          },
+          {
+            "t": "A conventional project orders four hundred identical door handles;",
+            "p": "a convénshonal próyect orders for jándred identikal dor jandles;"
+          },
+          {
+            "t": "this one waited for a school to be stripped out.",
+            "p": "dis uán uaáited for a skul tu bi stript áut."
+          },
+          {
+            "t": "The design had to be revised repeatedly as availability changed,",
+            "p": "de disáin jad tu bi reváist repitedli as avéilabiliti chéinchd,"
+          },
+          {
+            "t": "which is the opposite of how construction documents normally work.",
+            "p": "uích is de oposáit ov jáu konstrukshon dokuments normali uérk."
+          }
+        ],
+        [
+          {
+            "t": "The cost outcome surprised the developers in both directions.",
+            "p": "de cost otkóum serpráist de develóupers in bóuz derekshons."
+          },
+          {
+            "t": "Materials were cheap, sometimes free, since demolition contractors",
+            "p": "materials uér chip, sometáims fri, sins demolishon kontraktors"
+          },
+          {
+            "t": "frequently pay to dispose of what the Lindhagen collected.",
+            "p": "fríkuentli péi tu dispóus ov uót de lindjayen kolekted."
+          },
+          {
+            "t": "Labour, however, was expensive: reclaimed timber must be de-nailed,",
+            "p": "labáuar, jauéver, uós ekspénsiv: rikléimd tímber mast bi d-naáild,"
+          },
+          {
+            "t": "planed and inspected, and fitting components that were never designed to",
+            "p": "pléind end inspékted, end fiting komponents dat uér néver disáind tu"
+          },
+          {
+            "t": "go together takes skilled hands considerably longer than fitting new",
+            "p": "go tuguéder téiks skild jands konsiderabli lonyer dan fiting neu"
+          },
+          {
+            "t": "ones.",
+            "p": "uáns."
+          }
+        ],
+        [
+          {
+            "t": "Guests, according to the operator, divide into three groups.",
+            "p": "guests, akkording tu de operator, diváid íntu zri grops."
+          },
+          {
+            "t": "A minority book specifically because of the building's provenance and",
+            "p": "a minoriti buk spesifikali bicós ov de bíldings provenans end"
+          },
+          {
+            "t": "want to be told the origin of everything. A larger group notices the",
+            "p": "uónt tu bi tóuld de oriyin ov everysing. a laryer grup nóutises de"
+          },
+          {
+            "t": "aesthetic, assumes it is a deliberate style,",
+            "p": "aesetik, asiúms it is a deliberéit styl,"
+          },
+          {
+            "t": "and is mildly surprised to learn the reason.",
+            "p": "end is mildli serpráist tu lirn de ríson."
+          },
+          {
+            "t": "The third group notices nothing at all, which the architects regard as",
+            "p": "de zerd grup nóutises názing at ol, uích de arkitekts regard as"
+          },
+          {
+            "t": "the most satisfying response.",
+            "p": "de móust satisfying respons."
+          }
+        ],
+        [
+          {
+            "t": "Regulation proved to be the sharpest obstacle.",
+            "p": "regulashon pruvd tu bi de sharpest obstakol."
+          },
+          {
+            "t": "Fire certification, structural warranties and insurance are all built",
+            "p": "fáer sertifikashon, strákchural uórantis end inserans ar ol bilt"
+          },
+          {
+            "t": "around documented product specifications, and a floorboard from an",
+            "p": "aráund dokumented produkt spesifikashons, end a flórbord from an"
+          },
+          {
+            "t": "unknown 1950s gymnasium has no specification.",
+            "p": "unknóun 1950s yymnasium jas nóu spesifikashon."
+          },
+          {
+            "t": "Each reclaimed element required individual testing or a certified",
+            "p": "ich rikléimd element rkuáerd individual testing or a sertifáid"
+          },
+          {
+            "t": "engineer's sign-off, an expense that would rise steeply on a larger",
+            "p": "enyiníar's sáin-of, an ekspens dat vud ráis stipli on a laryer"
+          },
+          {
+            "t": "building.",
+            "p": "bílding."
+          }
+        ],
+        [
+          {
+            "t": "The architects are therefore cautious about how far the model extends.",
+            "p": "de arkitekts ar serefóer koshas abáut jáu far de model ekstends."
+          },
+          {
+            "t": "A boutique hotel is small, has a tolerant client and can absorb delay.",
+            "p": "a botikue jotel is smal, jas a tolerant klint end can absórb deléi."
+          },
+          {
+            "t": "A hospital, a school or a housing block has none of those luxuries.",
+            "p": "a jospital, a skul or a josing blok jas nan ov dóus lukseris."
+          },
+          {
+            "t": "Their published conclusion is that the approach suits projects where",
+            "p": "déar published konklushon is dat de apróuch suits próyects uér"
+          },
+          {
+            "t": "time is flexible and volumes are low, which describes a small fraction",
+            "p": "táim is fleksibol end vólioms ar lo, uích deskráibs a smal frakshon"
+          },
+          {
+            "t": "of what gets built.",
+            "p": "ov uót yets bilt."
+          }
+        ],
+        [
+          {
+            "t": "What they consider genuinely transferable is less visible than the",
+            "p": "uót déi konsáider yenuineli transferabol is les vísibol dan de"
+          },
+          {
+            "t": "building. The project produced a catalogue of testing protocols for",
+            "p": "bílding. de próyect produst a katalogue ov testing protokols for"
+          },
+          {
+            "t": "reclaimed components, and that documentation has been requested by more",
+            "p": "rikléimd komponents, end dat dokumentashon jas bin rkuested bái mor"
+          },
+          {
+            "t": "firms than have enquired about the architecture.",
+            "p": "ferms dan jav enkuáerd abáut de arkitekcher."
+          },
+          {
+            "t": "The paperwork, not the aesthetic, may turn out to be the durable",
+            "p": "de paperuork, not de aesetik, méi tern áut tu bi de derabol"
+          },
+          {
+            "t": "contribution.",
+            "p": "kontribushon."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "Four reviews of the same restaurant",
+      "body": [
+        "Kessel opened in March in a converted tram depot and has since attracted the kind of attention that makes reviewers competitive. What follows is an attempt to read four published notices side by side, not to decide which is correct but to show how completely the same evening can be described in incompatible ways.",
+        "The first reviewer, writing for a national weekend supplement, spent most of her column on the room. She admired the height of the ceiling, disliked the acoustics, and mentioned three dishes in a single sentence near the end. Her verdict was warm. A reader would finish the piece knowing what the place feels like and almost nothing about what it serves.",
+        "The second, a food blogger with a large following, inverted this exactly. She listed nine courses with weights, temperatures and provenance, criticised the seasoning of two of them in detail, and referred to the building only to note that it was cold near the door. Her verdict was lukewarm, and the disagreement with the first reviewer concerned criteria rather than facts.",
+        "The third notice appeared in a local paper and was written by someone who had eaten there four times, twice before the official opening. He was the only reviewer to mention prices in relation to local wages, the only one to name a server, and the only one who observed that the menu had already changed twice. His verdict was affectionate and slightly worried.",
+        "The fourth was a single paragraph in a listings magazine, evidently written from a press release and a brief visit. It contained one factual error about the chef's previous employment, praised a dish that had been removed from the menu, and awarded four stars out of five. It is also, by a considerable margin, the review most often quoted in the restaurant's own publicity.",
+        "None of these pieces is dishonest. Each reflects a different assumption about what a review is for: atmosphere, technique, community context, or a rapid consumer signal. Readers rarely know which assumption they are getting, because publications almost never state it, and the star rating at the end flattens all four into apparently comparable numbers.",
+        "The restaurant, for its part, has responded in the way most do. It has printed the four stars on a card by the entrance and mentions none of the other reviews. This is not deceptive so much as predictable: of the four notices, only one produced a number, and only numbers fit on a card."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "The first reviewer focused mainly on the food rather than the setting.",
+          "a": "False",
+          "why": "She spent most of her column on the room and mentioned dishes only briefly."
+        },
+        {
+          "q": "The second and first reviewers disagreed about the facts of the meal.",
+          "a": "False",
+          "why": "The disagreement concerned criteria rather than facts."
+        },
+        {
+          "q": "The third reviewer had visited the restaurant more than once.",
+          "a": "True",
+          "why": "He had eaten there four times, twice before the official opening."
+        },
+        {
+          "q": "The fourth review contained an inaccuracy.",
+          "a": "True",
+          "why": "It contained a factual error about the chef's previous employment."
+        },
+        {
+          "q": "The restaurant has publicly complained about one of the reviews.",
+          "a": "Not Given",
+          "why": "Its only response described is printing the four stars; no complaint is mentioned."
+        }
+      ],
+      "short": [
+        {
+          "q": "What was the building before it became a restaurant?",
+          "a": "a tram depot"
+        },
+        {
+          "q": "Which review is quoted most often in the restaurant's publicity?",
+          "a": "the fourth"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What does the writer say distinguishes the four reviews?",
+          "options": [
+            "Their underlying assumptions about a review's purpose.",
+            "Whether the reviewers paid for their meals.",
+            "The amount each reviewer was paid.",
+            "Their differing levels of professional competence."
+          ],
+          "a": 0,
+          "why": "Each reflects a different assumption about what a review is for."
+        },
+        {
+          "q": "Why does the writer single out the third reviewer?",
+          "options": [
+            "He wrote the longest of the four notices.",
+            "He alone considered cost against local earnings and named staff.",
+            "He was the most critical of the cooking.",
+            "He had trained as a chef himself."
+          ],
+          "a": 1,
+          "why": "He was the only one to mention prices relative to local wages and to name a server."
+        },
+        {
+          "q": "What problem does the writer identify with star ratings?",
+          "options": [
+            "They discourage readers from reading the text.",
+            "They are calculated by editors rather than reviewers.",
+            "They make reviews with different aims look equivalent.",
+            "They are usually awarded too generously."
+          ],
+          "a": 2,
+          "why": "The star rating flattens four different approaches into apparently comparable numbers."
+        },
+        {
+          "q": "How does the writer judge the restaurant's use of the four-star review?",
+          "options": [
+            "As a mistake that will damage its reputation.",
+            "As evidence that the other reviews were unfair.",
+            "As dishonest and worth condemning.",
+            "As an understandable consequence of how ratings work."
+          ],
+          "a": 3,
+          "why": "It is called not deceptive so much as predictable, since only numbers fit on a card."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Kessel opened in March in a converted tram depot and has since attracted",
+            "p": "kesel opend in march in a konverted tram depot end jas sins atrakted"
+          },
+          {
+            "t": "the kind of attention that makes reviewers competitive.",
+            "p": "de káind ov atenshon dat méiks riviúers kompetitáiv."
+          },
+          {
+            "t": "What follows is an attempt to read four published notices side by side,",
+            "p": "uót folóus is an atempt tu rid for published nóutises sáid bái sáid,"
+          },
+          {
+            "t": "not to decide which is correct but to show how completely the same",
+            "p": "not tu dekáid uích is korekt bat tu shóu jáu kompleteli de séim"
+          },
+          {
+            "t": "evening can be described in incompatible ways.",
+            "p": "evening can bi deskráibd in inkompatibol uéis."
+          }
+        ],
+        [
+          {
+            "t": "The first reviewer, writing for a national weekend supplement,",
+            "p": "de férst riviúer, ráiting for a nashonal uikend suplement,"
+          },
+          {
+            "t": "spent most of her column on the room. She admired the height of the",
+            "p": "spent móust ov jer kolumn on de rum. shi admáerd de jeáit ov de"
+          },
+          {
+            "t": "ceiling, disliked the acoustics, and mentioned three dishes in a single",
+            "p": "síling, disláikt de acústics, end mentióund zri dishes in a singol"
+          },
+          {
+            "t": "sentence near the end. Her verdict was warm.",
+            "p": "sentens níar de end. jer vérdict uós uarm."
+          },
+          {
+            "t": "A reader would finish the piece knowing what the place feels like and",
+            "p": "a réider vud finish de piík nóuing uót de pléis fils láik end"
+          },
+          {
+            "t": "almost nothing about what it serves.",
+            "p": "ólmoust názing abáut uót it serves."
+          }
+        ],
+        [
+          {
+            "t": "The second, a food blogger with a large following,",
+            "p": "de sécond, a fud blóguer uíd a lary folóuing,"
+          },
+          {
+            "t": "inverted this exactly. She listed nine courses with weights,",
+            "p": "inverted dis eksaktli. shi listed náin córses uíd ueáits,"
+          },
+          {
+            "t": "temperatures and provenance, criticised the seasoning of two of them in",
+            "p": "temperachers end provenans, kritikáist de sísoning ov tu ov dem in"
+          },
+          {
+            "t": "detail, and referred to the building only to note that it was cold near",
+            "p": "detéil, end referd tu de bílding óunli tu nóut dat it uós kóuld níar"
+          },
+          {
+            "t": "the door. Her verdict was lukewarm, and the disagreement with the first",
+            "p": "de dor. jer vérdict uós lukeuarm, end de disagriment uíd de férst"
+          },
+          {
+            "t": "reviewer concerned criteria rather than facts.",
+            "p": "riviúer consérnd kriteria ráder dan fakts."
+          }
+        ],
+        [
+          {
+            "t": "The third notice appeared in a local paper and was written by someone",
+            "p": "de zerd nóutis apéerd in a lokal péiper end uós riten bái somóun"
+          },
+          {
+            "t": "who had eaten there four times, twice before the official opening.",
+            "p": "ju jad iten déar for táims, tuáik bifór de ofishal opening."
+          },
+          {
+            "t": "He was the only reviewer to mention prices in relation to local wages,",
+            "p": "ji uós de óunli riviúer tu menshon prises in relashon tu lokal uéiches,"
+          },
+          {
+            "t": "the only one to name a server, and the only one who observed that the",
+            "p": "de óunli uán tu néim a sérver, end de óunli uán ju observd dat de"
+          },
+          {
+            "t": "menu had already changed twice. His verdict was affectionate and",
+            "p": "méniu jad alridi chéinchd tuáik. jis vérdict uós afektionéit end"
+          },
+          {
+            "t": "slightly worried.",
+            "p": "sláitli uoráid."
+          }
+        ],
+        [
+          {
+            "t": "The fourth was a single paragraph in a listings magazine,",
+            "p": "de fóurs uós a singol paragraf in a listings magasáin,"
+          },
+          {
+            "t": "evidently written from a press release and a brief visit.",
+            "p": "evidentli riten from a pres ríléis end a brif visit."
+          },
+          {
+            "t": "It contained one factual error about the chef's previous employment,",
+            "p": "it kontaáind uán faktual eror abáut de chef's previas emploiment,"
+          },
+          {
+            "t": "praised a dish that had been removed from the menu,",
+            "p": "praáist a dish dat jad bin remóuvd from de méniu,"
+          },
+          {
+            "t": "and awarded four stars out of five. It is also,",
+            "p": "end oarded for stars áut ov fáiv. it is ólsou,"
+          },
+          {
+            "t": "by a considerable margin, the review most often quoted in the",
+            "p": "bái a konsiderabol maryin, de riviú móust ófen kuóuted in de"
+          },
+          {
+            "t": "restaurant's own publicity.",
+            "p": "réstorants óun publisiti."
+          }
+        ],
+        [
+          {
+            "t": "None of these pieces is dishonest. Each reflects a different assumption",
+            "p": "nan ov dís piíks is dishonest. ich reflekts a dífrent asumpshon"
+          },
+          {
+            "t": "about what a review is for: atmosphere, technique,",
+            "p": "abáut uót a riviú is for: atmosfír, teknikue,"
+          },
+          {
+            "t": "community context, or a rapid consumer signal.",
+            "p": "komuniti kontekst, or a rapid konsumer signal."
+          },
+          {
+            "t": "Readers rarely know which assumption they are getting,",
+            "p": "ríders rareli no uích asumpshon déi ar yeting,"
+          },
+          {
+            "t": "because publications almost never state it, and the star rating at the",
+            "p": "bicós publikashons ólmoust néver stéit it, end de star réiting at de"
+          },
+          {
+            "t": "end flattens all four into apparently comparable numbers.",
+            "p": "end flatens ol for íntu aparentli komparabol numbers."
+          }
+        ],
+        [
+          {
+            "t": "The restaurant, for its part, has responded in the way most do.",
+            "p": "de réstorant, for its part, jas responded in de uéi móust du."
+          },
+          {
+            "t": "It has printed the four stars on a card by the entrance and mentions",
+            "p": "it jas printed de for stars on a kard bái de entrans end menshons"
+          },
+          {
+            "t": "none of the other reviews. This is not deceptive so much as predictable:",
+            "p": "nan ov de áder riviús. dis is not deseptáiv sóu mach as prediktabol:"
+          },
+          {
+            "t": "of the four notices, only one produced a number,",
+            "p": "ov de for nóutises, óunli uán produst a number,"
+          },
+          {
+            "t": "and only numbers fit on a card.",
+            "p": "end óunli numbers fit on a kard."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The swimmer who kept going after the record fell",
+      "body": [
+        "Ineke Vos held the national eight-hundred-metre record for six years. She lost it on a Tuesday evening in a regional pool, to a nineteen-year-old she had never raced, by seven-tenths of a second. Vos was thirty-four, present at the meet, and watching from the second lane.",
+        "The interview she gave afterwards became briefly notorious for its flatness. Asked how it felt, she said the record had been borrowed and was now returned. Asked whether she would try to reclaim it, she said probably not. Asked whether she would retire, she said she had no intention of retiring and appeared puzzled that the question followed from the others.",
+        "This confusion is instructive. Sports coverage tends to treat records as the reason athletes compete, so losing one is narrated as a crisis requiring either a comeback or a departure. Vos has been consistent for a decade that the record was a by-product. What she describes wanting is the training, which she has organised her life around since she was eleven.",
+        "Her coach corroborates this, though with reservations. He notes that Vos trains harder than athletes half her age, that her technique has improved measurably in the past three seasons, and that she is nonetheless slower than she was at twenty-six. He also says, carefully, that an athlete who genuinely did not care about times would not check the board as quickly as she does.",
+        "The wider pattern is well documented in longitudinal work on masters athletes. Performance in endurance events declines from the late twenties but the rate is modest until roughly the mid-forties, after which it steepens. Many competitors report that their satisfaction becomes less comparative over the same period, shifting from placing to process.",
+        "Whether this is genuine adjustment or a sensible accommodation to decline is difficult to separate, and the athletes interviewed for such studies say so themselves. Vos, asked directly, replied that the distinction assumes she was ever primarily comparing herself to others, which she disputes without being able to prove.",
+        "She swam the same event again in November and finished fourth. The nineteen-year-old won. Vos's time was four seconds outside her own former record and two seconds faster than she had managed that spring, which she described afterwards as the more interesting of the two comparisons."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Vos was present when her record was broken.",
+          "a": "True",
+          "why": "She was at the meet, watching from the second lane."
+        },
+        {
+          "q": "She announced her retirement after losing the record.",
+          "a": "False",
+          "why": "She said she had no intention of retiring."
+        },
+        {
+          "q": "Her coach fully accepts that she is indifferent to times.",
+          "a": "False",
+          "why": "He says an athlete who truly did not care would not check the board so quickly."
+        },
+        {
+          "q": "Endurance performance declines sharply from the late twenties onwards.",
+          "a": "False",
+          "why": "The rate is modest until roughly the mid-forties, after which it steepens."
+        },
+        {
+          "q": "Vos has competed internationally for her country.",
+          "a": "Not Given",
+          "why": "Only the national record and regional meets are mentioned."
+        }
+      ],
+      "short": [
+        {
+          "q": "By how much was the record broken?",
+          "a": "seven-tenths of a second"
+        },
+        {
+          "q": "At what age did Vos begin organising her life around training?",
+          "a": "eleven"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why did Vos's answers confuse the interviewer?",
+          "options": [
+            "She did not treat losing the record as a turning point.",
+            "She claimed the timing equipment was faulty.",
+            "She blamed the officials for the result.",
+            "She refused to discuss the race at all."
+          ],
+          "a": 0,
+          "why": "Coverage expects a crisis requiring comeback or departure; she treated the record as a by-product."
+        },
+        {
+          "q": "What reservation does her coach express?",
+          "options": [
+            "That her training volume is dangerously high.",
+            "That her behaviour suggests she cares more than she admits.",
+            "That her technique has stopped improving.",
+            "That she should compete at a shorter distance."
+          ],
+          "a": 1,
+          "why": "He notes she checks the board too quickly for someone indifferent to times."
+        },
+        {
+          "q": "What do studies of masters athletes report about satisfaction?",
+          "options": [
+            "It is highest among those who retire early.",
+            "It disappears once performance begins to decline.",
+            "It becomes less focused on comparison with others.",
+            "It depends mainly on the quality of coaching."
+          ],
+          "a": 2,
+          "why": "Satisfaction shifts from placing to process over the same period."
+        },
+        {
+          "q": "Why does the final paragraph mention two different comparisons?",
+          "options": [
+            "To explain why she finished outside the medals.",
+            "To show that Vos had returned to her best form.",
+            "To criticise the fairness of the November race.",
+            "To illustrate which measure of progress she values."
+          ],
+          "a": 3,
+          "why": "She called the improvement on her own spring time the more interesting comparison."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Ineke Vos held the national eight-hundred-metre record for six years.",
+            "p": "iník vos jeld de nashonal eáit-jundrd-metr récord for siks yirs."
+          },
+          {
+            "t": "She lost it on a Tuesday evening in a regional pool,",
+            "p": "shi lost it on a tuesdéi evening in a reyional pul,"
+          },
+          {
+            "t": "to a nineteen-year-old she had never raced, by seven-tenths of a second.",
+            "p": "tu a ninetin-yíar-óuld shi jad néver réist, bái seven-tens ov a sécond."
+          },
+          {
+            "t": "Vos was thirty-four, present at the meet, and watching from the second",
+            "p": "vos uós serti-fáuar, present at de mit, end uaching from de sécond"
+          },
+          {
+            "t": "lane.",
+            "p": "léin."
+          }
+        ],
+        [
+          {
+            "t": "The interview she gave afterwards became briefly notorious for its",
+            "p": "de ínterviu shi géiv afteruards bikéim brifli notorias for its"
+          },
+          {
+            "t": "flatness. Asked how it felt, she said the record had been borrowed and",
+            "p": "flatnes. askt jáu it felt, shi sed de récord jad bin boróued end"
+          },
+          {
+            "t": "was now returned. Asked whether she would try to reclaim it,",
+            "p": "uós náu reternd. askt uéder shi vud tri tu rikléim it,"
+          },
+          {
+            "t": "she said probably not. Asked whether she would retire,",
+            "p": "shi sed probabli not. askt uéder shi vud retáer,"
+          },
+          {
+            "t": "she said she had no intention of retiring and appeared puzzled that the",
+            "p": "shi sed shi jad nóu intenshon ov retáering end apéerd pusld dat de"
+          },
+          {
+            "t": "question followed from the others.",
+            "p": "kuéschon folóued from de áders."
+          }
+        ],
+        [
+          {
+            "t": "This confusion is instructive. Sports coverage tends to treat records as",
+            "p": "dis konfushon is instruktáiv. sports kóuveréig tends tu trit rekords as"
+          },
+          {
+            "t": "the reason athletes compete, so losing one is narrated as a crisis",
+            "p": "de ríson ázlits kompít, sóu lóusing uán is naréited as a krisis"
+          },
+          {
+            "t": "requiring either a comeback or a departure. Vos has been consistent for",
+            "p": "rkuáering iser a komebak or a deparcher. vos jas bin konsistent for"
+          },
+          {
+            "t": "a decade that the record was a by-product. What she describes wanting is",
+            "p": "a dékeid dat de récord uós a bi-produkt. uót shi deskráibs uanting is"
+          },
+          {
+            "t": "the training, which she has organised her life around since she was",
+            "p": "de traáining, uích shi jas organáist jer láif aráund sins shi uós"
+          },
+          {
+            "t": "eleven.",
+            "p": "iléven."
+          }
+        ],
+        [
+          {
+            "t": "Her coach corroborates this, though with reservations.",
+            "p": "jer cóuch koroboréits dis, dóu uíd reservashons."
+          },
+          {
+            "t": "He notes that Vos trains harder than athletes half her age,",
+            "p": "ji nóuts dat vos tréins jarder dan ázlits jaf jer éig,"
+          },
+          {
+            "t": "that her technique has improved measurably in the past three seasons,",
+            "p": "dat jer teknikue jas impróuvd miserabli in de past zri sisons,"
+          },
+          {
+            "t": "and that she is nonetheless slower than she was at twenty-six.",
+            "p": "end dat shi is noneseles slóuer dan shi uós at tuenti-siks."
+          },
+          {
+            "t": "He also says, carefully, that an athlete who genuinely did not care",
+            "p": "ji ólsou ses, karefuli, dat an ázlit ju yenuineli did not kéer"
+          },
+          {
+            "t": "about times would not check the board as quickly as she does.",
+            "p": "abáut táims vud not chek de bóurd as kuikli as shi das."
+          }
+        ],
+        [
+          {
+            "t": "The wider pattern is well documented in longitudinal work on masters",
+            "p": "de uáider pátern is uel dokumented in lonyitudinal uérk on masters"
+          },
+          {
+            "t": "athletes. Performance in endurance events declines from the late",
+            "p": "ázlits. performans in endiúrans events dekláins from de léit"
+          },
+          {
+            "t": "twenties but the rate is modest until roughly the mid-forties,",
+            "p": "tuentis bat de réit is modest antíl ráfli de mid-fortis,"
+          },
+          {
+            "t": "after which it steepens. Many competitors report that their satisfaction",
+            "p": "áfter uích it stipens. méni compétitors report dat déar satisfákshon"
+          },
+          {
+            "t": "becomes less comparative over the same period,",
+            "p": "bicáms les komparatáiv óuver de séim period,"
+          },
+          {
+            "t": "shifting from placing to process.",
+            "p": "shifting from pléising tu próuses."
+          }
+        ],
+        [
+          {
+            "t": "Whether this is genuine adjustment or a sensible accommodation to",
+            "p": "uéder dis is yenuáin adyustment or a sensibol akkomodashon tu"
+          },
+          {
+            "t": "decline is difficult to separate, and the athletes interviewed for such",
+            "p": "dekláin is difikult tu separéit, end de ázlits interviued for sach"
+          },
+          {
+            "t": "studies say so themselves. Vos, asked directly,",
+            "p": "studis séi sóu demsélvs. vos, askt derektli,"
+          },
+          {
+            "t": "replied that the distinction assumes she was ever primarily comparing",
+            "p": "repláid dat de distinkshon asiúms shi uós ever primarili kompéering"
+          },
+          {
+            "t": "herself to others, which she disputes without being able to prove.",
+            "p": "jerself tu áders, uích shi dispiúts uidáut bing abol tu próuv."
+          }
+        ],
+        [
+          {
+            "t": "She swam the same event again in November and finished fourth.",
+            "p": "shi suam de séim event eguén in november end finished fóurs."
+          },
+          {
+            "t": "The nineteen-year-old won. Vos's time was four seconds outside her own",
+            "p": "de ninetin-yíar-óuld uon. vos's táim uós for séconds otsáid jer óun"
+          },
+          {
+            "t": "former record and two seconds faster than she had managed that spring,",
+            "p": "former récord end tu séconds faster dan shi jad manéiyd dat spring,"
+          },
+          {
+            "t": "which she described afterwards as the more interesting of the two",
+            "p": "uích shi deskráibd afteruards as de mor interesting ov de tu"
+          },
+          {
+            "t": "comparisons.",
+            "p": "komparisons."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "What happened when a clinic stopped sending reminders",
+      "body": [
+        "A general practice in a mid-sized town spent four years sending automated text reminders before appointments. Missed appointments fell from fourteen per cent to nine. When the messaging contract expired in 2022 and the supplier raised its price sharply, the practice manager decided, partly out of irritation, to stop sending them for six months and see what happened.",
+        "The rate rose, but only to eleven per cent, not the fourteen the practice had expected. This was interesting enough that the manager, who has no research training, wrote it up in a short note that was eventually published in a primary care journal after a good deal of editorial assistance.",
+        "The likely explanation offered by the reviewers was habituation. Patients who had received reminders for four years had built the appointments into their routines, and many had independently set their own alarms, calendar entries or notes. The reminders had done work that no longer needed doing, at least for existing patients.",
+        "The distribution mattered more than the average. Missed appointments among patients registered before 2018 barely changed at all. Among those registered in the previous eighteen months, they rose steeply. The intervention was still working, but only for the group that had not yet developed its own habits, which is not how the service had been costed or described.",
+        "This has an obvious implication and a less obvious one. The obvious one is that reminders could be targeted at newer patients at a fraction of the cost. The less obvious one is that the original evaluation, which compared reminders against no reminders across the whole list, could not have detected this and would have been read as justifying permanent universal coverage.",
+        "The practice now sends reminders for the first year of registration and for a small number of appointment types where the consequences of absence are serious. Missed appointments sit at ten per cent, marginally worse than under the universal scheme, at roughly a fifth of the cost. The manager describes this trade as obviously acceptable and acknowledges that not everyone agrees.",
+        "The note has been cited more often than its author expected, mostly by people making a broader argument about evaluation design rather than about text messages. Its central point is not really about reminders at all: an intervention that works can stop being necessary for the people it has already helped, and averages will hide this indefinitely."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Missed appointments returned to their original level when reminders stopped.",
+          "a": "False",
+          "why": "They rose to eleven per cent, not the fourteen expected."
+        },
+        {
+          "q": "The practice manager had formal research training.",
+          "a": "False",
+          "why": "The manager is described as having no research training."
+        },
+        {
+          "q": "Long-registered patients were largely unaffected by the change.",
+          "a": "True",
+          "why": "Missed appointments among patients registered before 2018 barely changed."
+        },
+        {
+          "q": "The current scheme is cheaper than the universal one.",
+          "a": "True",
+          "why": "It costs roughly a fifth as much."
+        },
+        {
+          "q": "The journal initially rejected the manager's note.",
+          "a": "Not Given",
+          "why": "Editorial assistance is mentioned but no rejection."
+        }
+      ],
+      "short": [
+        {
+          "q": "What explanation did reviewers offer for the small increase?",
+          "a": "habituation"
+        },
+        {
+          "q": "For how long do new patients now receive reminders?",
+          "a": "the first year"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why did missed appointments rise less than expected?",
+          "options": [
+            "Established patients had developed their own prompts.",
+            "Fewer patients required appointments that year.",
+            "The practice reduced the number of available slots.",
+            "Staff telephoned patients instead."
+          ],
+          "a": 0,
+          "why": "Habituation: patients had built appointments into routines and set their own reminders."
+        },
+        {
+          "q": "What did the breakdown by registration date reveal?",
+          "options": [
+            "That the reminders had never worked at all.",
+            "That the effect was concentrated among recently registered patients.",
+            "That older patients were the most likely to miss appointments.",
+            "That the data had been recorded inconsistently."
+          ],
+          "a": 1,
+          "why": "Rates rose steeply only among those registered in the previous eighteen months."
+        },
+        {
+          "q": "What criticism does the writer make of the original evaluation?",
+          "options": [
+            "It was funded by the messaging supplier.",
+            "It used too small a sample of patients.",
+            "Its whole-list comparison could not reveal the difference between groups.",
+            "It measured the wrong outcome entirely."
+          ],
+          "a": 2,
+          "why": "Comparing reminders against none across the whole list could not detect the distribution."
+        },
+        {
+          "q": "What is the note's central point, according to the final paragraph?",
+          "options": [
+            "Practice managers should conduct their own research.",
+            "Text reminders are an ineffective use of resources.",
+            "Journals should publish more work by non-specialists.",
+            "Interventions may become unnecessary for those they have already helped."
+          ],
+          "a": 3,
+          "why": "An intervention that works can stop being necessary for the people it has helped, and averages hide this."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "A general practice in a mid-sized town spent four years sending",
+            "p": "a yeneral praktáik in a mid-sáist tóun spent for yirs sending"
+          },
+          {
+            "t": "automated text reminders before appointments.",
+            "p": "otoméited tekst rimáinders bifór apóintments."
+          },
+          {
+            "t": "Missed appointments fell from fourteen per cent to nine.",
+            "p": "mist apóintments fel from fortín per sent tu náin."
+          },
+          {
+            "t": "When the messaging contract expired in 2022 and the supplier raised its",
+            "p": "uén de meséiying kontrakt ekspáerd in 2022 end de sapláiar raáist its"
+          },
+          {
+            "t": "price sharply, the practice manager decided,",
+            "p": "práik sharpli, de praktáik manéiyer dekáided,"
+          },
+          {
+            "t": "partly out of irritation, to stop sending them for six months and see",
+            "p": "partli áut ov eritashon, tu stop sending dem for siks manzs end si"
+          },
+          {
+            "t": "what happened.",
+            "p": "uót japend."
+          }
+        ],
+        [
+          {
+            "t": "The rate rose, but only to eleven per cent, not the fourteen the",
+            "p": "de réit róus, bat óunli tu iléven per sent, not de fortín de"
+          },
+          {
+            "t": "practice had expected. This was interesting enough that the manager,",
+            "p": "praktáik jad ekspekted. dis uós interesting ináf dat de manéiyer,"
+          },
+          {
+            "t": "who has no research training, wrote it up in a short note that was",
+            "p": "ju jas nóu resíarch traáining, róut it ap in a short nóut dat uós"
+          },
+          {
+            "t": "eventually published in a primary care journal after a good deal of",
+            "p": "eventuali published in a primari kéer yóurnal áfter a gud dil ov"
+          },
+          {
+            "t": "editorial assistance.",
+            "p": "editorial asistans."
+          }
+        ],
+        [
+          {
+            "t": "The likely explanation offered by the reviewers was habituation.",
+            "p": "de likeli eksplanashon oferd bái de riviúers uós jabituéishon."
+          },
+          {
+            "t": "Patients who had received reminders for four years had built the",
+            "p": "patints ju jad resáivd rimáinders for for yirs jad bilt de"
+          },
+          {
+            "t": "appointments into their routines, and many had independently set their",
+            "p": "apóintments íntu déar rutíns, end méni jad independentli set déar"
+          },
+          {
+            "t": "own alarms, calendar entries or notes. The reminders had done work that",
+            "p": "óun alárms, cálendar entris or nóuts. de rimáinders jad dan uérk dat"
+          },
+          {
+            "t": "no longer needed doing, at least for existing patients.",
+            "p": "nóu lonyer nided doing, at list for eksisting patints."
+          }
+        ],
+        [
+          {
+            "t": "The distribution mattered more than the average.",
+            "p": "de distribushon materd mor dan de averéig."
+          },
+          {
+            "t": "Missed appointments among patients registered before 2018 barely changed",
+            "p": "mist apóintments amáng patints reyisterd bifór 2018 bareli chéinchd"
+          },
+          {
+            "t": "at all. Among those registered in the previous eighteen months,",
+            "p": "at ol. amáng dóus reyisterd in de previas eáitin manzs,"
+          },
+          {
+            "t": "they rose steeply. The intervention was still working,",
+            "p": "déi róus stipli. de intervénshon uós stil uérking,"
+          },
+          {
+            "t": "but only for the group that had not yet developed its own habits,",
+            "p": "bat óunli for de grup dat jad not yet develóupt its óun jabits,"
+          },
+          {
+            "t": "which is not how the service had been costed or described.",
+            "p": "uích is not jáu de sérvis jad bin kosted or deskráibd."
+          }
+        ],
+        [
+          {
+            "t": "This has an obvious implication and a less obvious one.",
+            "p": "dis jas an óbvias implikashon end a les óbvias uán."
+          },
+          {
+            "t": "The obvious one is that reminders could be targeted at newer patients at",
+            "p": "de óbvias uán is dat rimáinders cud bi taryeted at neuer patints at"
+          },
+          {
+            "t": "a fraction of the cost. The less obvious one is that the original",
+            "p": "a frakshon ov de cost. de les óbvias uán is dat de oriyinal"
+          },
+          {
+            "t": "evaluation, which compared reminders against no reminders across the",
+            "p": "evaluashon, uích kompéerd rimáinders eguénst nóu rimáinders acrós de"
+          },
+          {
+            "t": "whole list, could not have detected this and would have been read as",
+            "p": "uóul list, cud not jav detekted dis end vud jav bin rid as"
+          },
+          {
+            "t": "justifying permanent universal coverage.",
+            "p": "yustifying permanent universal kóuveréig."
+          }
+        ],
+        [
+          {
+            "t": "The practice now sends reminders for the first year of registration and",
+            "p": "de praktáik náu sends rimáinders for de férst íar ov reyistrashon end"
+          },
+          {
+            "t": "for a small number of appointment types where the consequences of",
+            "p": "for a smal number ov apóintment types uér de konskuenses ov"
+          },
+          {
+            "t": "absence are serious. Missed appointments sit at ten per cent,",
+            "p": "absens ar serias. mist apóintments sit at ten per sent,"
+          },
+          {
+            "t": "marginally worse than under the universal scheme,",
+            "p": "maryinali uors dan ánder de universal skím,"
+          },
+          {
+            "t": "at roughly a fifth of the cost. The manager describes this trade as",
+            "p": "at ráfli a fifs ov de cost. de manéiyer deskráibs dis tréid as"
+          },
+          {
+            "t": "obviously acceptable and acknowledges that not everyone agrees.",
+            "p": "obviasli akseptabol end aknóulchs dat not everióun agris."
+          }
+        ],
+        [
+          {
+            "t": "The note has been cited more often than its author expected,",
+            "p": "de nóut jas bin káited mor ófen dan its osor ekspekted,"
+          },
+          {
+            "t": "mostly by people making a broader argument about evaluation design",
+            "p": "mostli bái pípol méiking a broéider argument abáut evaluashon disáin"
+          },
+          {
+            "t": "rather than about text messages. Its central point is not really about",
+            "p": "ráder dan abáut tekst meséigs. its sentral point is not rili abáut"
+          },
+          {
+            "t": "reminders at all: an intervention that works can stop being necessary",
+            "p": "rimáinders at ol: an intervénshon dat uérks can stop bing nesesari"
+          },
+          {
+            "t": "for the people it has already helped, and averages will hide this",
+            "p": "for de pípol it jas alridi jelpt, end éiveréigs uíl jáid dis"
+          },
+          {
+            "t": "indefinitely.",
+            "p": "indefiniteli."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The phone that was designed to be dull",
+      "body": [
+        "The device is grey, weighs slightly more than its competitors, and has a screen that displays only black and white. It makes calls, sends messages, provides maps and plays audio. It cannot install social applications, browse the open web, or display video. Its manufacturer has sold considerably more units than anyone predicted, including the manufacturer.",
+        "The design brief was explicit about what it excluded and vague about who would want it. Early market research suggested the buyer would be a parent purchasing a first phone for a child, and this group does exist, but it has turned out to be a minority. The largest group is adults between twenty-five and forty buying the device for themselves as a second phone.",
+        "That second-phone pattern was not anticipated and complicates the marketing considerably. These buyers are not rejecting smartphones; they are partitioning their week. They carry the grey device at weekends, on holiday, or during working hours when concentration matters, and return to a conventional phone the rest of the time. The company had imagined conversion and is instead supplying an accessory.",
+        "Reviewers have found the product difficult to assess. Judged on specifications it is poor value, since a cheap conventional handset offers more capability for less money. Judged on what buyers say they want, it performs well, but that assessment relies on self-report from a group unusually invested in believing the purchase was wise. Neither method is satisfactory.",
+        "The company's own data is more useful and less flattering. Roughly a third of devices show almost no activity after the first two months, a figure the founder mentions unprompted in interviews. He argues that a phone bought to reduce phone use has an unusual relationship with its own usage statistics, which is a fair point and also an unfalsifiable one.",
+        "Competitors have responded not by copying the hardware but by adding restriction features to conventional phones: greyscale modes, application timers and focus settings. These are cheaper, more flexible and, by most accounts, less effective, because a restriction that can be lifted in two taps is a different kind of commitment from one that requires carrying a separate object.",
+        "The manufacturer's stated ambition is to become unnecessary, which is the sort of thing companies say and rarely mean. In this case it is at least coherent: if conventional devices became less demanding of attention, the grey phone would have no purpose. The founder has said he would consider that a success, and has also continued to expand production."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "The device can display video content.",
+          "a": "False",
+          "why": "It cannot display video, browse the open web or install social applications."
+        },
+        {
+          "q": "Parents buying a child's first phone are the largest group of purchasers.",
+          "a": "False",
+          "why": "That group exists but is a minority; adults aged twenty-five to forty buying a second phone are largest."
+        },
+        {
+          "q": "Many buyers use the device alongside a conventional phone.",
+          "a": "True",
+          "why": "They partition their week, carrying it at weekends or when concentration matters."
+        },
+        {
+          "q": "The founder conceals data about low usage.",
+          "a": "False",
+          "why": "He mentions the inactive third unprompted in interviews."
+        },
+        {
+          "q": "The company plans to release a colour version.",
+          "a": "Not Given",
+          "why": "No future models are mentioned."
+        }
+      ],
+      "short": [
+        {
+          "q": "What fraction of devices show almost no activity after two months?",
+          "a": "a third"
+        },
+        {
+          "q": "How have competitors responded to the product?",
+          "a": "by adding restriction features"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why does the second-phone pattern complicate the company's position?",
+          "options": [
+            "The product functions as an addition rather than a replacement.",
+            "It attracts customers who cannot afford smartphones.",
+            "It means buyers are keeping devices for shorter periods.",
+            "It requires a different distribution network."
+          ],
+          "a": 0,
+          "why": "The company imagined conversion and is instead supplying an accessory."
+        },
+        {
+          "q": "What makes the product hard for reviewers to evaluate?",
+          "options": [
+            "There are no comparable products on the market.",
+            "Both specification-based and self-report methods are flawed.",
+            "Its price changes frequently.",
+            "The manufacturer refuses to supply test units."
+          ],
+          "a": 1,
+          "why": "Specifications make it poor value; self-report comes from a group invested in believing the purchase wise."
+        },
+        {
+          "q": "What does the writer say about the founder's defence of the usage figures?",
+          "options": [
+            "It is dishonest and contradicted by the data.",
+            "It repeats a claim made by competitors.",
+            "It is reasonable but impossible to test.",
+            "It has convinced most independent reviewers."
+          ],
+          "a": 2,
+          "why": "The argument is called a fair point and also an unfalsifiable one."
+        },
+        {
+          "q": "Why are software restrictions considered less effective?",
+          "options": [
+            "They cannot convert a screen to greyscale.",
+            "They are unavailable on cheaper handsets.",
+            "They drain the battery more quickly.",
+            "A limit that is easy to undo represents a weaker commitment."
+          ],
+          "a": 3,
+          "why": "A restriction liftable in two taps differs from one requiring a separate object."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "The device is grey, weighs slightly more than its competitors,",
+            "p": "de diváis is gréi, uéis sláitli mor dan its compétitors,"
+          },
+          {
+            "t": "and has a screen that displays only black and white.",
+            "p": "end jas a skrin dat displéis óunli blak end uáit."
+          },
+          {
+            "t": "It makes calls, sends messages, provides maps and plays audio.",
+            "p": "it méiks kals, sends meséigs, prováids maps end pléis odio."
+          },
+          {
+            "t": "It cannot install social applications, browse the open web,",
+            "p": "it kanot instal soshal aplikashons, bróus de open ueb,"
+          },
+          {
+            "t": "or display video. Its manufacturer has sold considerably more units than",
+            "p": "or displéi video. its maniufákcherer jas sóuld konsiderabli mor units dan"
+          },
+          {
+            "t": "anyone predicted, including the manufacturer.",
+            "p": "anióun predikted, inkluding de maniufákcherer."
+          }
+        ],
+        [
+          {
+            "t": "The design brief was explicit about what it excluded and vague about who",
+            "p": "de disáin brif uós eksplisit abáut uót it ekskluded end vague abáut ju"
+          },
+          {
+            "t": "would want it. Early market research suggested the buyer would be a",
+            "p": "vud uónt it. irli market resíarch sagchésted de buyer vud bi a"
+          },
+          {
+            "t": "parent purchasing a first phone for a child,",
+            "p": "parent perchéising a férst fóun for a cháild,"
+          },
+          {
+            "t": "and this group does exist, but it has turned out to be a minority.",
+            "p": "end dis grup das eksist, bat it jas ternd áut tu bi a minoriti."
+          },
+          {
+            "t": "The largest group is adults between twenty-five and forty buying the",
+            "p": "de laryest grup is adults bituín tuenti-fáiv end forti buying de"
+          },
+          {
+            "t": "device for themselves as a second phone.",
+            "p": "diváis for demsélvs as a sécond fóun."
+          }
+        ],
+        [
+          {
+            "t": "That second-phone pattern was not anticipated and complicates the",
+            "p": "dat sekond-fóun pátern uós not antisipéited end komplikéits de"
+          },
+          {
+            "t": "marketing considerably. These buyers are not rejecting smartphones;",
+            "p": "marketing konsiderabli. dís buyers ar not reyekting smartfóuns;"
+          },
+          {
+            "t": "they are partitioning their week. They carry the grey device at",
+            "p": "déi ar partitióuning déar uik. déi kari de gréi diváis at"
+          },
+          {
+            "t": "weekends, on holiday, or during working hours when concentration",
+            "p": "uikends, on jolidéi, or dering uérking áuars uén konsentrashon"
+          },
+          {
+            "t": "matters, and return to a conventional phone the rest of the time.",
+            "p": "maters, end retern tu a convénshonal fóun de rest ov de táim."
+          },
+          {
+            "t": "The company had imagined conversion and is instead supplying an",
+            "p": "de kompani jad imagáind konvershon end is instid suplying an"
+          },
+          {
+            "t": "accessory.",
+            "p": "aksesori."
+          }
+        ],
+        [
+          {
+            "t": "Reviewers have found the product difficult to assess.",
+            "p": "riviúers jav fond de produkt difikult tu ases."
+          },
+          {
+            "t": "Judged on specifications it is poor value, since a cheap conventional",
+            "p": "yuchd on spesifikashons it is púar value, sins a chip convénshonal"
+          },
+          {
+            "t": "handset offers more capability for less money.",
+            "p": "jandset ofers mor kapabiliti for les máni."
+          },
+          {
+            "t": "Judged on what buyers say they want, it performs well,",
+            "p": "yuchd on uót buyers séi déi uónt, it performs uel,"
+          },
+          {
+            "t": "but that assessment relies on self-report from a group unusually",
+            "p": "bat dat asesment relis on self-report from a grup unusuali"
+          },
+          {
+            "t": "invested in believing the purchase was wise.",
+            "p": "invested in beliving de perchéis uós uáis."
+          },
+          {
+            "t": "Neither method is satisfactory.",
+            "p": "niser mézod is satisfaktori."
+          }
+        ],
+        [
+          {
+            "t": "The company's own data is more useful and less flattering.",
+            "p": "de kompani's óun déita is mor useful end les flatering."
+          },
+          {
+            "t": "Roughly a third of devices show almost no activity after the first two",
+            "p": "ráfli a zerd ov diváises shóu ólmoust nóu aktiviti áfter de férst tu"
+          },
+          {
+            "t": "months, a figure the founder mentions unprompted in interviews.",
+            "p": "manzs, a fíguer de fonder menshons unprompted in ínterviús."
+          },
+          {
+            "t": "He argues that a phone bought to reduce phone use has an unusual",
+            "p": "ji argues dat a fóun bot tu rediúk fóun iús jas an unusual"
+          },
+          {
+            "t": "relationship with its own usage statistics, which is a fair point and",
+            "p": "relationship uíd its óun uséig statistiks, uích is a féar point end"
+          },
+          {
+            "t": "also an unfalsifiable one.",
+            "p": "ólsou an unfalsifiabol uán."
+          }
+        ],
+        [
+          {
+            "t": "Competitors have responded not by copying the hardware but by adding",
+            "p": "compétitors jav responded not bái kopying de jarduéer bat bái ading"
+          },
+          {
+            "t": "restriction features to conventional phones:",
+            "p": "restrikshon fichers tu convénshonal fóuns:"
+          },
+          {
+            "t": "greyscale modes, application timers and focus settings.",
+            "p": "gréiskeil móuds, aplikashon táimers end fokus setings."
+          },
+          {
+            "t": "These are cheaper, more flexible and, by most accounts,",
+            "p": "dís ar cheéiper, mor fleksibol end, bái móust akkonts,"
+          },
+          {
+            "t": "less effective, because a restriction that can be lifted in two taps is",
+            "p": "les iféktiv, bicós a restrikshon dat can bi lifted in tu taps is"
+          },
+          {
+            "t": "a different kind of commitment from one that requires carrying a",
+            "p": "a dífrent káind ov komitment from uán dat rkuáers karying a"
+          },
+          {
+            "t": "separate object.",
+            "p": "separéit obyekt."
+          }
+        ],
+        [
+          {
+            "t": "The manufacturer's stated ambition is to become unnecessary,",
+            "p": "de maniufákcherers stéited ambishon is tu bicám unesesari,"
+          },
+          {
+            "t": "which is the sort of thing companies say and rarely mean.",
+            "p": "uích is de sort ov sing kompanis séi end rareli min."
+          },
+          {
+            "t": "In this case it is at least coherent: if conventional devices became",
+            "p": "in dis kéis it is at list kojerent: if convénshonal diváises bikéim"
+          },
+          {
+            "t": "less demanding of attention, the grey phone would have no purpose.",
+            "p": "les demanding ov atenshon, de gréi fóun vud jav nóu perpóus."
+          },
+          {
+            "t": "The founder has said he would consider that a success,",
+            "p": "de fonder jas sed ji vud konsáider dat a sukses,"
+          },
+          {
+            "t": "and has also continued to expand production.",
+            "p": "end jas ólsou kontinued tu ekspand produkshon."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The archive nobody could read for forty years",
+      "body": [
+        "When the textile mill at Ravensbeck closed in 1979, its administrative records were moved to a council storeroom and forgotten. They were not lost, precisely: their existence was noted in an inventory, and the inventory was itself catalogued. What nobody recorded was that the ledgers were written in a shorthand system devised in-house, comprehensible to about a dozen clerks, all of whom had left.",
+        "The material sat unread until 2019, when a doctoral student researching women's wages in the region requested access, expecting a routine afternoon. She found four hundred volumes of dense abbreviation, no key, and a note from a 1994 archivist which said only that the contents appeared to be numerical.",
+        "Her supervisor advised abandoning the source. She instead spent eleven months on decipherment, which succeeded for an unglamorous reason: the mill had also submitted quarterly summaries to a government body in ordinary English, and those summaries survived elsewhere. Matching totals against the shorthand ledgers gave her a partial key, and the remainder came from repetition.",
+        "What the ledgers contained turned out to matter. The official quarterly returns recorded average wages by department. The internal ledgers recorded individual payments, including deductions, bonuses and the frequency with which particular workers were moved between departments. Two records that agreed at the level of totals told substantially different stories about how the totals were produced.",
+        "The most significant finding concerned reclassification. Women moved into a higher-paid department were routinely returned to the lower-paid one within a few weeks, a pattern invisible in quarterly averages but obvious in the individual records. Whether this was deliberate policy or an unexamined habit cannot be determined from the ledgers, which record actions rather than reasons.",
+        "The decipherment key has since been deposited with the archive, and three other researchers have used the collection. Two more mills in the same valley are now known to have used related systems, which raises the possibility that a body of comparable material exists elsewhere, uncatalogued in the same way and for the same reason.",
+        "The student, now a lecturer, is careful about the lesson usually drawn from her work. She resists the idea that the archive was suppressed. Nobody hid the ledgers; they were simply written for an internal purpose by people who assumed continuity of staff, and the barrier was ordinary institutional forgetting rather than anything more interesting."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "The mill's records were missing from official inventories.",
+          "a": "False",
+          "why": "Their existence was noted in an inventory which was itself catalogued."
+        },
+        {
+          "q": "The shorthand system was used by many companies at the time.",
+          "a": "False",
+          "why": "It was devised in-house and understood by about a dozen clerks."
+        },
+        {
+          "q": "Government summaries helped make the decipherment possible.",
+          "a": "True",
+          "why": "Matching quarterly summaries in plain English against the ledgers gave a partial key."
+        },
+        {
+          "q": "The ledgers explain why workers were reclassified.",
+          "a": "False",
+          "why": "They record actions rather than reasons; motive cannot be determined."
+        },
+        {
+          "q": "The student received funding to complete the decipherment.",
+          "a": "Not Given",
+          "why": "No funding is mentioned."
+        }
+      ],
+      "short": [
+        {
+          "q": "How many volumes did the student find?",
+          "a": "four hundred"
+        },
+        {
+          "q": "How long did the decipherment take?",
+          "a": "eleven months"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why had the ledgers remained unread for so long?",
+          "options": [
+            "The private notation they used had no surviving key.",
+            "They were too fragile to be handled.",
+            "Their location was unknown to archivists.",
+            "They had been deliberately concealed by the council."
+          ],
+          "a": 0,
+          "why": "The in-house shorthand was comprehensible to a dozen clerks, all of whom had left, and no key was recorded."
+        },
+        {
+          "q": "What was the crucial difference between the two sets of records?",
+          "options": [
+            "The summaries included departments the ledgers omitted.",
+            "The ledgers showed individual transactions behind the same totals.",
+            "The ledgers covered a longer period.",
+            "The summaries contained deliberate falsifications."
+          ],
+          "a": 1,
+          "why": "Returns gave departmental averages; ledgers gave individual payments, deductions and movements."
+        },
+        {
+          "q": "Why was the reclassification pattern invisible in official data?",
+          "options": [
+            "The affected workers were excluded from the returns.",
+            "The government body did not collect wage information.",
+            "Quarterly averages concealed short-term movements between departments.",
+            "The summaries were compiled annually rather than quarterly."
+          ],
+          "a": 2,
+          "why": "Women returned to lower-paid work within weeks, a pattern averages could not show."
+        },
+        {
+          "q": "How does the researcher characterise the reason for the archive's inaccessibility?",
+          "options": [
+            "As negligence by the 1994 archivist.",
+            "As a consequence of the mill's sudden closure.",
+            "As an attempt to hide evidence of unequal pay.",
+            "As the result of unremarkable institutional forgetting."
+          ],
+          "a": 3,
+          "why": "She resists the suppression reading; the barrier was ordinary institutional forgetting."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "When the textile mill at Ravensbeck closed in 1979,",
+            "p": "uén de tekstáil mil at ravensbek klóust in 1979,"
+          },
+          {
+            "t": "its administrative records were moved to a council storeroom and",
+            "p": "its administratáiv rekords uér muvd tu a konsil storerum end"
+          },
+          {
+            "t": "forgotten. They were not lost, precisely: their existence was noted in",
+            "p": "forgoten. déi uér not lost, presiseli: déar eksistens uós nóuted in"
+          },
+          {
+            "t": "an inventory, and the inventory was itself catalogued.",
+            "p": "an inventori, end de inventori uós itself katalogued."
+          },
+          {
+            "t": "What nobody recorded was that the ledgers were written in a shorthand",
+            "p": "uót nobodi rekorded uós dat de léyers uér riten in a shórtjand"
+          },
+          {
+            "t": "system devised in-house, comprehensible to about a dozen clerks,",
+            "p": "system deváist in-joiús, komprejensibol tu abáut a dosen clarks,"
+          },
+          {
+            "t": "all of whom had left.",
+            "p": "ol ov jum jad left."
+          }
+        ],
+        [
+          {
+            "t": "The material sat unread until 2019, when a doctoral student researching",
+            "p": "de material sat unrid antíl 2019, uén a doktoral student resíarching"
+          },
+          {
+            "t": "women's wages in the region requested access,",
+            "p": "uomen's uéiches in de reyion rkuested akses,"
+          },
+          {
+            "t": "expecting a routine afternoon. She found four hundred volumes of dense",
+            "p": "ekspekting a rutín afternun. shi fond for jándred vólioms ov dens"
+          },
+          {
+            "t": "abbreviation, no key, and a note from a 1994 archivist which said only",
+            "p": "abreviashon, nóu ki, end a nóut from a 1994 arkivist uích sed óunli"
+          },
+          {
+            "t": "that the contents appeared to be numerical.",
+            "p": "dat de kontents apéerd tu bi numerikal."
+          }
+        ],
+        [
+          {
+            "t": "Her supervisor advised abandoning the source.",
+            "p": "jer superváisor adváist abandóuning de sóurs."
+          },
+          {
+            "t": "She instead spent eleven months on decipherment,",
+            "p": "shi instid spent iléven manzs on desiferment,"
+          },
+          {
+            "t": "which succeeded for an unglamorous reason: the mill had also submitted",
+            "p": "uích suksided for an unglamoras ríson: de mil jad ólsou submited"
+          },
+          {
+            "t": "quarterly summaries to a government body in ordinary English,",
+            "p": "kuarterli sumaris tu a government bodi in ordinari english,"
+          },
+          {
+            "t": "and those summaries survived elsewhere. Matching totals against the",
+            "p": "end dóus sumaris serváivd elseuír. maching tóutals eguénst de"
+          },
+          {
+            "t": "shorthand ledgers gave her a partial key, and the remainder came from",
+            "p": "shórtjand léyers géiv jer a parshal ki, end de reméinder kéim from"
+          },
+          {
+            "t": "repetition.",
+            "p": "repetishon."
+          }
+        ],
+        [
+          {
+            "t": "What the ledgers contained turned out to matter.",
+            "p": "uót de léyers kontaáind ternd áut tu mater."
+          },
+          {
+            "t": "The official quarterly returns recorded average wages by department.",
+            "p": "de ofishal kuarterli reterns rekorded averéig uéiches bái department."
+          },
+          {
+            "t": "The internal ledgers recorded individual payments,",
+            "p": "de internal léyers rekorded individual péiments,"
+          },
+          {
+            "t": "including deductions, bonuses and the frequency with which particular",
+            "p": "inkluding didákshons, bóunases end de frkuensi uíd uích partikular"
+          },
+          {
+            "t": "workers were moved between departments. Two records that agreed at the",
+            "p": "uorkers uér muvd bituín departments. tu rekords dat agrid at de"
+          },
+          {
+            "t": "level of totals told substantially different stories about how the",
+            "p": "level ov tóutals tóuld substantiali dífrent storis abáut jáu de"
+          },
+          {
+            "t": "totals were produced.",
+            "p": "tóutals uér produst."
+          }
+        ],
+        [
+          {
+            "t": "The most significant finding concerned reclassification.",
+            "p": "de móust signifikant finding consérnd riclasifikéishon."
+          },
+          {
+            "t": "Women moved into a higher-paid department were routinely returned to the",
+            "p": "uomen muvd íntu a jáir-péid department uér rotineli reternd tu de"
+          },
+          {
+            "t": "lower-paid one within a few weeks, a pattern invisible in quarterly",
+            "p": "lóuer-péid uán uidín a fiú uiks, a pátern invísibol in kuarterli"
+          },
+          {
+            "t": "averages but obvious in the individual records.",
+            "p": "éiveréigs bat óbvias in de individual rekords."
+          },
+          {
+            "t": "Whether this was deliberate policy or an unexamined habit cannot be",
+            "p": "uéder dis uós deliberéit polisi or an uneksamáind jabit kanot bi"
+          },
+          {
+            "t": "determined from the ledgers, which record actions rather than reasons.",
+            "p": "determáind from de léyers, uích récord akshons ráder dan risons."
+          }
+        ],
+        [
+          {
+            "t": "The decipherment key has since been deposited with the archive,",
+            "p": "de desiferment ki jas sins bin deposáited uíd de árkaiv,"
+          },
+          {
+            "t": "and three other researchers have used the collection.",
+            "p": "end zri áder resíarchers jav ust de kolekshon."
+          },
+          {
+            "t": "Two more mills in the same valley are now known to have used related",
+            "p": "tu mor mils in de séim vali ar náu nóun tu jav ust reléited"
+          },
+          {
+            "t": "systems, which raises the possibility that a body of comparable material",
+            "p": "systems, uích réises de posibiliti dat a bodi ov komparabol material"
+          },
+          {
+            "t": "exists elsewhere, uncatalogued in the same way and for the same reason.",
+            "p": "eksists elseuír, unkatalogued in de séim uéi end for de séim ríson."
+          }
+        ],
+        [
+          {
+            "t": "The student, now a lecturer, is careful about the lesson usually drawn",
+            "p": "de student, náu a lekterer, is kareful abáut de leson iúshuali dron"
+          },
+          {
+            "t": "from her work. She resists the idea that the archive was suppressed.",
+            "p": "from jer uérk. shi resists de idi dat de árkaiv uós suprest."
+          },
+          {
+            "t": "Nobody hid the ledgers; they were simply written for an internal purpose",
+            "p": "nobodi jid de léyers; déi uér símpli riten for an internal perpóus"
+          },
+          {
+            "t": "by people who assumed continuity of staff, and the barrier was ordinary",
+            "p": "bái pípol ju asumd kontinuiti ov staf, end de barir uós ordinari"
+          },
+          {
+            "t": "institutional forgetting rather than anything more interesting.",
+            "p": "institushonal foryeting ráder dan énizing mor interesting."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "Learning a language nobody speaks at home",
+      "body": [
+        "There are roughly two thousand people who can hold a conversation in Cornish, and none of them learned it from a grandparent who had never stopped speaking it. The last community of native speakers disappeared in the eighteenth century. Every current speaker acquired the language deliberately, from written sources and from other people who had done the same.",
+        "This makes revived languages structurally different from endangered ones. An endangered language has speakers and is losing them; the task is retention. A revived language has documentation and no speakers; the task is manufacture. The methods that work for one are frequently useless for the other, a distinction that funding bodies have historically found difficult to accommodate.",
+        "The gaps in the record cause specific difficulties. Written Cornish survives mainly in religious drama, legal documents and a handful of letters. It contains extensive vocabulary for salvation, land tenure and courtesy, and almost none for cooking, childcare or informal argument. Reviving a language means deciding what to do about the missing register, and every solution is contentious.",
+        "Three approaches compete. Some favour borrowing from Breton and Welsh, on the grounds of linguistic proximity. Others prefer deriving new terms from attested Cornish roots. A third group accepts English borrowings where speakers naturally reach for them. These positions correspond to three competing orthographies and, until a partial settlement in 2008, to genuinely hostile factions.",
+        "Sociolinguists studying the revival note a pattern common to such projects. The proportion of learners who reach conversational fluency is small, but those who do use the language in a much narrower range of situations than a native speaker would. Cornish is spoken at organised events, in classes and online, and comparatively rarely in the circumstances where languages ordinarily live.",
+        "The exception matters more than the rule. A small number of families are raising children in Cornish, producing the first speakers in two centuries who acquired it before literacy. Their Cornish already differs from what the adults were taught: it is faster, uses fewer borrowings than the purists prescribe, and has begun generating slang that appears in no textbook.",
+        "This is generally regarded within the movement as the most encouraging development and by some as a threat. A revived language that begins to change without authorisation is behaving like a living one, which was the objective, and which necessarily means the revivalists lose control of it. Not everyone who wanted the first outcome anticipated the second."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Some current Cornish speakers learned the language from native-speaking relatives.",
+          "a": "False",
+          "why": "The last native community disappeared in the eighteenth century; all learned deliberately."
+        },
+        {
+          "q": "Endangered and revived languages require similar methods.",
+          "a": "False",
+          "why": "Methods that work for one are frequently useless for the other."
+        },
+        {
+          "q": "Surviving Cornish texts lack everyday domestic vocabulary.",
+          "a": "True",
+          "why": "There is almost no vocabulary for cooking, childcare or informal argument."
+        },
+        {
+          "q": "The competing approaches were once linked to hostile factions.",
+          "a": "True",
+          "why": "The positions corresponded to rival orthographies and genuinely hostile factions until 2008."
+        },
+        {
+          "q": "The Cornish revival receives more funding than other minority languages.",
+          "a": "Not Given",
+          "why": "Funding bodies are mentioned but no comparison of amounts is given."
+        }
+      ],
+      "short": [
+        {
+          "q": "Roughly how many people can hold a conversation in Cornish?",
+          "a": "two thousand"
+        },
+        {
+          "q": "In what year was a partial settlement over orthography reached?",
+          "a": "2008"
+        }
+      ],
+      "choice": [
+        {
+          "q": "What distinguishes the task facing a revived language?",
+          "options": [
+            "Creating a speaker community where none exists.",
+            "Translating literature into the language.",
+            "Persuading existing speakers not to abandon it.",
+            "Recording the speech of elderly informants."
+          ],
+          "a": 0,
+          "why": "A revived language has documentation and no speakers; the task is manufacture rather than retention."
+        },
+        {
+          "q": "Why do the surviving texts create a practical problem?",
+          "options": [
+            "They are too damaged to be read reliably.",
+            "They cover formal subjects but not ordinary daily life.",
+            "They exist only in private collections.",
+            "They are written in several incompatible alphabets."
+          ],
+          "a": 1,
+          "why": "The record is rich in salvation, land tenure and courtesy but lacks everyday registers."
+        },
+        {
+          "q": "What limitation do sociolinguists observe in the revival?",
+          "options": [
+            "Online material is of poor quality.",
+            "Classes are concentrated in a single region.",
+            "Fluent speakers use the language in unusually few settings.",
+            "Learners rarely progress beyond reading."
+          ],
+          "a": 2,
+          "why": "Cornish is used at events, in classes and online, rarely where languages ordinarily live."
+        },
+        {
+          "q": "Why is the emergence of child speakers seen by some as a threat?",
+          "options": [
+            "Their parents lack formal teaching qualifications.",
+            "Their Cornish contains too many English borrowings.",
+            "They are too few to sustain the language.",
+            "Unplanned change means revivalists no longer direct the language."
+          ],
+          "a": 3,
+          "why": "A language changing without authorisation behaves as a living one, so revivalists lose control."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "There are roughly two thousand people who can hold a conversation in",
+            "p": "déar ar ráfli tu záusand pípol ju can jóuld a konversashon in"
+          },
+          {
+            "t": "Cornish, and none of them learned it from a grandparent who had never",
+            "p": "córnish, end nan ov dem lirnd it from a grandparent ju jad néver"
+          },
+          {
+            "t": "stopped speaking it. The last community of native speakers disappeared",
+            "p": "stopt spéiking it. de last komuniti ov natáiv spíkers disapéerd"
+          },
+          {
+            "t": "in the eighteenth century. Every current speaker acquired the language",
+            "p": "in de eáitins séncheri. évri serent spíker akkuáerd de lánguich"
+          },
+          {
+            "t": "deliberately, from written sources and from other people who had done",
+            "p": "deliberateli, from riten sóurses end from áder pípol ju jad dan"
+          },
+          {
+            "t": "the same.",
+            "p": "de séim."
+          }
+        ],
+        [
+          {
+            "t": "This makes revived languages structurally different from endangered",
+            "p": "dis méiks reváivd lánguiches strukterali dífrent from endanyerd"
+          },
+          {
+            "t": "ones. An endangered language has speakers and is losing them;",
+            "p": "uáns. an endanyerd lánguich jas spíkers end is lóusing dem;"
+          },
+          {
+            "t": "the task is retention. A revived language has documentation and no",
+            "p": "de task is retenshon. a reváivd lánguich jas dokumentashon end nóu"
+          },
+          {
+            "t": "speakers; the task is manufacture. The methods that work for one are",
+            "p": "spíkers; de task is manufakcher. de mézods dat uérk for uán ar"
+          },
+          {
+            "t": "frequently useless for the other, a distinction that funding bodies have",
+            "p": "fríkuentli useles for de áder, a distinkshon dat funding bodis jav"
+          },
+          {
+            "t": "historically found difficult to accommodate.",
+            "p": "jistorikali fond difikult tu akkomodéit."
+          }
+        ],
+        [
+          {
+            "t": "The gaps in the record cause specific difficulties.",
+            "p": "de gaps in de récord kéiús spesifik difikultis."
+          },
+          {
+            "t": "Written Cornish survives mainly in religious drama,",
+            "p": "riten córnish serváivs méinli in reliyias drama,"
+          },
+          {
+            "t": "legal documents and a handful of letters. It contains extensive",
+            "p": "lígal dokuments end a jandful ov leters. it kontéins ekstensáiv"
+          },
+          {
+            "t": "vocabulary for salvation, land tenure and courtesy,",
+            "p": "vokabulari for salvashon, land teniúr end kóurtesi,"
+          },
+          {
+            "t": "and almost none for cooking, childcare or informal argument.",
+            "p": "end ólmoust nan for koóuking, childkéer or informal argument."
+          },
+          {
+            "t": "Reviving a language means deciding what to do about the missing",
+            "p": "reváiving a lánguich mins dekáiding uót tu du abáut de mising"
+          },
+          {
+            "t": "register, and every solution is contentious.",
+            "p": "réyister, end évri solushon is kontenshas."
+          }
+        ],
+        [
+          {
+            "t": "Three approaches compete. Some favour borrowing from Breton and Welsh,",
+            "p": "zri apróuches kompít. sam faváuar boróuing from breton end uelsh,"
+          },
+          {
+            "t": "on the grounds of linguistic proximity. Others prefer deriving new terms",
+            "p": "on de gronds ov linguistik proksimiti. áders prefer deráiving neu terms"
+          },
+          {
+            "t": "from attested Cornish roots. A third group accepts English borrowings",
+            "p": "from atested córnish ruts. a zerd grup aksepts english boróuings"
+          },
+          {
+            "t": "where speakers naturally reach for them. These positions correspond to",
+            "p": "uér spíkers naterali rich for dem. dís posishons korespond tu"
+          },
+          {
+            "t": "three competing orthographies and, until a partial settlement in 2008,",
+            "p": "zri kompeting orzógrafis end, antíl a parshal setlement in 2008,"
+          },
+          {
+            "t": "to genuinely hostile factions.",
+            "p": "tu yenuineli jostáil fakshons."
+          }
+        ],
+        [
+          {
+            "t": "Sociolinguists studying the revival note a pattern common to such",
+            "p": "sosiolinguists studying de riváival nóut a pátern komon tu sach"
+          },
+          {
+            "t": "projects. The proportion of learners who reach conversational fluency is",
+            "p": "próyects. de proporshon ov lirners ju rich konversashonal fluensi is"
+          },
+          {
+            "t": "small, but those who do use the language in a much narrower range of",
+            "p": "smal, bat dóus ju du iús de lánguich in a mach naróuer rany ov"
+          },
+          {
+            "t": "situations than a native speaker would. Cornish is spoken at organised",
+            "p": "situashons dan a natáiv spíker vud. córnish is spoken at organáist"
+          },
+          {
+            "t": "events, in classes and online, and comparatively rarely in the",
+            "p": "events, in klases end onláin, end komparativeli rareli in de"
+          },
+          {
+            "t": "circumstances where languages ordinarily live.",
+            "p": "serkumstanses uér lánguiches ordinarili láiv."
+          }
+        ],
+        [
+          {
+            "t": "The exception matters more than the rule. A small number of families are",
+            "p": "de eksepshon maters mor dan de riúl. a smal number ov familis ar"
+          },
+          {
+            "t": "raising children in Cornish, producing the first speakers in two",
+            "p": "raáising chíldren in córnish, produsing de férst spíkers in tu"
+          },
+          {
+            "t": "centuries who acquired it before literacy. Their Cornish already differs",
+            "p": "séncheris ju akkuáerd it bifór literasi. déar córnish alridi difers"
+          },
+          {
+            "t": "from what the adults were taught: it is faster,",
+            "p": "from uót de adults uér taft: it is faster,"
+          },
+          {
+            "t": "uses fewer borrowings than the purists prescribe,",
+            "p": "iúses feuer boróuings dan de perists preskráib,"
+          },
+          {
+            "t": "and has begun generating slang that appears in no textbook.",
+            "p": "end jas begun yeneréiting slang dat apirs in nóu tekstbuk."
+          }
+        ],
+        [
+          {
+            "t": "This is generally regarded within the movement as the most encouraging",
+            "p": "dis is yenerali regarded uidín de móuvement as de móust enkáuaréiying"
+          },
+          {
+            "t": "development and by some as a threat. A revived language that begins to",
+            "p": "development end bái sam as a srit. a reváivd lánguich dat beyins tu"
+          },
+          {
+            "t": "change without authorisation is behaving like a living one,",
+            "p": "chéinch uidáut osorisashon is bejéiving láik a líving uán,"
+          },
+          {
+            "t": "which was the objective, and which necessarily means the revivalists",
+            "p": "uích uós de obyektáiv, end uích nesesarili mins de revivalists"
+          },
+          {
+            "t": "lose control of it. Not everyone who wanted the first outcome",
+            "p": "lóus kontrol ov it. not everióun ju uanted de férst otkóum"
+          },
+          {
+            "t": "anticipated the second.",
+            "p": "antisipéited de sécond."
+          }
+        ]
+      ]
+    },
+    {
+      "title": "The case for boring infrastructure",
+      "body": [
+        "Public spending on visible projects is easier to defend than spending on invisible ones. A new bridge can be photographed and opened. A replaced water main cannot, and the officials who authorise it receive no credit for the flooding that consequently does not occur. This asymmetry shapes budgets in most countries and is understood by almost everyone working inside them.",
+        "The consequence is a systematic tilt towards construction and away from maintenance. Capital budgets are typically ring-fenced and politically attractive; maintenance sits in operating budgets, competes with salaries and services, and can be deferred repeatedly without immediate visible consequence. Deferral is not free, but its cost arrives later and usually under a different administration.",
+        "Engineers have quantified the penalty reasonably well. A road resurfaced on schedule costs a fraction of one rebuilt after the base layer has failed. A bridge inspected and painted regularly may last a century; the same structure neglected for twenty years may require replacement outright. The ratios vary by asset type but the direction never does.",
+        "None of this is disputed by the officials who defer maintenance. They are usually aware of the arithmetic and constrained anyway, because a budget shortfall in a given year is a concrete problem and a structural failure in fifteen years is somebody else's. Describing the behaviour as short-sighted misidentifies it: the incentives are functioning exactly as designed.",
+        "Some jurisdictions have attempted structural fixes. Ring-fenced maintenance funds, statutory inspection regimes and asset registers that record condition rather than existence have all been tried. The most effective appear to be those that remove discretion entirely, since any mechanism that permits deferral in a difficult year will eventually meet a difficult year.",
+        "There is a communication problem underneath the budgetary one. Successful maintenance produces an absence of events, and absences are difficult to publicise. A water utility that prevents contamination has nothing to announce. Several agencies have experimented with publishing the failures that did not happen, which reads as either informative or absurd depending largely on the audience.",
+        "The uncomfortable conclusion is that this may not be fully solvable. Democratic accountability rewards attributable achievement, and prevented disasters are unattributable by construction. Institutions can be designed to protect maintenance from political pressure, and several have been, but the underlying asymmetry between what is visible and what is valuable remains where it started."
+      ],
+      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+      "questions": [
+        {
+          "q": "Maintenance spending is easier to justify publicly than new construction.",
+          "a": "False",
+          "why": "Visible projects are easier to defend; maintenance yields no photographable result."
+        },
+        {
+          "q": "Deferring maintenance usually increases total costs eventually.",
+          "a": "True",
+          "why": "Deferral is not free; resurfacing on schedule costs a fraction of rebuilding after failure."
+        },
+        {
+          "q": "Officials who defer maintenance are typically unaware of the long-term costs.",
+          "a": "False",
+          "why": "They are usually aware of the arithmetic and constrained anyway."
+        },
+        {
+          "q": "Mechanisms that allow deferral tend to fail eventually.",
+          "a": "True",
+          "why": "Any mechanism permitting deferral will eventually meet a difficult year."
+        },
+        {
+          "q": "Most countries have now introduced ring-fenced maintenance funds.",
+          "a": "Not Given",
+          "why": "Some jurisdictions have tried them; no proportion is stated."
+        }
+      ],
+      "short": [
+        {
+          "q": "In which budget does maintenance usually sit?",
+          "a": "operating budgets"
+        },
+        {
+          "q": "What have several agencies experimented with publishing?",
+          "a": "the failures that did not happen"
+        }
+      ],
+      "choice": [
+        {
+          "q": "Why does the writer reject the word 'short-sighted'?",
+          "options": [
+            "Because the incentives reward exactly the behaviour observed.",
+            "Because the term is used unfairly by engineers.",
+            "Because maintenance is rarely as urgent as claimed.",
+            "Because officials genuinely cannot predict future failures."
+          ],
+          "a": 0,
+          "why": "The behaviour is not misjudgement; the incentives are functioning as designed."
+        },
+        {
+          "q": "Which structural remedies does the writer consider most effective?",
+          "options": [
+            "Those that increase overall capital budgets.",
+            "Those that eliminate the option to postpone.",
+            "Those that publicise asset condition to the public.",
+            "Those that transfer assets to private operators."
+          ],
+          "a": 1,
+          "why": "The most effective appear to be those that remove discretion entirely."
+        },
+        {
+          "q": "What communication difficulty does successful maintenance create?",
+          "options": [
+            "Its costs are difficult to calculate accurately.",
+            "The public distrusts official safety statistics.",
+            "Its benefits consist of events that never occur.",
+            "Engineers explain it in overly technical language."
+          ],
+          "a": 2,
+          "why": "Successful maintenance produces an absence of events, which is hard to publicise."
+        },
+        {
+          "q": "What is the writer's final assessment?",
+          "options": [
+            "The problem will be solved as asset registers improve.",
+            "Democratic systems should be redesigned entirely.",
+            "Maintenance budgets should be merged with capital budgets.",
+            "The core asymmetry is likely to persist despite institutional fixes."
+          ],
+          "a": 3,
+          "why": "The asymmetry between visible and valuable remains where it started."
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "Public spending on visible projects is easier to defend than spending on",
+            "p": "publik spending on vísibol próyects is isir tu defend dan spending on"
+          },
+          {
+            "t": "invisible ones. A new bridge can be photographed and opened.",
+            "p": "invísibol uáns. a neu brich can bi fotograft end opend."
+          },
+          {
+            "t": "A replaced water main cannot, and the officials who authorise it receive",
+            "p": "a repléist uóter méin kanot, end de ofisials ju osoráis it ríkáiv"
+          },
+          {
+            "t": "no credit for the flooding that consequently does not occur.",
+            "p": "nóu kredit for de floóuding dat konskuentli das not okser."
+          },
+          {
+            "t": "This asymmetry shapes budgets in most countries and is understood by",
+            "p": "dis asymetri shéips báchets in móust cántris end is understud bái"
+          },
+          {
+            "t": "almost everyone working inside them.",
+            "p": "ólmoust everióun uérking insáid dem."
+          }
+        ],
+        [
+          {
+            "t": "The consequence is a systematic tilt towards construction and away from",
+            "p": "de konskuens is a systematik tilt tóuards konstrukshon end oéi from"
+          },
+          {
+            "t": "maintenance. Capital budgets are typically ring-fenced and politically",
+            "p": "méintenans. kapital báchets ar typikali ring-fenst end politikali"
+          },
+          {
+            "t": "attractive; maintenance sits in operating budgets,",
+            "p": "atraktáiv; méintenans sits in óuperéiting báchets,"
+          },
+          {
+            "t": "competes with salaries and services, and can be deferred repeatedly",
+            "p": "kompetes uíd salaris end sérvises, end can bi deferd repitedli"
+          },
+          {
+            "t": "without immediate visible consequence. Deferral is not free,",
+            "p": "uidáut imediéit vísibol konskuens. diféral is not fri,"
+          },
+          {
+            "t": "but its cost arrives later and usually under a different administration.",
+            "p": "bat its cost aráivs léiter end iúshuali ánder a dífrent administrashon."
+          }
+        ],
+        [
+          {
+            "t": "Engineers have quantified the penalty reasonably well.",
+            "p": "enyinirs jav kuantifáid de penalti risonabli uel."
+          },
+          {
+            "t": "A road resurfaced on schedule costs a fraction of one rebuilt after the",
+            "p": "a róud risérfeist on skediúl kosts a frakshon ov uán rebuilt áfter de"
+          },
+          {
+            "t": "base layer has failed. A bridge inspected and painted regularly may last",
+            "p": "béis léir jas faáild. a brich inspékted end péinted regularli méi last"
+          },
+          {
+            "t": "a century; the same structure neglected for twenty years may require",
+            "p": "a séncheri; de séim strukcher neglekted for tuénti yirs méi rkuáer"
+          },
+          {
+            "t": "replacement outright. The ratios vary by asset type but the direction",
+            "p": "repléisement otráit. de ratios vari bái áset typ bat de derekshon"
+          },
+          {
+            "t": "never does.",
+            "p": "néver das."
+          }
+        ],
+        [
+          {
+            "t": "None of this is disputed by the officials who defer maintenance.",
+            "p": "nan ov dis is disputed bái de ofisials ju difér méintenans."
+          },
+          {
+            "t": "They are usually aware of the arithmetic and constrained anyway,",
+            "p": "déi ar iúshuali oéer ov de arismetik end konstraáind anyuéi,"
+          },
+          {
+            "t": "because a budget shortfall in a given year is a concrete problem and a",
+            "p": "bicós a báchet shortfal in a guíven íar is a konkrít problem end a"
+          },
+          {
+            "t": "structural failure in fifteen years is somebody else's.",
+            "p": "strákchural féiliúr in fiftin yirs is somebodi els's."
+          },
+          {
+            "t": "Describing the behaviour as short-sighted misidentifies it:",
+            "p": "deskráibing de bejaviáuar as short-sáited misidentifis it:"
+          },
+          {
+            "t": "the incentives are functioning exactly as designed.",
+            "p": "de insentáivs ar funktióuning eksaktli as disáind."
+          }
+        ],
+        [
+          {
+            "t": "Some jurisdictions have attempted structural fixes.",
+            "p": "sam yurisdíkshons jav atempted strákchural fikses."
+          },
+          {
+            "t": "Ring-fenced maintenance funds, statutory inspection regimes and asset",
+            "p": "ring-fenst méintenans funds, statutori inspekshon regáims end áset"
+          },
+          {
+            "t": "registers that record condition rather than existence have all been",
+            "p": "réyisters dat récord kondishon ráder dan eksistens jav ol bin"
+          },
+          {
+            "t": "tried. The most effective appear to be those that remove discretion",
+            "p": "tráid. de móust iféktiv apíar tu bi dóus dat remóuv diskrshon"
+          },
+          {
+            "t": "entirely, since any mechanism that permits deferral in a difficult year",
+            "p": "entereli, sins éni mchanism dat permits diféral in a difikult íar"
+          },
+          {
+            "t": "will eventually meet a difficult year.",
+            "p": "uíl eventuali mit a difikult íar."
+          }
+        ],
+        [
+          {
+            "t": "There is a communication problem underneath the budgetary one.",
+            "p": "déar is a komunikashon problem undernis de buchtari uán."
+          },
+          {
+            "t": "Successful maintenance produces an absence of events,",
+            "p": "suksesful méintenans prodiúses an absens ov events,"
+          },
+          {
+            "t": "and absences are difficult to publicise. A water utility that prevents",
+            "p": "end absenses ar difikult tu publikáis. a uóter iutíliti dat prevents"
+          },
+          {
+            "t": "contamination has nothing to announce. Several agencies have",
+            "p": "kontaminashon jas názing tu anons. séveral ayensis jav"
+          },
+          {
+            "t": "experimented with publishing the failures that did not happen,",
+            "p": "eksperimented uíd publishing de féiliúrs dat did not japen,"
+          },
+          {
+            "t": "which reads as either informative or absurd depending largely on the",
+            "p": "uích rids as iser informatáiv or abserd depending laryeli on de"
+          },
+          {
+            "t": "audience.",
+            "p": "odins."
+          }
+        ],
+        [
+          {
+            "t": "The uncomfortable conclusion is that this may not be fully solvable.",
+            "p": "de unkomfortabol konklushon is dat dis méi not bi fuli solvabol."
+          },
+          {
+            "t": "Democratic accountability rewards attributable achievement,",
+            "p": "demokratik acauntabíliti reuards atributabol achivement,"
+          },
+          {
+            "t": "and prevented disasters are unattributable by construction.",
+            "p": "end prevented disásters ar unatributabol bái konstrukshon."
+          },
+          {
+            "t": "Institutions can be designed to protect maintenance from political",
+            "p": "institushons can bi disáind tu protekt méintenans from politikal"
+          },
+          {
+            "t": "pressure, and several have been, but the underlying asymmetry between",
+            "p": "pressher, end séveral jav bin, bat de underlying asymetri bituín"
+          },
+          {
+            "t": "what is visible and what is valuable remains where it started.",
+            "p": "uót is vísibol end uót is valuabol reméins uér it started."
+          }
+        ]
+      ]
+    }
+  ];
+
+  let rState = { passage: null, tfng: {}, choice: {} };
+  let rIndex = 0;
+  let rPronOn = false;
+
+  function renderReadingBody(p) {
+    // Cada oración va en su propia línea; debajo, la pronunciación entre paréntesis.
+    $("rBody").innerHTML = (p.lines || []).map((para) => {
+      // Un espacio real entre fragmentos: así el párrafo fluye y se copia bien
+      // cuando la pronunciación está oculta.
+      const inner = para.map((ln) =>
+        `<span class="r-line"><span class="r-en">${esc(ln.t)}</span>` +
+        `<span class="r-pron">(${esc(ln.p)})</span></span>`
+      ).join(" ");
+      return `<p class="r-para">${inner}</p>`;
+    }).join("");
+    $("rBody").classList.toggle("show-pron", rPronOn);
+  }
+
+  function updatePronButton() {
+    const b = $("rPron");
+    if (!b) return;
+    b.textContent = rPronOn ? "Ocultar pronunciación" : "Mostrar pronunciación";
+    b.setAttribute("aria-pressed", rPronOn ? "true" : "false");
+    b.classList.toggle("is-on", rPronOn);
+  }
+
+  // Llena el desplegable con los títulos, numerados para orientarse.
+  function populateReadingSelect() {
+    const sel = $("rSelect");
+    if (!sel) return;
+    sel.innerHTML = readingPassages
+      .map((p, i) => `<option value="${i}">${i + 1}. ${esc(p.title)}</option>`)
+      .join("");
+    sel.value = String(rIndex);
+  }
+
+  function newReading() {
+    const list = readingPassages;
+    if (!list.length) return;
+    if (rIndex < 0 || rIndex >= list.length) rIndex = 0;
+    const p = list[rIndex];
+    rState = { passage: p, tfng: {}, choice: {} };
+
+    $("rTitle").textContent = p.title;
+    if ($("rSelect")) $("rSelect").value = String(rIndex);
+    renderReadingBody(p);
+    updatePronButton();
+    $("rInstruction").textContent = p.instruction;
+    $("rScore").textContent = "";
+
+    // True / False / Not Given + respuestas cortas
+    const opts = ["True", "False", "Not Given"];
+    let html = "";
+    p.questions.forEach((q, i) => {
+      html += `<div class="q-item" data-qi="${i}"><div class="q-text">${i + 1}. ${esc(q.q)}</div>` +
+        `<div class="tfng-opts">${opts.map((o) => `<button type="button" data-qi="${i}" data-opt="${o}">${o}</button>`).join("")}</div></div>`;
+    });
+    (p.short || []).forEach((s, j) => {
+      html += `<div class="q-item" data-si="${j}"><div class="q-text">${p.questions.length + j + 1}. ${esc(s.q)}</div>` +
+        `<input class="short-ans" data-si="${j}" placeholder="Your answer…"/></div>`;
+    });
+    $("rQuestions").innerHTML = html;
+
+    // Ejercicio 1: elegir la oración correcta según el texto
+    let chtml = "";
+    (p.choice || []).forEach((c, k) => {
+      chtml += `<div class="q-item" data-ci="${k}"><div class="q-text">${k + 1}. ${esc(c.q)}</div>` +
+        `<div class="r-choice-opts">` +
+        c.options.map((o, oi) =>
+          `<button type="button" class="r-choice-opt" data-ci="${k}" data-oi="${oi}">` +
+          `<span class="r-choice-key">${String.fromCharCode(65 + oi)}</span>` +
+          `<span class="r-choice-text">${esc(o)}</span></button>`
+        ).join("") +
+        `</div></div>`;
+    });
+    $("rChoiceQuestions").innerHTML = chtml;
+    $("rChoiceBlock").classList.toggle("hidden", !(p.choice && p.choice.length));
+
+    // Reiniciar el panel de respuestas: sin resultados todavía, se muestra el aviso.
+    $("rAnswers").innerHTML = "";
+    if ($("rAnswersHint")) $("rAnswersHint").classList.remove("hidden");
+    if ($("rAnswerPanel")) $("rAnswerPanel").open = false;
+  }
+
+  $("rQuestions").addEventListener("click", (e) => {
+    const b = e.target.closest(".tfng-opts button"); if (!b) return;
+    const qi = b.dataset.qi;
+    b.parentElement.querySelectorAll("button").forEach((x) => x.classList.remove("sel"));
+    b.classList.add("sel"); rState.tfng[qi] = b.dataset.opt;
+  });
+
+  $("rChoiceQuestions").addEventListener("click", (e) => {
+    const b = e.target.closest(".r-choice-opt"); if (!b) return;
+    const ci = b.dataset.ci;
+    b.parentElement.querySelectorAll(".r-choice-opt").forEach((x) => x.classList.remove("sel"));
+    b.classList.add("sel"); rState.choice[ci] = Number(b.dataset.oi);
+  });
+
+  function checkReading() {
+    const p = rState.passage; if (!p) return;
+    let correct = 0;
+    const total = p.questions.length + (p.short || []).length + (p.choice || []).length;
+
+    p.questions.forEach((q, i) => {
+      const item = $("rQuestions").querySelector(`.q-item[data-qi="${i}"]`);
+      item.classList.remove("correct", "wrong");
+      const ok = rState.tfng[i] === q.a;
+      if (ok) correct++;
+      item.classList.add(ok ? "correct" : "wrong");
+      let v = item.querySelector(".q-verdict");
+      if (!v) { v = document.createElement("div"); v.className = "q-verdict"; item.appendChild(v); }
+      v.className = "q-verdict " + (ok ? "ok" : "no");
+      v.textContent = ok ? "✓ Correcto" : `✗ Respuesta: ${q.a}. ${q.why}`;
+    });
+
+    (p.short || []).forEach((s, j) => {
+      const item = $("rQuestions").querySelector(`.q-item[data-si="${j}"]`);
+      const inp = item.querySelector("input");
+      const ok = norm(inp.value) && (norm(inp.value).includes(norm(s.a)) || norm(s.a).includes(norm(inp.value)));
+      if (ok) correct++;
+      item.classList.remove("correct", "wrong"); item.classList.add(ok ? "correct" : "wrong");
+      let v = item.querySelector(".q-verdict");
+      if (!v) { v = document.createElement("div"); v.className = "q-verdict"; item.appendChild(v); }
+      v.className = "q-verdict " + (ok ? "ok" : "no");
+      v.textContent = ok ? "✓ Correcto" : `✗ Respuesta modelo: ${s.a}`;
+    });
+
+    (p.choice || []).forEach((c, k) => {
+      const item = $("rChoiceQuestions").querySelector(`.q-item[data-ci="${k}"]`);
+      if (!item) return;
+      item.classList.remove("correct", "wrong");
+      const chosen = rState.choice[k];
+      const ok = chosen === c.a;
+      if (ok) correct++;
+      item.classList.add(ok ? "correct" : "wrong");
+      // Marca visualmente la opción correcta y la elegida.
+      item.querySelectorAll(".r-choice-opt").forEach((btn) => {
+        const oi = Number(btn.dataset.oi);
+        btn.classList.remove("is-right", "is-wrong");
+        if (oi === c.a) btn.classList.add("is-right");
+        else if (oi === chosen) btn.classList.add("is-wrong");
+      });
+      let v = item.querySelector(".q-verdict");
+      if (!v) { v = document.createElement("div"); v.className = "q-verdict"; item.appendChild(v); }
+      v.className = "q-verdict " + (ok ? "ok" : "no");
+      v.textContent = ok
+        ? "✓ Correcto"
+        : `✗ Respuesta: ${String.fromCharCode(65 + c.a)}. ${c.why}`;
+    });
+
+    $("rScore").textContent = `${correct} / ${total} correctas`;
+    if ($("rAnswersHint")) $("rAnswersHint").classList.add("hidden");
+    // Lista completa: cada respuesta con el enunciado al que corresponde.
+    const nQ = p.questions.length, nS = (p.short || []).length;
+    $("rAnswers").innerHTML =
+      p.questions.map((q, i) =>
+        `<li><span class="ans-q">${i + 1}. ${esc(q.q)}</span>` +
+        `<span class="ans-a">${esc(q.a)}</span>` +
+        `<span class="ans-why">${esc(q.why)}</span></li>`).join("") +
+      (p.short || []).map((sh, j) =>
+        `<li><span class="ans-q">${nQ + j + 1}. ${esc(sh.q)}</span>` +
+        `<span class="ans-a">${esc(sh.a)}</span></li>`).join("") +
+      (p.choice || []).map((c, k) =>
+        `<li><span class="ans-q">Ejercicio 1 · ${k + 1}. ${esc(c.q)}</span>` +
+        `<span class="ans-a">${String.fromCharCode(65 + c.a)}) ${esc(c.options[c.a])}</span>` +
+        `<span class="ans-why">${esc(c.why)}</span></li>`).join("");
+    logActivity();
+  }
+
+  $("rSelect").addEventListener("change", (e) => {
+    rIndex = Number(e.target.value) || 0;
+    newReading();
+  });
+  $("rPron").addEventListener("click", () => {
+    rPronOn = !rPronOn;
+    $("rBody").classList.toggle("show-pron", rPronOn);
+    updatePronButton();
+  });
+  $("rCheck").addEventListener("click", checkReading);
+  populateReadingSelect();
+  $("rClearAns").addEventListener("click", newReading);
+  newReading();
+
+  /* ============================================================
+     SPEAKING — prompts + MediaRecorder
+     ============================================================ */
+  const speakingData = {
+    1: [
+      { prompt: "Let’s talk about your hometown. Where are you from, and what do you like most about it?", bullets: ["Say where you live", "Give one thing you like", "Give one reason"] },
+      { prompt: "Do you work or are you a student? Tell me about what you do.", bullets: ["Your job or studies", "Why you chose it", "Whether you enjoy it"] },
+      { prompt: "How do you usually spend your weekends?", bullets: ["A typical activity", "Who you do it with", "Whether it changes"] }
+    ],
+    2: [
+      { prompt: "Describe a skill you would like to learn. You should say:", bullets: ["what the skill is", "why you want to learn it", "how you would learn it", "and explain how it would help you"] },
+      { prompt: "Describe a place you enjoy visiting. You should say:", bullets: ["where it is", "how often you go", "what you do there", "and explain why you like it"] },
+      { prompt: "Describe a person who has influenced you. You should say:", bullets: ["who the person is", "how you know them", "what they did", "and explain the influence they had"] }
+    ],
+    3: [
+      { prompt: "Some people say learning new skills as an adult is harder than as a child. What do you think?", bullets: ["Give your opinion", "Give a reason", "Give an example"] },
+      { prompt: "How has technology changed the way people learn today?", bullets: ["Name one change", "Say if it is positive", "Give an example"] },
+      { prompt: "Do you think schools focus too much on exams? Why or why not?", bullets: ["Your position", "One argument for", "One argument against"] }
+    ]
+  };
+  let sPart = 1, sPrep = null, recorder = null, recChunks = [], recTimer = null, recSecs = 0;
+  function renderSpeaking() {
+    const arr = speakingData[sPart];
+    const item = arr[Math.floor(Math.random() * arr.length)];
+    $("sPartLabel").textContent = "Part " + sPart;
+    $("sPrompt").textContent = item.prompt;
+    $("sBullets").innerHTML = item.bullets.map((b) => `<li>${esc(b)}</li>`).join("");
+    $("sPrompt").dataset.text = item.prompt + ". " + item.bullets.join(". ");
+  }
+  document.querySelectorAll(".seg-btn").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".seg-btn").forEach((x) => x.classList.remove("is-active"));
+    b.classList.add("is-active"); sPart = Number(b.dataset.part); renderSpeaking();
+  }));
+  $("sNew").addEventListener("click", renderSpeaking);
+  $("sHear").addEventListener("click", () => {
+    if (!("speechSynthesis" in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance($("sPrompt").dataset.text || $("sPrompt").textContent);
+    u.lang = "en-GB"; u.rate = 0.95; speechSynthesis.speak(u);
+    if (sPart === 2) startPrep();
+  });
+  function startPrep() {
+    clearInterval(sPrep); let t = 60; const el = $("sPrepTimer"); el.hidden = false;
+    const tick = () => { el.textContent = "Preparación 0:" + String(t).padStart(2, "0"); if (t-- <= 0) { clearInterval(sPrep); el.textContent = "¡A hablar!"; } };
+    tick(); sPrep = setInterval(tick, 1000);
+  }
+  async function startRec() {
+    if (!navigator.mediaDevices?.getUserMedia) { $("recHint").textContent = "Tu navegador no permite grabar audio aquí."; return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorder = new MediaRecorder(stream); recChunks = [];
+      recorder.ondataavailable = (e) => e.data.size && recChunks.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(recChunks, { type: recorder.mimeType || "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        const pb = $("recPlayback"); pb.src = url; pb.hidden = false;
+        stream.getTracks().forEach((t) => t.stop());
+        logActivity();
+      };
+      recorder.start();
+      recSecs = 0; $("recDot").classList.add("live"); $("recStart").disabled = true; $("recStop").disabled = false;
+      recTimer = setInterval(() => { recSecs++; $("recTime").textContent = fmt(recSecs); }, 1000);
+    } catch { $("recHint").textContent = "No pude acceder al micrófono. Revisá los permisos del navegador."; }
+  }
+  function stopRec() {
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    clearInterval(recTimer); $("recDot").classList.remove("live"); $("recStart").disabled = false; $("recStop").disabled = true;
+  }
+  function fmt(s) { return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+  $("recStart").addEventListener("click", startRec);
+  $("recStop").addEventListener("click", stopRec);
+
+  /* ============================================================
+     LISTENING LAB — original passages, read-along, cloze & dictation
+     ============================================================ */
+  const LISTENING_LESSONS = [
+  {
+    "id": "ls-01",
+    "title": "The Last Train Home",
+    "category": "Everyday narrative",
+    "level": "B2+",
+    "duration": "3–4 min",
+    "paragraphs": [
+      "Maya left the evening lecture later than planned because a discussion about urban design continued long after the professor had closed his slides. By the time she reached the station, the departure board showed only one remaining train. It was due in six minutes, and the platform was on the opposite side of the building.",
+      "She hurried through the underpass, but a maintenance worker had blocked the usual staircase. The temporary signs directed passengers through a narrow corridor and up two flights of steps. Maya arrived just as the doors began to close. A conductor noticed her, held the train for a moment, and waved her aboard.",
+      "Once seated, she realised that the train was not going to her usual station. Engineering work had changed the route, and the final stop was three kilometres from her flat. Her phone battery was almost empty, so she could not rely on a map or order a taxi. Instead, she asked an older passenger whether there was a safe walking route.",
+      "The passenger explained that a night bus stopped outside the final station and passed close to Maya's neighbourhood. He even wrote the bus number on the back of an old receipt. The journey took longer than expected, but Maya reached home safely and decided that, in future, she would check late-night travel notices before staying behind after class."
+    ],
+    "cloze": [
+      {
+        "answer": "departure board",
+        "aliases": []
+      },
+      {
+        "answer": "opposite side",
+        "aliases": []
+      },
+      {
+        "answer": "maintenance worker",
+        "aliases": []
+      },
+      {
+        "answer": "temporary signs",
+        "aliases": []
+      },
+      {
+        "answer": "held the train",
+        "aliases": []
+      },
+      {
+        "answer": "engineering work",
+        "aliases": []
+      },
+      {
+        "answer": "phone battery",
+        "aliases": []
+      },
+      {
+        "answer": "night bus",
+        "aliases": []
+      },
+      {
+        "answer": "old receipt",
+        "aliases": []
+      },
+      {
+        "answer": "travel notices",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "The lecture finished late because the class continued a discussion about ____.",
+        "answer": "urban design",
+        "aliases": []
+      },
+      {
+        "prompt": "The usual staircase was closed by a ____.",
+        "answer": "maintenance worker",
+        "aliases": []
+      },
+      {
+        "prompt": "Maya discovered that the route had changed because of ____.",
+        "answer": "engineering work",
+        "aliases": []
+      },
+      {
+        "prompt": "The older passenger wrote the bus number on an ____.",
+        "answer": "old receipt",
+        "aliases": []
+      },
+      {
+        "prompt": "Maya decided to check late-night ____ in future.",
+        "answer": "travel notices",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "A conductor noticed her, held the train for a moment, and waved her aboard.",
+      "Her phone battery was almost empty, so she could not rely on a map or order a taxi.",
+      "The journey took longer than expected, but Maya reached home safely and decided that, in future, she would check late-night travel notices before staying behind after class."
+    ]
+  },
+  {
+    "id": "ls-02",
+    "title": "The Community Repair Café",
+    "category": "Community and technology",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "On the first Saturday of every month, the meeting hall in Westbridge becomes a repair café. Residents bring broken lamps, torn jackets, unreliable toasters and bicycles with loose brakes. Instead of paying for a professional service immediately, they sit beside volunteers who explain how the objects work and help diagnose the fault.",
+      "The project began when a retired engineer, Lena Ortiz, noticed how many usable appliances were being left beside rubbish bins. She persuaded the local council to lend the group a room and convinced several tradespeople to donate basic tools. The first session attracted only nine visitors, but word spread quickly through neighbourhood groups.",
+      "The café does not promise that every object can be saved. Replacement parts may be unavailable, and some electrical devices are too dangerous to open without specialist equipment. Even so, the volunteers believe that an unsuccessful repair can still be useful because the owner learns why the item failed and how to buy a more durable replacement.",
+      "After two years, the organisers estimate that they have prevented more than three tonnes of material from becoming waste. Just as importantly, people who once felt intimidated by simple repairs now return as volunteers. The café has therefore become more than an environmental project; it is also a place where practical knowledge is shared rather than guarded."
+    ],
+    "cloze": [
+      {
+        "answer": "repair café",
+        "aliases": []
+      },
+      {
+        "answer": "loose brakes",
+        "aliases": []
+      },
+      {
+        "answer": "diagnose the fault",
+        "aliases": []
+      },
+      {
+        "answer": "retired engineer",
+        "aliases": []
+      },
+      {
+        "answer": "basic tools",
+        "aliases": []
+      },
+      {
+        "answer": "replacement parts",
+        "aliases": []
+      },
+      {
+        "answer": "specialist equipment",
+        "aliases": []
+      },
+      {
+        "answer": "durable replacement",
+        "aliases": []
+      },
+      {
+        "answer": "three tonnes",
+        "aliases": []
+      },
+      {
+        "answer": "practical knowledge",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Residents sit beside volunteers who help them ____ the fault.",
+        "answer": "diagnose",
+        "aliases": []
+      },
+      {
+        "prompt": "The council lent the group a meeting ____.",
+        "answer": "room",
+        "aliases": []
+      },
+      {
+        "prompt": "Some devices are unsafe to open without specialist ____.",
+        "answer": "equipment",
+        "aliases": []
+      },
+      {
+        "prompt": "The organisers estimate that over ____ of waste has been avoided.",
+        "answer": "three tonnes",
+        "aliases": []
+      },
+      {
+        "prompt": "The project encourages practical knowledge to be ____.",
+        "answer": "shared",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "The café does not promise that every object can be saved.",
+      "An unsuccessful repair can still be useful because the owner learns why the item failed.",
+      "People who once felt intimidated by simple repairs now return as volunteers."
+    ]
+  },
+  {
+    "id": "ls-03",
+    "title": "The Quiet Hour Experiment",
+    "category": "Work and wellbeing",
+    "level": "C1",
+    "duration": "4–5 min",
+    "paragraphs": [
+      "A software company in Bristol introduced a daily quiet hour after employees complained that constant messages were making concentrated work almost impossible. Between ten and eleven each morning, internal chat channels were muted, meetings were prohibited, and staff were encouraged to close their email applications. Urgent technical problems could still be reported through a separate emergency line.",
+      "Managers expected resistance from teams that depended on rapid collaboration. Surprisingly, the strongest objections came from employees who worried that silence would make them appear unavailable or unproductive. To address this concern, the company made the quiet hour a collective rule rather than an individual choice, so nobody had to justify ignoring a message during that period.",
+      "After six weeks, the company compared project records with those from the previous quarter. The number of tasks completed did not rise dramatically, but complex coding errors were discovered earlier and fewer documents required major revision. Employees also reported that they felt less mentally fragmented, although some said that unresolved questions accumulated until eleven o'clock and then produced a sudden burst of messages.",
+      "The trial was therefore modified rather than simply declared a success. Teams were asked to prepare questions before the quiet hour and group non-urgent requests into a single message afterwards. The experiment showed that uninterrupted time can improve the quality of work, but only when communication is redesigned rather than merely postponed."
+    ],
+    "cloze": [
+      {
+        "answer": "quiet hour",
+        "aliases": []
+      },
+      {
+        "answer": "internal chat channels",
+        "aliases": []
+      },
+      {
+        "answer": "emergency line",
+        "aliases": []
+      },
+      {
+        "answer": "rapid collaboration",
+        "aliases": []
+      },
+      {
+        "answer": "collective rule",
+        "aliases": []
+      },
+      {
+        "answer": "previous quarter",
+        "aliases": []
+      },
+      {
+        "answer": "coding errors",
+        "aliases": []
+      },
+      {
+        "answer": "mentally fragmented",
+        "aliases": []
+      },
+      {
+        "answer": "sudden burst",
+        "aliases": []
+      },
+      {
+        "answer": "communication is redesigned",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "During the quiet hour, internal chat channels were ____.",
+        "answer": "muted",
+        "aliases": []
+      },
+      {
+        "prompt": "Urgent problems could be reported through an emergency ____.",
+        "answer": "line",
+        "aliases": []
+      },
+      {
+        "prompt": "The company examined records from the previous ____.",
+        "answer": "quarter",
+        "aliases": []
+      },
+      {
+        "prompt": "Employees reported feeling less mentally ____.",
+        "answer": "fragmented",
+        "aliases": []
+      },
+      {
+        "prompt": "The trial showed that communication must be ____ rather than postponed.",
+        "answer": "redesigned",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "The company made the quiet hour a collective rule rather than an individual choice.",
+      "Complex coding errors were discovered earlier and fewer documents required major revision.",
+      "Uninterrupted time can improve the quality of work, but only when communication is redesigned."
+    ]
+  },
+  {
+    "id": "ls-04",
+    "title": "Seeds on a Rooftop",
+    "category": "Environment and cities",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "The roof of the Calder Street shopping centre used to be an empty surface of concrete and ventilation pipes. During summer, it absorbed heat throughout the day and released it slowly at night, making the surrounding streets noticeably warmer. Three years ago, a local environmental group proposed turning part of the roof into a community garden.",
+      "Engineers first had to determine how much weight the building could safely support. Instead of deep beds filled with ordinary soil, the designers chose lightweight containers made from recycled plastic. Rainwater from the roof is collected in two tanks and used through a drip-irrigation system, which delivers small amounts of water directly to each plant.",
+      "The garden now produces tomatoes, herbs, beans and several varieties of lettuce. Volunteers donate most of the harvest to a nearby food bank, while a smaller portion is sold at a weekly market to pay for seeds and maintenance. Local schools also use the site for lessons about insects, composting and urban temperatures.",
+      "Measurements taken by university students suggest that the planted area can be several degrees cooler than the uncovered concrete beside it. The garden will not solve the city's heat problem by itself, but it demonstrates how unused spaces can serve several purposes at once: producing food, absorbing rainwater, supporting wildlife and giving residents a place to work together."
+    ],
+    "cloze": [
+      {
+        "answer": "empty surface",
+        "aliases": []
+      },
+      {
+        "answer": "absorbed heat",
+        "aliases": []
+      },
+      {
+        "answer": "community garden",
+        "aliases": []
+      },
+      {
+        "answer": "safely support",
+        "aliases": []
+      },
+      {
+        "answer": "lightweight containers",
+        "aliases": []
+      },
+      {
+        "answer": "rainwater",
+        "aliases": []
+      },
+      {
+        "answer": "drip-irrigation system",
+        "aliases": []
+      },
+      {
+        "answer": "food bank",
+        "aliases": []
+      },
+      {
+        "answer": "weekly market",
+        "aliases": []
+      },
+      {
+        "answer": "several degrees cooler",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "The roof previously consisted mainly of concrete and ventilation ____.",
+        "answer": "pipes",
+        "aliases": []
+      },
+      {
+        "prompt": "Designers used lightweight ____ instead of deep soil beds.",
+        "answer": "containers",
+        "aliases": []
+      },
+      {
+        "prompt": "Collected rainwater is distributed by drip ____.",
+        "answer": "irrigation",
+        "aliases": []
+      },
+      {
+        "prompt": "Most of the produce is given to a food ____.",
+        "answer": "bank",
+        "aliases": []
+      },
+      {
+        "prompt": "The planted area is several degrees ____ than bare concrete.",
+        "answer": "cooler",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "Engineers first had to determine how much weight the building could safely support.",
+      "Volunteers donate most of the harvest to a nearby food bank.",
+      "The garden will not solve the city's heat problem by itself."
+    ]
+  },
+  {
+    "id": "ls-05",
+    "title": "A Museum After Dark",
+    "category": "Culture and events",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "When the Northgate Museum announced its first overnight opening, staff expected a modest crowd of history enthusiasts. Instead, more than two thousand people reserved tickets within forty-eight hours. The event began at seven in the evening and continued until two in the morning, with short talks, live music and guided tours scheduled throughout the building.",
+      "The most popular activity was not one of the museum's famous exhibitions. It was a conservation demonstration in a normally restricted workshop. Visitors watched specialists examine a damaged nineteenth-century map under ultraviolet light. The technique revealed earlier repairs and faded notes that could not be seen under ordinary lamps.",
+      "Keeping the museum open at night created practical difficulties. Security teams had to monitor unfamiliar movement patterns, café workers needed additional breaks, and the lighting had to be adjusted so that fragile objects were not exposed for too long. Some visitors also became disoriented because several galleries looked completely different after dark.",
+      "Despite these challenges, the museum plans to repeat the event twice a year. Surveys showed that many attendees had not visited a museum since childhood and were attracted by the unusual atmosphere rather than by a specific collection. The organisers concluded that changing the time and mood of a familiar institution can make it feel accessible to a new audience."
+    ],
+    "cloze": [
+      {
+        "answer": "overnight opening",
+        "aliases": []
+      },
+      {
+        "answer": "history enthusiasts",
+        "aliases": []
+      },
+      {
+        "answer": "guided tours",
+        "aliases": []
+      },
+      {
+        "answer": "conservation demonstration",
+        "aliases": []
+      },
+      {
+        "answer": "restricted workshop",
+        "aliases": []
+      },
+      {
+        "answer": "ultraviolet light",
+        "aliases": []
+      },
+      {
+        "answer": "earlier repairs",
+        "aliases": []
+      },
+      {
+        "answer": "additional breaks",
+        "aliases": []
+      },
+      {
+        "answer": "fragile objects",
+        "aliases": []
+      },
+      {
+        "answer": "unusual atmosphere",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "More than two thousand people reserved tickets within ____ hours.",
+        "answer": "forty-eight",
+        "aliases": []
+      },
+      {
+        "prompt": "Specialists examined a damaged nineteenth-century ____.",
+        "answer": "map",
+        "aliases": []
+      },
+      {
+        "prompt": "Earlier repairs became visible under ultraviolet ____.",
+        "answer": "light",
+        "aliases": []
+      },
+      {
+        "prompt": "Fragile objects could not remain exposed for too ____.",
+        "answer": "long",
+        "aliases": []
+      },
+      {
+        "prompt": "Many visitors were attracted by the unusual ____.",
+        "answer": "atmosphere",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "The event began at seven in the evening and continued until two in the morning.",
+      "The technique revealed earlier repairs and faded notes that could not be seen under ordinary lamps.",
+      "Some visitors also became disoriented because several galleries looked completely different after dark."
+    ]
+  },
+  {
+    "id": "ls-06",
+    "title": "The Misplaced Passport",
+    "category": "Travel problem",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "Jonas discovered that his passport was missing while standing in the airport check-in queue. He had used it at the hotel reception that morning, then placed it inside a blue document folder with his boarding pass. The folder was still in his bag, but the passport was not.",
+      "He stepped out of the queue and reconstructed his journey in reverse. First he called the taxi company, whose dispatcher contacted the driver. The back seat had already been checked and cleaned. Jonas then phoned the hotel, where a receptionist searched the desk, the safe and the breakfast room without success.",
+      "With departure less than ninety minutes away, he reported the loss to airport security. An officer asked him not only where he had been, but also what he had been carrying. When Jonas mentioned a newspaper bought at the station, the officer suggested examining every folded page. The passport had slipped between the travel section and a full-page advertisement.",
+      "Jonas returned to check-in with only twenty minutes remaining. He made the flight, although his suitcase had to travel on a later service because baggage loading had closed. The experience taught him a surprisingly simple lesson: important documents should be kept in a zipped pocket, not moved repeatedly between folders, counters and reading material."
+    ],
+    "cloze": [
+      {
+        "answer": "check-in queue",
+        "aliases": []
+      },
+      {
+        "answer": "document folder",
+        "aliases": []
+      },
+      {
+        "answer": "reconstructed his journey",
+        "aliases": []
+      },
+      {
+        "answer": "taxi company",
+        "aliases": []
+      },
+      {
+        "answer": "breakfast room",
+        "aliases": []
+      },
+      {
+        "answer": "airport security",
+        "aliases": []
+      },
+      {
+        "answer": "folded page",
+        "aliases": []
+      },
+      {
+        "answer": "full-page advertisement",
+        "aliases": []
+      },
+      {
+        "answer": "twenty minutes",
+        "aliases": []
+      },
+      {
+        "answer": "zipped pocket",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Jonas had placed the passport in a blue document ____.",
+        "answer": "folder",
+        "aliases": []
+      },
+      {
+        "prompt": "The taxi driver had already checked the back ____.",
+        "answer": "seat",
+        "aliases": []
+      },
+      {
+        "prompt": "Airport security suggested checking every folded ____.",
+        "answer": "page",
+        "aliases": []
+      },
+      {
+        "prompt": "The passport was beside a full-page ____.",
+        "answer": "advertisement",
+        "aliases": []
+      },
+      {
+        "prompt": "Jonas decided to use a zipped ____ for documents.",
+        "answer": "pocket",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "He stepped out of the queue and reconstructed his journey in reverse.",
+      "The passport had slipped between the travel section and a full-page advertisement.",
+      "He made the flight, although his suitcase had to travel on a later service."
+    ]
+  },
+  {
+    "id": "ls-07",
+    "title": "Cooling the City Streets",
+    "category": "Urban science",
+    "level": "C1",
+    "duration": "5 min",
+    "paragraphs": [
+      "During severe heatwaves, city streets can remain dangerously warm long after sunset. Dark road surfaces absorb solar energy during the day, while closely packed buildings restrict the movement of cooler air. This effect, known as the urban heat island, can raise night-time temperatures enough to increase health risks for elderly residents and people without air conditioning.",
+      "Several cities are testing pale road coatings that reflect a greater proportion of sunlight. Early measurements show lower surface temperatures, but the broader benefit is harder to calculate. A cooler road does not automatically mean cooler air at head height, and reflected light may increase glare for drivers or heat the walls of nearby buildings.",
+      "Urban planners are therefore combining reflective materials with shade trees, drinking-water stations and redesigned bus shelters. Trees provide cooling through both shade and evaporation, but they require years to mature and may struggle during drought. Artificial shade can be installed quickly, although it often covers a smaller area and requires maintenance.",
+      "Researchers emphasise that no single intervention will protect an entire city. The most effective plans identify neighbourhoods with high temperatures, limited green space and vulnerable populations, then combine several measures there first. In other words, heat adaptation depends as much on careful targeting and social policy as it does on new materials."
+    ],
+    "cloze": [
+      {
+        "answer": "severe heatwaves",
+        "aliases": []
+      },
+      {
+        "answer": "solar energy",
+        "aliases": []
+      },
+      {
+        "answer": "urban heat island",
+        "aliases": []
+      },
+      {
+        "answer": "health risks",
+        "aliases": []
+      },
+      {
+        "answer": "pale road coatings",
+        "aliases": []
+      },
+      {
+        "answer": "surface temperatures",
+        "aliases": []
+      },
+      {
+        "answer": "glare for drivers",
+        "aliases": []
+      },
+      {
+        "answer": "shade trees",
+        "aliases": []
+      },
+      {
+        "answer": "years to mature",
+        "aliases": []
+      },
+      {
+        "answer": "careful targeting",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Dark surfaces absorb solar ____ during the day.",
+        "answer": "energy",
+        "aliases": []
+      },
+      {
+        "prompt": "The urban heat island can raise night-time ____.",
+        "answer": "temperatures",
+        "aliases": []
+      },
+      {
+        "prompt": "Reflective coatings may produce glare for ____.",
+        "answer": "drivers",
+        "aliases": []
+      },
+      {
+        "prompt": "Trees can struggle during periods of ____.",
+        "answer": "drought",
+        "aliases": []
+      },
+      {
+        "prompt": "Effective plans focus first on vulnerable ____.",
+        "answer": "populations",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "A cooler road does not automatically mean cooler air at head height.",
+      "Trees provide cooling through both shade and evaporation.",
+      "Heat adaptation depends as much on careful targeting and social policy as it does on new materials."
+    ]
+  },
+  {
+    "id": "ls-08",
+    "title": "The Memory Walk",
+    "category": "Psychology and learning",
+    "level": "C1",
+    "duration": "4–5 min",
+    "paragraphs": [
+      "Before an important presentation, medical student Aisha Rahman does not simply reread her notes. She imagines walking from the entrance of her childhood home to the kitchen, placing a different idea at each familiar location. A definition might sit on the stairs, while a complicated process unfolds beside the dining table.",
+      "This technique is commonly called the method of loci or memory palace. It uses spatial memory, which is often more durable than our memory for isolated words. By connecting abstract information to a sequence of vivid places, learners create additional routes by which the material can later be retrieved.",
+      "The method is powerful, but it is not effortless. Images must be distinctive enough to avoid confusion, and the route should remain stable. If too many subjects are placed in the same imagined building, old associations may interfere with new ones. Some learners therefore maintain separate routes for different courses.",
+      "Aisha also warns that the method can create an illusion of mastery. Remembering a list of terms is not the same as understanding how those terms relate to one another. She uses the memory walk only for essential details, then tests her understanding by explaining the topic aloud without following the route."
+    ],
+    "cloze": [
+      {
+        "answer": "childhood home",
+        "aliases": []
+      },
+      {
+        "answer": "familiar location",
+        "aliases": []
+      },
+      {
+        "answer": "memory palace",
+        "aliases": []
+      },
+      {
+        "answer": "spatial memory",
+        "aliases": []
+      },
+      {
+        "answer": "isolated words",
+        "aliases": []
+      },
+      {
+        "answer": "vivid places",
+        "aliases": []
+      },
+      {
+        "answer": "route should remain stable",
+        "aliases": []
+      },
+      {
+        "answer": "old associations",
+        "aliases": []
+      },
+      {
+        "answer": "illusion of mastery",
+        "aliases": []
+      },
+      {
+        "answer": "explaining the topic aloud",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Aisha imagines moving through her childhood ____.",
+        "answer": "home",
+        "aliases": []
+      },
+      {
+        "prompt": "The technique uses strong ____ memory.",
+        "answer": "spatial",
+        "aliases": []
+      },
+      {
+        "prompt": "Mental images must be sufficiently ____ to avoid confusion.",
+        "answer": "distinctive",
+        "aliases": []
+      },
+      {
+        "prompt": "Old associations may ____ with new material.",
+        "answer": "interfere",
+        "aliases": []
+      },
+      {
+        "prompt": "Aisha checks understanding by explaining the topic ____.",
+        "answer": "aloud",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "It uses spatial memory, which is often more durable than our memory for isolated words.",
+      "If too many subjects are placed in the same imagined building, old associations may interfere with new ones.",
+      "Remembering a list of terms is not the same as understanding how those terms relate to one another."
+    ]
+  },
+  {
+    "id": "ls-09",
+    "title": "A Library of Things",
+    "category": "Sustainability",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "The Eastborough Library still lends novels and reference books, but its fastest-growing collection contains no printed pages. Members can now borrow drills, sewing machines, camping stoves, carpet cleaners and dozens of other objects that are useful occasionally but expensive to purchase.",
+      "The idea emerged after a survey showed that many households owned tools they had used only once. Library staff argued that shared access could reduce unnecessary spending and the demand for new products. Each object is inspected between loans, and members must watch a short safety video before borrowing electrical equipment.",
+      "The system has faced several practical problems. Popular items are often unavailable at weekends, and late returns can disrupt another person's plans. In addition, staff need technical knowledge that traditional library training does not provide. The library now works with local repair specialists who inspect damaged equipment and teach basic maintenance.",
+      "Despite these difficulties, membership has increased and the scheme has changed how some residents think about ownership. Rather than asking whether they can afford to buy an object, they first ask how often they will use it. For many occasional tasks, reliable access has proved more valuable than permanent possession."
+    ],
+    "cloze": [
+      {
+        "answer": "reference books",
+        "aliases": []
+      },
+      {
+        "answer": "sewing machines",
+        "aliases": []
+      },
+      {
+        "answer": "expensive to purchase",
+        "aliases": []
+      },
+      {
+        "answer": "shared access",
+        "aliases": []
+      },
+      {
+        "answer": "safety video",
+        "aliases": []
+      },
+      {
+        "answer": "late returns",
+        "aliases": []
+      },
+      {
+        "answer": "technical knowledge",
+        "aliases": []
+      },
+      {
+        "answer": "repair specialists",
+        "aliases": []
+      },
+      {
+        "answer": "basic maintenance",
+        "aliases": []
+      },
+      {
+        "answer": "permanent possession",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Members can borrow objects that are expensive to ____.",
+        "answer": "purchase",
+        "aliases": []
+      },
+      {
+        "prompt": "Electrical borrowers must watch a safety ____.",
+        "answer": "video",
+        "aliases": []
+      },
+      {
+        "prompt": "Late returns may disrupt another person's ____.",
+        "answer": "plans",
+        "aliases": []
+      },
+      {
+        "prompt": "Repair specialists teach basic ____.",
+        "answer": "maintenance",
+        "aliases": []
+      },
+      {
+        "prompt": "Residents increasingly value access over permanent ____.",
+        "answer": "possession",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "Members can now borrow drills, sewing machines, camping stoves, carpet cleaners and dozens of other objects that are useful occasionally but expensive to purchase.",
+      "Popular items are often unavailable at weekends, and late returns can disrupt another person's plans.",
+      "Reliable access has proved more valuable than permanent possession."
+    ]
+  },
+  {
+    "id": "ls-10",
+    "title": "The Volunteer Translator",
+    "category": "Community service",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "When a storm damaged several homes in her town, university student Camila Vega volunteered at an emergency information centre. She expected to distribute food and blankets, but coordinators quickly learned that she spoke both English and Spanish. Within an hour, she was helping families understand accommodation forms and insurance instructions.",
+      "Translation in an emergency required more than replacing one word with another. Some residents were frightened, exhausted or unfamiliar with official procedures. Camila had to divide long explanations into manageable steps and check that people understood what would happen next. When technical terms had no obvious equivalent, she used simple descriptions instead.",
+      "The most difficult conversation involved an elderly man who believed that signing a temporary housing form meant giving up ownership of his home. Camila asked a housing officer to explain the document again, then translated the explanation slowly and invited the man to repeat the key points in his own words.",
+      "After the centre closed, Camila joined a training programme for community interpreters. She had discovered that bilingual ability was only the starting point. Accuracy, patience, confidentiality and the confidence to request clarification were equally important, especially when a misunderstanding could affect someone's safety or legal rights."
+    ],
+    "cloze": [
+      {
+        "answer": "emergency information centre",
+        "aliases": []
+      },
+      {
+        "answer": "accommodation forms",
+        "aliases": []
+      },
+      {
+        "answer": "official procedures",
+        "aliases": []
+      },
+      {
+        "answer": "manageable steps",
+        "aliases": []
+      },
+      {
+        "answer": "technical terms",
+        "aliases": []
+      },
+      {
+        "answer": "temporary housing",
+        "aliases": []
+      },
+      {
+        "answer": "giving up ownership",
+        "aliases": []
+      },
+      {
+        "answer": "key points",
+        "aliases": []
+      },
+      {
+        "answer": "community interpreters",
+        "aliases": []
+      },
+      {
+        "answer": "legal rights",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Camila helped families understand accommodation ____.",
+        "answer": "forms",
+        "aliases": []
+      },
+      {
+        "prompt": "She divided long explanations into manageable ____.",
+        "answer": "steps",
+        "aliases": []
+      },
+      {
+        "prompt": "The elderly man feared losing ____ of his home.",
+        "answer": "ownership",
+        "aliases": []
+      },
+      {
+        "prompt": "Camila later trained as a community ____.",
+        "answer": "interpreter",
+        "aliases": []
+      },
+      {
+        "prompt": "Misunderstandings could affect safety or legal ____.",
+        "answer": "rights",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "Translation in an emergency required more than replacing one word with another.",
+      "Camila asked a housing officer to explain the document again.",
+      "Accuracy, patience, confidentiality and the confidence to request clarification were equally important."
+    ]
+  },
+  {
+    "id": "ls-11",
+    "title": "When the River Returned",
+    "category": "Environmental restoration",
+    "level": "C1",
+    "duration": "5 min",
+    "paragraphs": [
+      "For nearly a century, the Alder River was forced through a straight concrete channel on the edge of the city. The channel moved floodwater quickly, but it destroyed shallow pools, riverbank vegetation and the bends where fish once sheltered. During heavy rain, water also reached downstream neighbourhoods with unusual speed.",
+      "A restoration project removed sections of concrete and allowed the river to follow a wider, curved route across public land. Engineers created low areas that could temporarily hold floodwater, while ecologists planted native reeds and trees. The work looked untidy at first because young plants were sparse and exposed soil was visible.",
+      "Within three years, insects and birds returned in greater numbers, and summer water temperatures fell beneath the shade of new vegetation. Flood monitoring also showed that high water moved downstream more slowly. However, the project required the closure of a popular riverside path, and some residents criticised the muddy appearance of the new landscape.",
+      "The council responded by adding raised walkways and signs explaining why fallen branches were sometimes left in the water. What appeared neglected was often deliberate: woody material created shelter, slowed the current and trapped sediment. The restored river remains carefully managed, but it now performs more like a living system than a piece of drainage infrastructure."
+    ],
+    "cloze": [
+      {
+        "answer": "straight concrete channel",
+        "aliases": []
+      },
+      {
+        "answer": "shallow pools",
+        "aliases": []
+      },
+      {
+        "answer": "downstream neighbourhoods",
+        "aliases": []
+      },
+      {
+        "answer": "curved route",
+        "aliases": []
+      },
+      {
+        "answer": "temporarily hold",
+        "aliases": []
+      },
+      {
+        "answer": "native reeds",
+        "aliases": []
+      },
+      {
+        "answer": "summer water temperatures",
+        "aliases": []
+      },
+      {
+        "answer": "popular riverside path",
+        "aliases": []
+      },
+      {
+        "answer": "fallen branches",
+        "aliases": []
+      },
+      {
+        "answer": "living system",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "The old channel caused water to reach downstream areas unusually ____.",
+        "answer": "quickly",
+        "aliases": []
+      },
+      {
+        "prompt": "Low areas were designed to hold floodwater ____.",
+        "answer": "temporarily",
+        "aliases": []
+      },
+      {
+        "prompt": "New vegetation reduced summer water ____.",
+        "answer": "temperatures",
+        "aliases": []
+      },
+      {
+        "prompt": "Residents disliked the muddy ____ of the site.",
+        "answer": "appearance",
+        "aliases": []
+      },
+      {
+        "prompt": "Woody material can trap ____.",
+        "answer": "sediment",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "A restoration project removed sections of concrete and allowed the river to follow a wider, curved route.",
+      "Flood monitoring also showed that high water moved downstream more slowly.",
+      "What appeared neglected was often deliberate."
+    ]
+  },
+  {
+    "id": "ls-12",
+    "title": "The Interview That Changed Direction",
+    "category": "Careers",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "Leo had prepared carefully for an interview at a publishing company. He could describe every item on his résumé and had rehearsed answers about leadership, deadlines and conflict. Ten minutes into the meeting, however, the interviewer asked which recent project he would redesign if given the opportunity.",
+      "Leo began with a safe answer about changing a colour scheme, then stopped. He realised that the honest answer concerned a campaign that had performed well but had excluded readers with visual impairments. The text was small, the contrast was poor and the digital version had not been tested with screen-reading software.",
+      "Instead of hiding the mistake, Leo explained how the team had discovered the problem and what he had learned from it. He described a new review checklist, consultation with accessibility specialists and user testing before publication. The interviewer asked several detailed follow-up questions and spent less time on the prepared topics.",
+      "Leo left convinced that he had damaged his chances by discussing a failure. Two days later, the company offered him the role. His future manager said that the strongest part of the interview was not the original mistake but his willingness to analyse it, accept responsibility and change the process."
+    ],
+    "cloze": [
+      {
+        "answer": "publishing company",
+        "aliases": []
+      },
+      {
+        "answer": "rehearsed answers",
+        "aliases": []
+      },
+      {
+        "answer": "redesign",
+        "aliases": []
+      },
+      {
+        "answer": "visual impairments",
+        "aliases": []
+      },
+      {
+        "answer": "screen-reading software",
+        "aliases": []
+      },
+      {
+        "answer": "review checklist",
+        "aliases": []
+      },
+      {
+        "answer": "accessibility specialists",
+        "aliases": []
+      },
+      {
+        "answer": "follow-up questions",
+        "aliases": []
+      },
+      {
+        "answer": "damaged his chances",
+        "aliases": []
+      },
+      {
+        "answer": "accept responsibility",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Leo had rehearsed answers about leadership and ____.",
+        "answer": "deadlines",
+        "aliases": []
+      },
+      {
+        "prompt": "The campaign excluded readers with visual ____.",
+        "answer": "impairments",
+        "aliases": []
+      },
+      {
+        "prompt": "The digital version had not been tested with screen-reading ____.",
+        "answer": "software",
+        "aliases": []
+      },
+      {
+        "prompt": "The team introduced a review ____.",
+        "answer": "checklist",
+        "aliases": []
+      },
+      {
+        "prompt": "The manager valued Leo's willingness to accept ____.",
+        "answer": "responsibility",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "He realised that the honest answer concerned a campaign that had performed well but had excluded readers with visual impairments.",
+      "Instead of hiding the mistake, Leo explained how the team had discovered the problem.",
+      "Two days later, the company offered him the role."
+    ]
+  },
+  {
+    "id": "ls-13",
+    "title": "A Signal Beneath the Ice",
+    "category": "Science fieldwork",
+    "level": "C1",
+    "duration": "5 min",
+    "paragraphs": [
+      "A research team studying an Antarctic glacier placed a network of sensors across the ice to measure tiny vibrations. Most signals came from predictable sources: cracking ice, strong winds and vehicles near the field camp. One repeating pattern, however, appeared only during the early hours of the morning.",
+      "At first, the team suspected an equipment fault. They replaced batteries, moved one sensor and compared recordings from different locations. The signal remained. Its timing shifted slightly each day, suggesting that it was linked to a natural cycle rather than to human activity.",
+      "The explanation emerged when researchers compared the vibration data with measurements from a nearby meltwater channel. At night, falling temperatures caused the channel to narrow as water froze along its edges. Pressure built behind the frozen sections until water forced a passage through, producing a low vibration that travelled across the glacier.",
+      "The discovery did not reveal a new species or a dramatic geological event, but it improved understanding of how water moves beneath and across ice. Such movement can influence the speed of a glacier and the stability of its surface. The episode also reminded the team that an unexpected signal should be investigated methodically before it is dismissed as noise."
+    ],
+    "cloze": [
+      {
+        "answer": "tiny vibrations",
+        "aliases": []
+      },
+      {
+        "answer": "predictable sources",
+        "aliases": []
+      },
+      {
+        "answer": "repeating pattern",
+        "aliases": []
+      },
+      {
+        "answer": "equipment fault",
+        "aliases": []
+      },
+      {
+        "answer": "natural cycle",
+        "aliases": []
+      },
+      {
+        "answer": "meltwater channel",
+        "aliases": []
+      },
+      {
+        "answer": "falling temperatures",
+        "aliases": []
+      },
+      {
+        "answer": "pressure built",
+        "aliases": []
+      },
+      {
+        "answer": "stability of its surface",
+        "aliases": []
+      },
+      {
+        "answer": "investigated methodically",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Sensors were used to measure tiny ____.",
+        "answer": "vibrations",
+        "aliases": []
+      },
+      {
+        "prompt": "The unusual signal appeared in the early ____.",
+        "answer": "morning",
+        "aliases": []
+      },
+      {
+        "prompt": "Its changing timing suggested a natural ____.",
+        "answer": "cycle",
+        "aliases": []
+      },
+      {
+        "prompt": "Freezing water caused pressure to ____.",
+        "answer": "build",
+        "aliases": []
+      },
+      {
+        "prompt": "Unexpected signals should be investigated ____.",
+        "answer": "methodically",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "At first, the team suspected an equipment fault.",
+      "Pressure built behind the frozen sections until water forced a passage through.",
+      "An unexpected signal should be investigated methodically before it is dismissed as noise."
+    ]
+  },
+  {
+    "id": "ls-14",
+    "title": "The Midnight Bakery Shift",
+    "category": "Workplace narrative",
+    "level": "B2+",
+    "duration": "4 min",
+    "paragraphs": [
+      "For her first week at the Riverside Bakery, Noor worked the midnight shift. She arrived while the town centre was quiet and the shop windows were dark. Inside, however, the kitchen was already warm, mixers were running and trays of dough were rising beside the ovens.",
+      "Noor expected the work to be lonely, but the shift depended on close coordination. One baker shaped loaves, another prepared pastries, and a third monitored baking times. Because the room was noisy, instructions had to be brief and repeated back. A misunderstood number could mean thirty burnt rolls or a missing delivery.",
+      "The hardest moment came at four in the morning, when concentration dropped just as production became busiest. The team took ten-minute breaks in rotation, drank water rather than endless coffee, and used a written board to track which batches had entered each oven. These routines reduced mistakes more effectively than simply trying to work faster.",
+      "By sunrise, the front shelves were full and the first customers were waiting outside. Noor was exhausted, yet she enjoyed seeing the result of work that most people never noticed. She also understood why experienced bakers treated sleep schedules and clear communication as essential professional skills rather than personal preferences."
+    ],
+    "cloze": [
+      {
+        "answer": "midnight shift",
+        "aliases": []
+      },
+      {
+        "answer": "trays of dough",
+        "aliases": []
+      },
+      {
+        "answer": "close coordination",
+        "aliases": []
+      },
+      {
+        "answer": "baking times",
+        "aliases": []
+      },
+      {
+        "answer": "brief and repeated back",
+        "aliases": []
+      },
+      {
+        "answer": "concentration dropped",
+        "aliases": []
+      },
+      {
+        "answer": "ten-minute breaks",
+        "aliases": []
+      },
+      {
+        "answer": "written board",
+        "aliases": []
+      },
+      {
+        "answer": "front shelves",
+        "aliases": []
+      },
+      {
+        "answer": "sleep schedules",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Trays of dough were rising beside the ____.",
+        "answer": "ovens",
+        "aliases": []
+      },
+      {
+        "prompt": "The noisy room required instructions to be ____.",
+        "answer": "brief",
+        "aliases": []
+      },
+      {
+        "prompt": "Concentration dropped at around ____ in the morning.",
+        "answer": "four",
+        "aliases": []
+      },
+      {
+        "prompt": "The team tracked batches on a written ____.",
+        "answer": "board",
+        "aliases": []
+      },
+      {
+        "prompt": "Experienced bakers treated sleep schedules as professional ____.",
+        "answer": "skills",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "Because the room was noisy, instructions had to be brief and repeated back.",
+      "These routines reduced mistakes more effectively than simply trying to work faster.",
+      "By sunrise, the front shelves were full and the first customers were waiting outside."
+    ]
+  },
+  {
+    "id": "ls-15",
+    "title": "The Cashless Village Reconsiders",
+    "category": "Technology and society",
+    "level": "C1",
+    "duration": "5 min",
+    "paragraphs": [
+      "The coastal village of Norham became almost entirely cashless after its only bank branch closed. Shops installed card readers, the weekly market adopted mobile payments and even the local charity accepted donations through a digital link. For many residents, transactions became faster and carrying change was no longer necessary.",
+      "The arrangement worked well until a winter storm damaged communication cables. Mobile data failed for most of a day, leaving several businesses unable to process payments. A pharmacy continued serving customers by writing down card details securely, but smaller traders lacked a backup procedure and had to close.",
+      "The disruption exposed other concerns that had received less attention. Some older residents depended on neighbours to make online purchases, while teenagers without bank accounts found it difficult to pay for local buses. Traders also realised that small transaction fees, though individually minor, accumulated into a noticeable monthly cost.",
+      "Norham has not rejected digital payment. Instead, the village council now encourages shops to keep a small cash reserve, display alternative payment instructions and practise an offline procedure. The goal is not to return to the past but to avoid replacing one flexible system with another that fails completely when its infrastructure is interrupted."
+    ],
+    "cloze": [
+      {
+        "answer": "bank branch",
+        "aliases": []
+      },
+      {
+        "answer": "mobile payments",
+        "aliases": []
+      },
+      {
+        "answer": "communication cables",
+        "aliases": []
+      },
+      {
+        "answer": "process payments",
+        "aliases": []
+      },
+      {
+        "answer": "backup procedure",
+        "aliases": []
+      },
+      {
+        "answer": "older residents",
+        "aliases": []
+      },
+      {
+        "answer": "bank accounts",
+        "aliases": []
+      },
+      {
+        "answer": "transaction fees",
+        "aliases": []
+      },
+      {
+        "answer": "cash reserve",
+        "aliases": []
+      },
+      {
+        "answer": "infrastructure is interrupted",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "The village became cashless after its bank ____ closed.",
+        "answer": "branch",
+        "aliases": []
+      },
+      {
+        "prompt": "The storm damaged communication ____.",
+        "answer": "cables",
+        "aliases": []
+      },
+      {
+        "prompt": "Smaller traders had no backup ____.",
+        "answer": "procedure",
+        "aliases": []
+      },
+      {
+        "prompt": "Teenagers without bank accounts struggled to pay for ____.",
+        "answer": "buses",
+        "aliases": []
+      },
+      {
+        "prompt": "Shops are now encouraged to keep a cash ____.",
+        "answer": "reserve",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "Mobile data failed for most of a day, leaving several businesses unable to process payments.",
+      "Traders also realised that small transaction fees, though individually minor, accumulated into a noticeable monthly cost.",
+      "The goal is not to return to the past but to avoid replacing one flexible system with another."
+    ]
+  },
+  {
+    "id": "ls-16",
+    "title": "The Town That Dimmed Its Lights",
+    "category": "Environment and astronomy",
+    "level": "C1",
+    "duration": "5 min",
+    "paragraphs": [
+      "The town of Bellmere introduced darker nights for an unusual reason. An observatory on the nearby hill had recorded a steady increase in artificial light, which reduced the visibility of faint stars. At the same time, biologists reported that bright riverside lamps were changing the behaviour of insects and migrating birds.",
+      "The council did not simply switch off every streetlight. Engineers replaced upward-facing lamps with shielded fixtures that directed light toward pavements. Residential streets were dimmed after midnight, while busy crossings and emergency routes remained fully illuminated. Shop owners were asked to turn off display lighting after closing.",
+      "Public reaction was mixed. Some residents welcomed the return of a visible night sky, but others feared that darker streets would increase crime and traffic accidents. During a six-month trial, the police and transport department compared incident reports with previous years. Neither crime nor collisions rose, although several poorly lit corners required adjustment.",
+      "Energy use fell, nocturnal insect activity began to recover near the river and the observatory could detect objects that had previously disappeared into the urban glow. The programme succeeded because it treated darkness as a resource to be managed, not as the total absence of light. Bellmere kept illumination where it served a clear purpose and removed it where it created unnecessary harm."
+    ],
+    "cloze": [
+      {
+        "answer": "artificial light",
+        "aliases": []
+      },
+      {
+        "answer": "faint stars",
+        "aliases": []
+      },
+      {
+        "answer": "migrating birds",
+        "aliases": []
+      },
+      {
+        "answer": "shielded fixtures",
+        "aliases": []
+      },
+      {
+        "answer": "after midnight",
+        "aliases": []
+      },
+      {
+        "answer": "display lighting",
+        "aliases": []
+      },
+      {
+        "answer": "traffic accidents",
+        "aliases": []
+      },
+      {
+        "answer": "six-month trial",
+        "aliases": []
+      },
+      {
+        "answer": "nocturnal insect activity",
+        "aliases": []
+      },
+      {
+        "answer": "clear purpose",
+        "aliases": []
+      }
+    ],
+    "sentences": [
+      {
+        "prompt": "Artificial light made faint ____ harder to see.",
+        "answer": "stars",
+        "aliases": []
+      },
+      {
+        "prompt": "New fixtures directed light toward the ____.",
+        "answer": "pavements",
+        "aliases": []
+      },
+      {
+        "prompt": "Residential streets were dimmed after ____.",
+        "answer": "midnight",
+        "aliases": []
+      },
+      {
+        "prompt": "Neither crime nor traffic ____ increased.",
+        "answer": "collisions",
+        "aliases": []
+      },
+      {
+        "prompt": "The programme treated darkness as a ____.",
+        "answer": "resource",
+        "aliases": []
+      }
+    ],
+    "dictation": [
+      "The council did not simply switch off every streetlight.",
+      "Neither crime nor collisions rose, although several poorly lit corners required adjustment.",
+      "Bellmere kept illumination where it served a clear purpose and removed it where it created unnecessary harm."
+    ]
+  }
+];
+
+  let listeningInit = false;
+  let curLessonIndex = 0;
+  let curLesson = null;
+  let ttsUtter = null;
+  let listenVoices = [];
+  let activeListeningTab = "read";
+  let readWordEls = [];
+  let listeningPaused = false;
+  let activeListeningClozeIndex = null;
+
+  const listeningTranscript = (lesson) => lesson.paragraphs.join("\n\n");
+  const normalizeListeningAnswer = (value) => String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[’‘`´]/g, "'")
+    .replace(/[‐‑‒–—−-]/g, " ")
+    .replace(/&/g, " and ")
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9£\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const LISTENING_SPELLING_EQUIVALENTS = [
+    ["centre", "center"], ["centres", "centers"],
+    ["programme", "program"], ["programmes", "programs"],
+    ["organisation", "organization"], ["organisations", "organizations"],
+    ["organise", "organize"], ["organised", "organized"],
+    ["recognise", "recognize"], ["recognised", "recognized"],
+    ["realise", "realize"], ["realised", "realized"],
+    ["neighbourhood", "neighborhood"], ["neighbourhoods", "neighborhoods"],
+    ["travelling", "traveling"], ["travelled", "traveled"],
+    ["colour", "color"], ["colours", "colors"],
+    ["favour", "favor"], ["favours", "favors"],
+    ["licence", "license"], ["defence", "defense"]
+  ];
+
+  function listeningAnswerVariants(value) {
+    const base = normalizeListeningAnswer(value);
+    const variants = new Set(base ? [base] : []);
+    LISTENING_SPELLING_EQUIVALENTS.forEach(([british, american]) => {
+      [...variants].forEach((variant) => {
+        variants.add(variant.replace(new RegExp(`\\b${british}\\b`, "g"), american));
+        variants.add(variant.replace(new RegExp(`\\b${american}\\b`, "g"), british));
+      });
+    });
+    return variants;
+  }
+
+  function answerMatches(value, item) {
+    const receivedVariants = listeningAnswerVariants(value);
+    if (!receivedVariants.size) return false;
+    const acceptedVariants = new Set();
+    [item.answer, ...(item.aliases || [])].forEach((answer) => {
+      listeningAnswerVariants(answer).forEach((variant) => acceptedVariants.add(variant));
+    });
+    return [...receivedVariants].some((variant) => acceptedVariants.has(variant));
+  }
+
+  const LISTENING_VOICE_PROFILES = {
+    female: [
+      "sonia", "libby", "jenny", "aria", "michelle", "natasha", "clara", "zira",
+      "hazel", "susan", "emma", "ava", "olivia", "molly", "rosa", "luna", "imani", "asillia", "neerja", "ezinne"
+    ],
+    male: [
+      "ryan", "steffan", "guy", "christopher", "george", "david", "mark", "james",
+      "william", "liam", "mitchell", "wayne", "abeo", "prabhat", "chilimba", "elimu", "ravi"
+    ]
+  };
+
+  function listeningVoiceGender(voice) {
+    const name = String(voice?.name || "").toLowerCase();
+    if (LISTENING_VOICE_PROFILES.female.some((token) => name.includes(token))) return "female";
+    if (LISTENING_VOICE_PROFILES.male.some((token) => name.includes(token))) return "male";
+    return "unknown";
+  }
+
+  function listeningVoiceScore(voice, gender) {
+    const name = String(voice.name || "").toLowerCase();
+    const locale = String(voice.lang || "").toLowerCase();
+    const profile = LISTENING_VOICE_PROFILES[gender] || [];
+    const preferredIndex = profile.findIndex((token) => name.includes(token));
+    let score = voice.localService ? 1000 : 0;
+    if (preferredIndex >= 0) score += 500 - preferredIndex;
+    if (/en-(gb|us|au|ca)/i.test(locale)) score += 100;
+    if (/natural|neural/i.test(name)) score += 40;
+    return score;
+  }
+
+  function selectReliableListeningVoices(voices) {
+    const english = voices.filter((voice) => /^en(?:-|_)/i.test(voice.lang || ""));
+    const unique = [...new Map(english.map((voice) => [voice.voiceURI || `${voice.name}|${voice.lang}`, voice])).values()];
+    const byGender = (gender) => unique
+      .filter((voice) => listeningVoiceGender(voice) === gender)
+      .sort((a, b) => listeningVoiceScore(b, gender) - listeningVoiceScore(a, gender));
+
+    const femaleRanked = byGender("female").slice(0, 4);
+    const maleRanked = byGender("male").slice(0, 4);
+    const selectedKeys = new Set([...femaleRanked, ...maleRanked].map((voice) => voice.voiceURI || `${voice.name}|${voice.lang}`));
+    const unknown = unique
+      .filter((voice) => !selectedKeys.has(voice.voiceURI || `${voice.name}|${voice.lang}`))
+      .sort((a, b) => Number(b.localService) - Number(a.localService));
+
+    while (femaleRanked.length < 4 && unknown.length) femaleRanked.push(unknown.shift());
+    while (maleRanked.length < 4 && unknown.length) maleRanked.push(unknown.shift());
+
+    const profiles = [
+      { voice: femaleRanked[0], gender: "female", label: "Mujer A" },
+      { voice: femaleRanked[2], gender: "female", label: "Mujer B" },
+      { voice: maleRanked[0], gender: "male", label: "Hombre A" },
+      { voice: maleRanked[3], gender: "male", label: "Hombre B" }
+    ];
+
+    return profiles.filter((profile) => Boolean(profile.voice));
+  }
+
+  function initListening() {
+    if (listeningInit) return;
+    listeningInit = true;
+
+    const savedWpm = Number(store.get("listening_wpm", 145));
+    $("lWpm").value = Number.isFinite(savedWpm) ? savedWpm : 145;
+    $("lWpmVal").textContent = $("lWpm").value + " WPM";
+
+    loadListeningVoices();
+    if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = loadListeningVoices;
+
+    document.querySelectorAll("[data-ltab]").forEach((button) => {
+      button.addEventListener("click", () => setListeningTab(button.dataset.ltab));
+    });
+    $("lPlay").addEventListener("click", playListening);
+    $("lPause").addEventListener("click", pauseResumeListening);
+    $("lStop").addEventListener("click", stopListening);
+    $("lPracticeSelect").addEventListener("change", () => {
+      const nextIndex = Number($("lPracticeSelect").value);
+      if (!Number.isInteger(nextIndex) || !LISTENING_LESSONS[nextIndex]) return;
+      stopListening();
+      curLessonIndex = nextIndex;
+      store.set("listening_lesson_index", curLessonIndex);
+      renderListeningLesson(LISTENING_LESSONS[curLessonIndex]);
+      setListeningTab("read");
+    });
+    $("lSettingsToggle").addEventListener("click", toggleListeningSettings);
+    $("lSettingsClose").addEventListener("click", closeListeningSettings);
+    $("lWpm").addEventListener("input", () => {
+      $("lWpmVal").textContent = $("lWpm").value + " WPM";
+      store.set("listening_wpm", Number($("lWpm").value));
+    });
+    $("lVoice").addEventListener("change", () => store.set("listening_voice", $("lVoice").value));
+    $("lClozeCheck").addEventListener("click", checkListeningCloze);
+    $("lClozeHint").addEventListener("click", giveListeningHint);
+    $("lClozeReset").addEventListener("click", renderListeningCloze);
+    $("lClozeText").addEventListener("focusin", (event) => {
+      const input = event.target.closest("[data-cloze-index]");
+      if (input) selectListeningClozeInput(input);
+    });
+    $("lClozeText").addEventListener("input", (event) => {
+      const input = event.target.closest("[data-cloze-index]");
+      if (!input) return;
+      selectListeningClozeInput(input);
+      input.classList.remove("is-correct", "is-wrong");
+      $("lClozeScore").textContent = "";
+    });
+    $("lSentenceCheck").addEventListener("click", checkListeningSentences);
+    $("lSentenceReveal").addEventListener("click", () => {
+      sentencesRevealed = !sentencesRevealed;
+      paintSentenceAnswers();
+    });
+    $("lSentenceReset").addEventListener("click", renderListeningSentences);
+    $("lDictationCheck").addEventListener("click", checkListeningDictation);
+    $("lDictationReset").addEventListener("click", renderListeningDictation);
+    $("lDictationList").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-dictation-play]");
+      if (!button || !curLesson) return;
+      const sentence = curLesson.dictation[Number(button.dataset.dictationPlay)];
+      speakListeningSnippet(sentence);
+    });
+
+    document.addEventListener("click", (event) => {
+      const panel = $("lSettingsPanel");
+      const toggle = $("lSettingsToggle");
+      if (!panel || panel.classList.contains("hidden")) return;
+      if (!panel.contains(event.target) && !toggle.contains(event.target)) closeListeningSettings();
+    });
+
+    $("lPracticeSelect").innerHTML = LISTENING_LESSONS.map((_, index) =>
+      `<option value="${index}">Práctica ${index + 1}</option>`
+    ).join("");
+    const savedLessonIndex = Number(store.get("listening_lesson_index", 0));
+    curLessonIndex = Number.isInteger(savedLessonIndex) && LISTENING_LESSONS[savedLessonIndex] ? savedLessonIndex : 0;
+    $("lPracticeSelect").value = String(curLessonIndex);
+    renderListeningLesson(LISTENING_LESSONS[curLessonIndex]);
+  }
+
+  function loadListeningVoices() {
+    if (!("speechSynthesis" in window)) return;
+    const profiles = selectReliableListeningVoices(speechSynthesis.getVoices());
+    listenVoices = profiles.map(({ voice }) => voice);
+    const selected = store.get("listening_voice", "");
+    if (!profiles.length) {
+      $("lVoice").innerHTML = '<option value="">No hay voces inglesas disponibles</option>';
+      $("lVoice").disabled = true;
+      return;
+    }
+    $("lVoice").disabled = false;
+    $("lVoice").innerHTML = profiles.map(({ voice, label }) => {
+      const key = voice.voiceURI || voice.name;
+      return `<option value="${esc(key)}">${esc(label)}</option>`;
+    }).join("");
+    const available = profiles.some(({ voice }) => (voice.voiceURI || voice.name) === selected);
+    $("lVoice").value = available ? selected : (profiles[0].voice.voiceURI || profiles[0].voice.name);
+    store.set("listening_voice", $("lVoice").value);
+  }
+
+  function selectedListeningVoice() {
+    const selected = $("lVoice").value;
+    return listenVoices.find((voice) => (voice.voiceURI || voice.name) === selected) || listenVoices[0] || null;
+  }
+
+  function toggleListeningSettings() {
+    const panel = $("lSettingsPanel");
+    const opening = panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !opening);
+    $("lSettingsToggle").setAttribute("aria-expanded", String(opening));
+    if (opening) $("lVoice").focus();
+  }
+
+  function closeListeningSettings() {
+    $("lSettingsPanel").classList.add("hidden");
+    $("lSettingsToggle").setAttribute("aria-expanded", "false");
+  }
+
+  function setListeningStatus(text) { $("lStatus").textContent = text; }
+
+  function setListeningProgress(percent) {
+    const safe = Math.max(0, Math.min(100, Number(percent) || 0));
+    $("lBar").style.width = safe + "%";
+    $("lProgressText").textContent = Math.round(safe) + "%";
+  }
+
+  function setListeningTab(tab) {
+    activeListeningTab = tab;
+    document.querySelectorAll("[data-ltab]").forEach((button) => {
+      const active = button.dataset.ltab === tab;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+    document.querySelectorAll("[data-lpanel]").forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lpanel !== tab));
+  }
+
+  function renderListeningLesson(lesson) {
+    curLesson = lesson;
+    $("lTitle").textContent = lesson.title;
+    const wordCount = words(listeningTranscript(lesson)).length;
+    $("lLessonMeta").textContent = `${lesson.duration} · ${wordCount} words · ${lesson.paragraphs.length} paragraphs`;
+    $("lPracticeSelect").value = String(curLessonIndex);
+    setListeningProgress(0);
+    setListeningStatus("Listo");
+    renderListeningReadAlong();
+    renderListeningCloze();
+    renderListeningSentences();
+    renderListeningDictation();
+  }
+
+  function renderListeningReadAlong() {
+    if (!curLesson) return;
+    let globalOffset = 0;
+    const paragraphs = curLesson.paragraphs.map((paragraph) => {
+      let html = "";
+      let cursor = 0;
+      const tokenPattern = /\S+/g;
+      let match;
+      while ((match = tokenPattern.exec(paragraph))) {
+        html += esc(paragraph.slice(cursor, match.index));
+        const start = globalOffset + match.index;
+        const end = start + match[0].length;
+        html += `<span class="l-read-word" data-start="${start}" data-end="${end}">${esc(match[0])}</span>`;
+        cursor = match.index + match[0].length;
+      }
+      html += esc(paragraph.slice(cursor));
+      globalOffset += paragraph.length + 2;
+      return `<p>${html}</p>`;
+    });
+    $("lReadText").innerHTML = paragraphs.join("");
+    readWordEls = [...$("lReadText").querySelectorAll(".l-read-word")];
+  }
+
+  function highlightListeningWord(charIndex) {
+    if (!readWordEls.length) return;
+    let selected = null;
+    for (const element of readWordEls) {
+      if (Number(element.dataset.start) <= charIndex) selected = element;
+      else break;
+    }
+    readWordEls.forEach((element) => element.classList.toggle("is-speaking", element === selected));
+    if (selected && activeListeningTab === "read") selected.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function clearListeningHighlight() { readWordEls.forEach((element) => element.classList.remove("is-speaking")); }
+
+
+  function buildListeningGapPassage(solved = false) {
+    const text = listeningTranscript(curLesson);
+    const lower = text.toLowerCase();
+    let cursor = 0;
+    let output = "";
+    curLesson.cloze.forEach((item, index) => {
+      const position = lower.indexOf(item.answer.toLowerCase(), cursor);
+      if (position < 0) return;
+      output += esc(text.slice(cursor, position));
+      if (solved) {
+        output += `<strong class="listen-gap-answer">${esc(item.answer)}</strong>`;
+      } else {
+        const width = Math.max(88, Math.min(190, item.answer.length * 9 + 32));
+        output += `<input class="listen-gap" data-cloze-index="${index}" style="--gap-width:${width}px" autocomplete="off" aria-label="Espacio ${index + 1}" />`;
+      }
+      cursor = position + item.answer.length;
+    });
+    output += esc(text.slice(cursor));
+    return output.split("\n\n").map((paragraph) => `<p>${paragraph}</p>`).join("");
+  }
+
+  function selectListeningClozeInput(input) {
+    if (!input) return;
+    const inputs = [...$("lClozeText").querySelectorAll("[data-cloze-index]")];
+    inputs.forEach((candidate) => candidate.classList.toggle("is-selected", candidate === input));
+    activeListeningClozeIndex = Number(input.dataset.clozeIndex);
+  }
+
+  function renderListeningCloze() {
+    if (!curLesson) return;
+    activeListeningClozeIndex = null;
+    $("lClozeText").innerHTML = buildListeningGapPassage(false);
+    $("lClozeScore").textContent = "Seleccioná un espacio para pedir una pista letra por letra.";
+  }
+
+  function checkListeningCloze() {
+    const inputs = [...$("lClozeText").querySelectorAll("[data-cloze-index]")];
+    if (!inputs.length) return;
+    let correct = 0;
+    let hints = 0;
+    inputs.forEach((input) => {
+      const item = curLesson.cloze[Number(input.dataset.clozeIndex)];
+      const ok = answerMatches(input.value, item);
+      input.classList.toggle("is-correct", ok);
+      input.classList.toggle("is-wrong", !ok);
+      if (input.dataset.hinted === "true") hints++;
+      if (ok) correct++;
+    });
+    $("lClozeScore").textContent = `${correct} / ${inputs.length} correctas${hints ? ` · ${hints} pistas` : ""}`;
+    if (correct === inputs.length) {
+      $("lClozeText").innerHTML = buildListeningGapPassage(true);
+      $("lClozeScore").textContent = `¡Excelente! ${correct} / ${inputs.length}`;
+    }
+    logActivity();
+  }
+
+  function listeningHintLetterCount(value) {
+    return (String(value || "").match(/[a-z0-9]/gi) || []).length;
+  }
+
+  function listeningMatchingPrefixLetters(value, answer) {
+    const typed = String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const expected = String(answer || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    let count = 0;
+    while (count < typed.length && count < expected.length && typed[count] === expected[count]) count++;
+    return count;
+  }
+
+  function listeningAnswerPrefix(answer, letterCount) {
+    let seen = 0;
+    let end = 0;
+    for (let index = 0; index < answer.length; index++) {
+      if (/[a-z0-9]/i.test(answer[index])) seen++;
+      end = index + 1;
+      if (seen >= letterCount) break;
+    }
+    return answer.slice(0, end).trimEnd();
+  }
+
+  function giveListeningHint() {
+    const inputs = [...$("lClozeText").querySelectorAll("[data-cloze-index]")];
+    const target = inputs.find((input) => Number(input.dataset.clozeIndex) === activeListeningClozeIndex)
+      || inputs.find((input) => input === document.activeElement);
+
+    if (!target) {
+      $("lClozeScore").textContent = "Primero seleccioná el espacio en blanco donde querés recibir la pista.";
+      return;
+    }
+
+    const item = curLesson.cloze[Number(target.dataset.clozeIndex)];
+    if (answerMatches(target.value, item)) {
+      target.classList.add("is-correct");
+      target.classList.remove("is-wrong");
+      $("lClozeScore").textContent = "Ese espacio ya está completo y es correcto.";
+      return;
+    }
+
+    const totalLetters = listeningHintLetterCount(item.answer);
+    const previousHints = Number(target.dataset.hintCount || 0);
+    const matchingPrefix = listeningMatchingPrefixLetters(target.value, item.answer);
+    const nextLetterCount = Math.min(totalLetters, Math.max(previousHints, matchingPrefix) + 1);
+
+    target.value = listeningAnswerPrefix(item.answer, nextLetterCount);
+    target.dataset.hintCount = String(nextLetterCount);
+    target.dataset.hinted = "true";
+    target.classList.add("is-hinted", "is-selected");
+    target.classList.remove("is-correct", "is-wrong");
+    target.focus();
+    target.setSelectionRange(target.value.length, target.value.length);
+
+    if (nextLetterCount >= totalLetters) {
+      $("lClozeScore").textContent = "Pista completa: ya se revelaron todas las letras de este espacio.";
+    } else {
+      $("lClozeScore").textContent = `Pista: se reveló una letra en el espacio seleccionado (${nextLetterCount}/${totalLetters}).`;
+    }
+  }
+
+  let sentencesRevealed = false;
+
+  function updateSentenceRevealButton() {
+    const btn = $("lSentenceReveal");
+    if (!btn) return;
+    btn.textContent = sentencesRevealed ? "Ocultar respuestas" : "Mostrar respuestas";
+    btn.setAttribute("aria-pressed", sentencesRevealed ? "true" : "false");
+    btn.classList.toggle("is-on", sentencesRevealed);
+  }
+
+  // Pinta (o limpia) la respuesta correcta de cada oración según el estado del botón.
+  function paintSentenceAnswers() {
+    const rows = [...$("lSentenceQuestions").querySelectorAll("[data-sentence-index]")];
+    rows.forEach((row) => {
+      const question = curLesson.sentences[Number(row.dataset.sentenceIndex)];
+      const slot = row.querySelector(".listen-answer-reveal");
+      if (!slot) return;
+      if (sentencesRevealed && question) {
+        const extra = (question.aliases || []).length
+          ? ` <span class="lar-alt">(también: ${esc(question.aliases.join(" / "))})</span>`
+          : "";
+        slot.innerHTML = `<span class="lar-label">Respuesta:</span> <strong>${esc(question.answer)}</strong>${extra}`;
+        slot.classList.remove("hidden");
+      } else {
+        slot.innerHTML = "";
+        slot.classList.add("hidden");
+      }
+    });
+    updateSentenceRevealButton();
+  }
+
+  function renderListeningSentences() {
+    sentencesRevealed = false;
+    $("lSentenceQuestions").innerHTML = curLesson.sentences.map((question, index) => `
+      <div class="listen-sentence-item" data-sentence-index="${index}">
+        <p><strong>${index + 1}.</strong> ${esc(question.prompt)}</p>
+        <input type="text" autocomplete="off" aria-label="Respuesta ${index + 1}" placeholder="1–2 words" />
+        <div class="listen-answer-reveal hidden" aria-live="polite"></div>
+      </div>`).join("");
+    $("lSentenceScore").textContent = "";
+    paintSentenceAnswers();
+  }
+
+  function checkListeningSentences() {
+    const items = [...$("lSentenceQuestions").querySelectorAll("[data-sentence-index]")];
+    let correct = 0;
+    items.forEach((row) => {
+      const question = curLesson.sentences[Number(row.dataset.sentenceIndex)];
+      const ok = answerMatches(row.querySelector("input").value, question);
+      row.classList.toggle("is-correct", ok);
+      row.classList.toggle("is-wrong", !ok);
+      if (ok) correct++;
+    });
+    $("lSentenceScore").textContent = `${correct} / ${items.length} correctas`;
+    logActivity();
+  }
+
+  function renderListeningDictation() {
+    $("lDictationList").innerHTML = curLesson.dictation.map((sentence, index) => `
+      <article class="listen-dictation-item" data-dictation-index="${index}">
+        <div class="listen-dictation-top"><strong>Fragmento ${index + 1}</strong><button class="listen-dictation-play" type="button" data-dictation-play="${index}">▶ Escuchar</button></div>
+        <textarea aria-label="Dictado ${index + 1}" placeholder="Write exactly what you hear…"></textarea>
+        <p class="listen-dictation-feedback"></p>
+      </article>`).join("");
+    $("lDictationScore").textContent = "";
+  }
+
+  function tokenEditDistance(a, b) {
+    const rows = a.length + 1;
+    const cols = b.length + 1;
+    const matrix = Array.from({ length: rows }, () => Array(cols).fill(0));
+    for (let i = 0; i < rows; i++) matrix[i][0] = i;
+    for (let j = 0; j < cols; j++) matrix[0][j] = j;
+    for (let i = 1; i < rows; i++) {
+      for (let j = 1; j < cols; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+      }
+    }
+    return matrix[a.length][b.length];
+  }
+
+  function dictationSimilarity(received, expected) {
+    const a = normalizeListeningAnswer(received).split(" ").filter(Boolean);
+    const b = normalizeListeningAnswer(expected).split(" ").filter(Boolean);
+    if (!a.length || !b.length) return 0;
+    return Math.max(0, 1 - tokenEditDistance(a, b) / Math.max(a.length, b.length));
+  }
+
+  function checkListeningDictation() {
+    const items = [...$("lDictationList").querySelectorAll("[data-dictation-index]")];
+    let totalSimilarity = 0;
+    items.forEach((row) => {
+      const index = Number(row.dataset.dictationIndex);
+      const expected = curLesson.dictation[index];
+      const received = row.querySelector("textarea").value;
+      const similarity = dictationSimilarity(received, expected);
+      const ok = similarity >= 0.84;
+      totalSimilarity += similarity;
+      row.classList.add("is-checked");
+      row.classList.toggle("is-correct", ok);
+      row.classList.toggle("is-wrong", !ok);
+      row.querySelector(".listen-dictation-feedback").innerHTML = `${Math.round(similarity * 100)}% de coincidencia.<span class="listen-dictation-model"><strong>Modelo:</strong> ${esc(expected)}</span>`;
+    });
+    $("lDictationScore").textContent = `${Math.round((totalSimilarity / items.length) * 100)}% promedio`;
+    logActivity();
+  }
+
+  function makeListeningUtterance(text, { track = false } = {}) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = selectedListeningVoice();
+    if (voice) utterance.voice = voice;
+    utterance.lang = voice?.lang || "en-GB";
+    utterance.rate = Math.max(0.65, Math.min(1.45, Number($("lWpm").value) / 145));
+    if (track) {
+      const total = Math.max(1, text.length);
+      utterance.onboundary = (event) => {
+        const percent = (event.charIndex / total) * 100;
+        setListeningProgress(percent);
+        highlightListeningWord(event.charIndex);
+      };
+      utterance.onstart = () => { setListeningStatus("Reproduciendo…"); listeningPaused = false; $("lPause").textContent = "⏸ Pausar"; };
+      utterance.onend = () => { setListeningProgress(100); setListeningStatus("Audio terminado"); clearListeningHighlight(); listeningPaused = false; };
+      utterance.onerror = () => { setListeningStatus("No se pudo reproducir"); clearListeningHighlight(); };
+    }
+    return utterance;
+  }
+
+  function playListening() {
+    if (!("speechSynthesis" in window)) { setListeningStatus("Voz no disponible"); return; }
+    if (speechSynthesis.paused && ttsUtter) {
+      speechSynthesis.resume();
+      listeningPaused = false;
+      $("lPause").textContent = "⏸ Pausar";
+      setListeningStatus("Reproduciendo…");
+      return;
+    }
+    speechSynthesis.cancel();
+    setListeningProgress(0);
+    clearListeningHighlight();
+    ttsUtter = makeListeningUtterance(listeningTranscript(curLesson), { track: true });
+    speechSynthesis.speak(ttsUtter);
+  }
+
+  function pauseResumeListening() {
+    if (!("speechSynthesis" in window) || !speechSynthesis.speaking) return;
+    if (speechSynthesis.paused) {
+      speechSynthesis.resume();
+      listeningPaused = false;
+      $("lPause").textContent = "⏸ Pausar";
+      setListeningStatus("Reproduciendo…");
+    } else {
+      speechSynthesis.pause();
+      listeningPaused = true;
+      $("lPause").textContent = "▶ Continuar";
+      setListeningStatus("En pausa");
+    }
+  }
+
+  function stopListening() {
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    ttsUtter = null;
+    listeningPaused = false;
+    $("lPause").textContent = "⏸ Pausar";
+    setListeningProgress(0);
+    setListeningStatus("Listo");
+    clearListeningHighlight();
+  }
+
+  function speakListeningSnippet(text) {
+    if (!("speechSynthesis" in window)) { setListeningStatus("Voz no disponible"); return; }
+    speechSynthesis.cancel();
+    const utterance = makeListeningUtterance(text);
+    utterance.onstart = () => setListeningStatus("Reproduciendo fragmento…");
+    utterance.onend = () => setListeningStatus("Fragmento terminado");
+    speechSynthesis.speak(utterance);
+  }
+
+  /* ============================================================
+     TENSES (AMPLIADO CON 4 TIEMPOS NUEVOS)
+     ============================================================ */
+  const tenses = [
+    { name: "Present Simple", level: "Base", summary: "Hábitos, rutinas, verdades generales y horarios.", aff: "Subject + base verb / verb-s", neg: "Subject + do/does not + base verb", q: "Do/Does + subject + base verb?", uses: ["Acciones habituales", "Opiniones", "Situaciones permanentes", "Verdades generales", "Horarios"], ex: [["I usually get up at 7.", "Normalmente me levanto a las 7."], ["She lives in New York.", "Ella vive en Nueva York."], ["The Earth goes around the Sun.", "La Tierra gira alrededor del Sol."]] },
+    { name: "Present Continuous", level: "Base", summary: "Acciones que ocurren ahora, situaciones temporales y planes cercanos.", aff: "Subject + am/is/are + verb-ing", neg: "Subject + am/is/are + not + verb-ing", q: "Am/Is/Are + subject + verb-ing?", uses: ["Acción actual", "Situación temporal", "Plan futuro cercano", "Proceso en desarrollo"], ex: [["What are you doing?", "¿Qué estás haciendo?"], ["She is studying hard.", "Ella está estudiando mucho."], ["I am working late this week.", "Estoy trabajando hasta tarde esta semana."]] },
+    { name: "Present Perfect", level: "Intermedio", summary: "Pasado con conexión al presente: experiencia, resultado o duración.", aff: "Subject + have/has + past participle", neg: "Subject + have/has not + past participle", q: "Have/Has + subject + past participle?", uses: ["Experiencia", "Resultado actual", "for / since", "Pasado conectado al presente"], ex: [["I have been here for two hours.", "Estoy acá desde hace dos horas."], ["She hasn’t arrived yet.", "Todavía no llegó."], ["Have you ever tried sushi?", "¿Alguna vez probaste sushi?"]] },
+    { name: "Present Perfect Continuous", level: "Intermedio", summary: "Duración de una acción que empezó en el pasado y sigue o tiene efecto ahora.", aff: "Subject + have/has been + verb-ing", neg: "Subject + have/has not been + verb-ing", q: "Have/Has + subject + been + verb-ing?", uses: ["Duración hasta el presente", "Acción reciente con evidencia", "Proceso continuo"], ex: [["I have been waiting for an hour.", "Hace una hora que estoy esperando."], ["It has been raining all day.", "Estuvo lloviendo todo el día."]] },
+    { name: "Past Simple", level: "Base", summary: "Acciones terminadas en un momento definido del pasado.", aff: "Subject + verb-ed / irregular", neg: "Subject + did not + base verb", q: "Did + subject + base verb?", uses: ["Acción terminada", "Secuencia de eventos", "Momento pasado definido"], ex: [["I visited Rome last year.", "Visité Roma el año pasado."], ["They didn’t come to the party.", "No vinieron a la fiesta."]] },
+    { name: "Past Continuous", level: "Intermedio", summary: "Acción en progreso en un momento del pasado, a menudo interrumpida.", aff: "Subject + was/were + verb-ing", neg: "Subject + was/were not + verb-ing", q: "Was/Were + subject + verb-ing?", uses: ["Acción en progreso en el pasado", "Interrupción", "Dos acciones simultáneas"], ex: [["I was reading when she called.", "Estaba leyendo cuando ella llamó."], ["They were playing all afternoon.", "Estuvieron jugando toda la tarde."]] },
+    { name: "Past Perfect", level: "Avanzado", summary: "Acción pasada anterior a otra acción pasada.", aff: "Subject + had + past participle", neg: "Subject + had not + past participle", q: "Had + subject + past participle?", uses: ["Acción anterior a otra pasada", "Relato con orden claro"], ex: [["She had left before I arrived.", "Ella se había ido antes de que llegara."], ["We had never seen it before.", "Nunca lo habíamos visto antes."]] },
+    { name: "Past Perfect Continuous", level: "Avanzado", summary: "Duración de una acción en progreso que ocurría antes de otro evento en el pasado.", aff: "Subject + had been + verb-ing", neg: "Subject + had not (hadn't) been + verb-ing", q: "Had + subject + been + verb-ing?", uses: ["Duración previa a un punto pasado", "Causa o explicación de una situación pasada"], ex: [["They had been playing tennis for two hours when it started raining.", "Habían estado jugando al tenis durante dos horas cuando empezó a llover."], ["I was tired because I had been studying all night.", "Estaba cansado porque había estado estudiando toda la noche."]] },
+    { name: "Future Simple (will)", level: "Base", summary: "Predicciones, decisiones espontáneas y promesas.", aff: "Subject + will + base verb", neg: "Subject + will not (won’t) + base verb", q: "Will + subject + base verb?", uses: ["Predicción", "Decisión espontánea", "Promesa", "Oferta"], ex: [["I will help you.", "Te voy a ayudar."], ["It will rain tomorrow.", "Va a llover mañana."]] },
+    { name: "Be going to", level: "Base", summary: "Planes e intenciones y predicciones con evidencia.", aff: "Subject + am/is/are going to + base verb", neg: "Subject + am/is/are not going to + base verb", q: "Am/Is/Are + subject + going to + base verb?", uses: ["Plan o intención", "Predicción con evidencia"], ex: [["I’m going to study tonight.", "Voy a estudiar esta noche."], ["Look! It’s going to fall.", "¡Mirá! Se va a caer."]] },
+    { name: "Future Continuous", level: "Intermedio", summary: "Acción que estará en progreso en un momento específico del futuro.", aff: "Subject + will be + verb-ing", neg: "Subject + will not (won't) be + verb-ing", q: "Will + subject + be + verb-ing?", uses: ["Acción en desarrollo futuro", "Eventos futuros programados o rutinarios"], ex: [["This time tomorrow, I will be flying to London.", "Mañana a esta hora estaré volando a Londres."], ["Will you be using your computer tonight?", "¿Estarás usando tu computadora esta noche?"]] },
+    { name: "Future Perfect", level: "Avanzado", summary: "Acción que estará terminada antes de un momento futuro.", aff: "Subject + will have + past participle", neg: "Subject + will not have + past participle", q: "Will + subject + have + past participle?", uses: ["Acción terminada antes de un punto futuro", "Plazos"], ex: [["By June I will have finished.", "Para junio habré terminado."], ["They will have left by then.", "Para entonces ya se habrán ido."]] },
+    { name: "Future Perfect Continuous", level: "Avanzado", summary: "Enfatiza la duración de una acción continua hasta un punto específico en el futuro.", aff: "Subject + will have been + verb-ing", neg: "Subject + will not (won't) have been + verb-ing", q: "Will + subject + have been + verb-ing?", uses: ["Duración acumulada de una acción en el futuro", "Medición de tiempo previo a una fecha futura"], ex: [["By next month, I will have been working here for five years.", "Para el mes que viene, habré estado trabajando aquí durante cinco años."], ["How long will you have been living in Spain by 2030?", "¿Cuánto tiempo habrás estado viviendo en España para el 2030?"]] },
+    { name: "Zero Conditional", level: "Base", summary: "Hechos científicos, verdades universales e instrucciones directas.", aff: "If + present simple, present simple", neg: "If + present simple, don't/doesn't + base verb", q: "Do/Does... if + present simple?", uses: ["Leyes naturales y físicas", "Verdades generales e incontestables", "Instrucciones de causa y efecto"], ex: [["If you heat ice, it melts.", "Si calientas hielo, se derrite."], ["If people don't eat, they get hungry.", "Si las personas no comen, les da hambre."]] },
+    { name: "First Conditional", level: "Intermedio", summary: "Situación real o probable en el futuro.", aff: "If + present simple, will + base verb", neg: "If + present, won’t + base verb", q: "Will + subject + base verb + if…?", uses: ["Consecuencia probable", "Advertencia", "Promesa condicional"], ex: [["If it rains, I will stay home.", "Si llueve, me quedo en casa."], ["If you study, you will pass.", "Si estudiás, vas a aprobar."]] },
+    { name: "Second Conditional", level: "Intermedio", summary: "Situación irreal o improbable en el presente/futuro.", aff: "If + past simple, would + base verb", neg: "If + past, wouldn’t + base verb", q: "Would + subject + base verb + if…?", uses: ["Hipótesis presente", "Consejo (If I were you)", "Deseo poco probable"], ex: [["If I had time, I would travel.", "Si tuviera tiempo, viajaría."], ["If I were you, I would rest.", "Yo que vos, descansaría."]] },
+    { name: "Third Conditional", level: "Avanzado", summary: "Situación irreal en el pasado y su resultado imaginario.", aff: "If + past perfect, would have + past participle", neg: "If + past perfect, wouldn’t have + p.p.", q: "Would + subject + have + p.p. + if…?", uses: ["Arrepentimiento", "Hipótesis pasada", "Resultado imaginario"], ex: [["If I had studied, I would have passed.", "Si hubiera estudiado, habría aprobado."], ["She would have come if she had known.", "Habría venido si hubiera sabido."]] },
+    { name: "Modal verbs", level: "Intermedio", summary: "Habilidad, permiso, obligación, posibilidad y consejo.", aff: "Subject + modal + base verb", neg: "Subject + modal + not + base verb", q: "Modal + subject + base verb?", uses: ["Habilidad (can)", "Consejo (should)", "Obligación (must)", "Posibilidad (might)", "Permiso (may)"], ex: [["You should review before the exam.", "Deberías repasar antes del examen."], ["She can speak three languages.", "Ella habla tres idiomas."], ["We must be on time.", "Tenemos que llegar a horario."]] }
+  ];
+  let tensesInit = false;
+  function initTenses() {
+    tensesInit = true;
+    $("tGrid").innerHTML = tenses.map((t, i) => `<button class="tense-btn" data-ti="${i}">${esc(t.name)}<small>${esc(t.level)}</small></button>`).join("");
+    $("tGrid").addEventListener("click", (e) => { const b = e.target.closest(".tense-btn"); if (b) showTense(Number(b.dataset.ti)); });
+    showTense(0);
+  }
+  function showTense(i) {
+    const t = tenses[i];
+    document.querySelectorAll(".tense-btn").forEach((b, k) => b.classList.toggle("active", k === i));
+    $("tLevel").textContent = t.level; $("tName").textContent = t.name; $("tSummary").textContent = t.summary;
+    $("tAff").textContent = t.aff; $("tNeg").textContent = t.neg; $("tQ").textContent = t.q;
+    $("tUses").innerHTML = t.uses.map((u) => `<li>${esc(u)}</li>`).join("");
+    $("tExamples").innerHTML = t.ex.map((e) => `<li><span class="en">${esc(e[0])}</span><br><span class="es">${esc(e[1])}</span></li>`).join("");
+  }
+
+  /* ============================================================
+     DATOS — sets de vocabulario para unir con flechas
+     ============================================================ */
+  const ET_MATCH_SETS = [
+    {
+      "id": "mv-01",
+      "title": "Phrasal verbs esenciales",
+      "pairs": [
+        {
+          "en": "give up",
+          "es": "rendirse / abandonar"
+        },
+        {
+          "en": "look after",
+          "es": "cuidar"
+        },
+        {
+          "en": "run out of",
+          "es": "quedarse sin"
+        },
+        {
+          "en": "put off",
+          "es": "posponer / aplazar"
+        },
+        {
+          "en": "find out",
+          "es": "averiguar / enterarse"
+        },
+        {
+          "en": "get over",
+          "es": "superar (algo)"
+        },
+        {
+          "en": "look forward to",
+          "es": "esperar con ganas"
+        },
+        {
+          "en": "turn down",
+          "es": "rechazar"
+        },
+        {
+          "en": "bring up",
+          "es": "criar / mencionar un tema"
+        },
+        {
+          "en": "carry on",
+          "es": "continuar"
+        },
+        {
+          "en": "set up",
+          "es": "montar / establecer"
+        },
+        {
+          "en": "come across",
+          "es": "encontrarse por casualidad"
+        },
+        {
+          "en": "take over",
+          "es": "tomar el control"
+        },
+        {
+          "en": "work out",
+          "es": "resolver / entrenar"
+        },
+        {
+          "en": "call off",
+          "es": "cancelar"
+        },
+        {
+          "en": "point out",
+          "es": "señalar / hacer notar"
+        },
+        {
+          "en": "break down",
+          "es": "averiarse / descomponerse"
+        },
+        {
+          "en": "hand in",
+          "es": "entregar (un trabajo)"
+        },
+        {
+          "en": "go over",
+          "es": "repasar"
+        },
+        {
+          "en": "stand out",
+          "es": "destacarse"
+        },
+        {
+          "en": "take off",
+          "es": "despegar / quitarse (ropa)"
+        },
+        {
+          "en": "put up with",
+          "es": "tolerar / aguantar"
+        },
+        {
+          "en": "get along with",
+          "es": "llevarse bien con"
+        },
+        {
+          "en": "look up to",
+          "es": "admirar / respetar"
+        },
+        {
+          "en": "turn out",
+          "es": "resultar (ser)"
+        },
+        {
+          "en": "show up",
+          "es": "aparecer / presentarse"
+        },
+        {
+          "en": "make up",
+          "es": "inventar / reconciliarse"
+        },
+        {
+          "en": "end up",
+          "es": "terminar (de cierta manera)"
+        },
+        {
+          "en": "go through",
+          "es": "atravesar / pasar por"
+        },
+        {
+          "en": "hold on",
+          "es": "esperar / aguantar"
+        },
+        {
+          "en": "give in",
+          "es": "ceder / rendirse"
+        },
+        {
+          "en": "bring about",
+          "es": "provocar / ocasionar"
+        },
+        {
+          "en": "look out",
+          "es": "tener cuidado"
+        },
+        {
+          "en": "settle down",
+          "es": "asentarse / calmarse"
+        },
+        {
+          "en": "grow up",
+          "es": "crecer / criarse"
+        },
+        {
+          "en": "pick up",
+          "es": "recoger / aprender sin esfuerzo"
+        },
+        {
+          "en": "throw away",
+          "es": "tirar / desechar"
+        },
+        {
+          "en": "move on",
+          "es": "seguir adelante"
+        },
+        {
+          "en": "count on",
+          "es": "contar con / confiar en"
+        },
+        {
+          "en": "fall apart",
+          "es": "desmoronarse"
+        }
+      ]
+    },
+    {
+      "id": "mv-02",
+      "title": "Verbos y sustantivos frecuentes",
+      "pairs": [
+        {
+          "en": "achievement",
+          "es": "logro"
+        },
+        {
+          "en": "advice",
+          "es": "consejo"
+        },
+        {
+          "en": "warning",
+          "es": "advertencia"
+        },
+        {
+          "en": "improvement",
+          "es": "mejora"
+        },
+        {
+          "en": "research",
+          "es": "investigación"
+        },
+        {
+          "en": "deadline",
+          "es": "fecha límite"
+        },
+        {
+          "en": "skill",
+          "es": "habilidad"
+        },
+        {
+          "en": "budget",
+          "es": "presupuesto"
+        },
+        {
+          "en": "issue",
+          "es": "problema / asunto"
+        },
+        {
+          "en": "goal",
+          "es": "objetivo / meta"
+        },
+        {
+          "en": "income",
+          "es": "ingresos"
+        },
+        {
+          "en": "training",
+          "es": "capacitación / entrenamiento"
+        },
+        {
+          "en": "meeting",
+          "es": "reunión"
+        },
+        {
+          "en": "report",
+          "es": "informe"
+        },
+        {
+          "en": "survey",
+          "es": "encuesta"
+        },
+        {
+          "en": "shortage",
+          "es": "escasez"
+        },
+        {
+          "en": "growth",
+          "es": "crecimiento"
+        },
+        {
+          "en": "risk",
+          "es": "riesgo"
+        },
+        {
+          "en": "support",
+          "es": "apoyo"
+        },
+        {
+          "en": "decision",
+          "es": "decisión"
+        },
+        {
+          "en": "attempt",
+          "es": "intento"
+        },
+        {
+          "en": "outcome",
+          "es": "resultado"
+        },
+        {
+          "en": "purpose",
+          "es": "propósito"
+        },
+        {
+          "en": "benefit",
+          "es": "beneficio"
+        },
+        {
+          "en": "drawback",
+          "es": "desventaja"
+        },
+        {
+          "en": "approach",
+          "es": "enfoque"
+        },
+        {
+          "en": "source",
+          "es": "fuente"
+        },
+        {
+          "en": "trend",
+          "es": "tendencia"
+        },
+        {
+          "en": "impact",
+          "es": "impacto"
+        },
+        {
+          "en": "demand",
+          "es": "demanda / exigencia"
+        },
+        {
+          "en": "supply",
+          "es": "suministro / oferta"
+        },
+        {
+          "en": "duty",
+          "es": "deber / obligación"
+        },
+        {
+          "en": "insight",
+          "es": "perspectiva / comprensión"
+        },
+        {
+          "en": "effort",
+          "es": "esfuerzo"
+        },
+        {
+          "en": "failure",
+          "es": "fracaso"
+        },
+        {
+          "en": "success",
+          "es": "éxito"
+        },
+        {
+          "en": "reward",
+          "es": "recompensa"
+        },
+        {
+          "en": "concern",
+          "es": "preocupación"
+        },
+        {
+          "en": "strength",
+          "es": "fortaleza"
+        },
+        {
+          "en": "weakness",
+          "es": "debilidad"
+        }
+      ]
+    },
+    {
+      "id": "mv-03",
+      "title": "Adjetivos de nivel B2–C1",
+      "pairs": [
+        {
+          "en": "reliable",
+          "es": "confiable"
+        },
+        {
+          "en": "challenging",
+          "es": "desafiante / exigente"
+        },
+        {
+          "en": "accurate",
+          "es": "preciso / exacto"
+        },
+        {
+          "en": "thorough",
+          "es": "minucioso / exhaustivo"
+        },
+        {
+          "en": "willing",
+          "es": "dispuesto"
+        },
+        {
+          "en": "aware",
+          "es": "consciente"
+        },
+        {
+          "en": "harmful",
+          "es": "dañino / perjudicial"
+        },
+        {
+          "en": "affordable",
+          "es": "asequible / accesible"
+        },
+        {
+          "en": "reluctant",
+          "es": "reacio"
+        },
+        {
+          "en": "outstanding",
+          "es": "sobresaliente"
+        },
+        {
+          "en": "misleading",
+          "es": "engañoso"
+        },
+        {
+          "en": "straightforward",
+          "es": "sencillo / directo"
+        },
+        {
+          "en": "demanding",
+          "es": "exigente"
+        },
+        {
+          "en": "worthwhile",
+          "es": "que vale la pena"
+        },
+        {
+          "en": "overwhelming",
+          "es": "abrumador"
+        },
+        {
+          "en": "biased",
+          "es": "sesgado / parcial"
+        },
+        {
+          "en": "thoughtful",
+          "es": "considerado / reflexivo"
+        },
+        {
+          "en": "steady",
+          "es": "constante / estable"
+        },
+        {
+          "en": "scarce",
+          "es": "escaso"
+        },
+        {
+          "en": "fluent",
+          "es": "fluido (idioma)"
+        },
+        {
+          "en": "ambitious",
+          "es": "ambicioso"
+        },
+        {
+          "en": "cautious",
+          "es": "cauteloso / prudente"
+        },
+        {
+          "en": "confident",
+          "es": "seguro de sí mismo"
+        },
+        {
+          "en": "stubborn",
+          "es": "terco / obstinado"
+        },
+        {
+          "en": "generous",
+          "es": "generoso"
+        },
+        {
+          "en": "sensible",
+          "es": "sensato / razonable"
+        },
+        {
+          "en": "sensitive",
+          "es": "sensible / susceptible"
+        },
+        {
+          "en": "efficient",
+          "es": "eficiente"
+        },
+        {
+          "en": "essential",
+          "es": "esencial / imprescindible"
+        },
+        {
+          "en": "remarkable",
+          "es": "notable / extraordinario"
+        },
+        {
+          "en": "disappointing",
+          "es": "decepcionante"
+        },
+        {
+          "en": "exhausting",
+          "es": "agotador"
+        },
+        {
+          "en": "appealing",
+          "es": "atractivo / tentador"
+        },
+        {
+          "en": "controversial",
+          "es": "polémico"
+        },
+        {
+          "en": "inevitable",
+          "es": "inevitable"
+        },
+        {
+          "en": "temporary",
+          "es": "temporal / pasajero"
+        },
+        {
+          "en": "permanent",
+          "es": "permanente"
+        },
+        {
+          "en": "obvious",
+          "es": "evidente / obvio"
+        },
+        {
+          "en": "complex",
+          "es": "complejo"
+        },
+        {
+          "en": "flexible",
+          "es": "flexible / adaptable"
+        }
+      ]
+    },
+    {
+      "id": "mv-04",
+      "title": "Phrasal verbs de trabajo y estudio",
+      "pairs": [
+        {
+          "en": "catch up on",
+          "es": "ponerse al día con"
+        },
+        {
+          "en": "fill in",
+          "es": "completar (un formulario)"
+        },
+        {
+          "en": "sign up for",
+          "es": "inscribirse en"
+        },
+        {
+          "en": "drop out",
+          "es": "abandonar los estudios"
+        },
+        {
+          "en": "take on",
+          "es": "asumir (una tarea)"
+        },
+        {
+          "en": "cut back on",
+          "es": "reducir / recortar"
+        },
+        {
+          "en": "come up with",
+          "es": "ocurrírsele (una idea)"
+        },
+        {
+          "en": "look into",
+          "es": "investigar / examinar"
+        },
+        {
+          "en": "get through",
+          "es": "terminar / superar"
+        },
+        {
+          "en": "put forward",
+          "es": "proponer"
+        },
+        {
+          "en": "back up",
+          "es": "respaldar / hacer copia"
+        },
+        {
+          "en": "sort out",
+          "es": "solucionar / ordenar"
+        },
+        {
+          "en": "figure out",
+          "es": "descifrar / entender"
+        },
+        {
+          "en": "keep up with",
+          "es": "mantenerse al día con"
+        },
+        {
+          "en": "turn up",
+          "es": "aparecer / presentarse"
+        },
+        {
+          "en": "run into",
+          "es": "toparse con"
+        },
+        {
+          "en": "set aside",
+          "es": "reservar / apartar"
+        },
+        {
+          "en": "draw up",
+          "es": "redactar / elaborar"
+        },
+        {
+          "en": "hold back",
+          "es": "contener / frenar"
+        },
+        {
+          "en": "pull off",
+          "es": "lograr (algo difícil)"
+        },
+        {
+          "en": "carry out",
+          "es": "llevar a cabo / realizar"
+        },
+        {
+          "en": "map out",
+          "es": "planificar en detalle"
+        },
+        {
+          "en": "bring in",
+          "es": "introducir / generar (ingresos)"
+        },
+        {
+          "en": "lay off",
+          "es": "despedir (por recorte)"
+        },
+        {
+          "en": "take up",
+          "es": "empezar (una actividad)"
+        },
+        {
+          "en": "give out",
+          "es": "repartir / distribuir"
+        },
+        {
+          "en": "write down",
+          "es": "anotar"
+        },
+        {
+          "en": "go ahead",
+          "es": "seguir adelante"
+        },
+        {
+          "en": "stand for",
+          "es": "significar / representar"
+        },
+        {
+          "en": "turn in",
+          "es": "entregar / presentar"
+        },
+        {
+          "en": "put together",
+          "es": "armar / recopilar"
+        },
+        {
+          "en": "break up",
+          "es": "dividir / disolver"
+        },
+        {
+          "en": "look over",
+          "es": "revisar por encima"
+        },
+        {
+          "en": "set out",
+          "es": "exponer / disponerse a"
+        },
+        {
+          "en": "call for",
+          "es": "requerir / exigir"
+        },
+        {
+          "en": "follow up",
+          "es": "hacer seguimiento"
+        },
+        {
+          "en": "scale back",
+          "es": "reducir la escala de"
+        },
+        {
+          "en": "step down",
+          "es": "renunciar a un cargo"
+        },
+        {
+          "en": "team up",
+          "es": "asociarse / unir fuerzas"
+        },
+        {
+          "en": "rule out",
+          "es": "descartar"
+        }
+      ]
+    },
+    {
+      "id": "mv-05",
+      "title": "Vida cotidiana y viajes",
+      "pairs": [
+        {
+          "en": "check in",
+          "es": "registrarse (hotel/vuelo)"
+        },
+        {
+          "en": "set off",
+          "es": "partir / salir de viaje"
+        },
+        {
+          "en": "get around",
+          "es": "moverse / desplazarse"
+        },
+        {
+          "en": "book in advance",
+          "es": "reservar con antelación"
+        },
+        {
+          "en": "luggage",
+          "es": "equipaje"
+        },
+        {
+          "en": "delay",
+          "es": "retraso"
+        },
+        {
+          "en": "crowded",
+          "es": "abarrotado / lleno"
+        },
+        {
+          "en": "neighbourhood",
+          "es": "barrio"
+        },
+        {
+          "en": "commute",
+          "es": "viaje diario al trabajo"
+        },
+        {
+          "en": "accommodation",
+          "es": "alojamiento"
+        },
+        {
+          "en": "fare",
+          "es": "tarifa (transporte)"
+        },
+        {
+          "en": "landmark",
+          "es": "punto de referencia / monumento"
+        },
+        {
+          "en": "queue",
+          "es": "fila / cola"
+        },
+        {
+          "en": "borrow",
+          "es": "pedir prestado"
+        },
+        {
+          "en": "lend",
+          "es": "prestar"
+        },
+        {
+          "en": "afford",
+          "es": "permitirse (económicamente)"
+        },
+        {
+          "en": "spare time",
+          "es": "tiempo libre"
+        },
+        {
+          "en": "chore",
+          "es": "tarea doméstica"
+        },
+        {
+          "en": "tip",
+          "es": "propina / consejo"
+        },
+        {
+          "en": "shortcut",
+          "es": "atajo"
+        },
+        {
+          "en": "get by",
+          "es": "arreglárselas"
+        },
+        {
+          "en": "eat out",
+          "es": "comer fuera"
+        },
+        {
+          "en": "stay up",
+          "es": "quedarse despierto"
+        },
+        {
+          "en": "run errands",
+          "es": "hacer mandados"
+        },
+        {
+          "en": "tidy up",
+          "es": "ordenar / limpiar"
+        },
+        {
+          "en": "belongings",
+          "es": "pertenencias"
+        },
+        {
+          "en": "landlord",
+          "es": "propietario / casero"
+        },
+        {
+          "en": "rent",
+          "es": "alquiler"
+        },
+        {
+          "en": "bill",
+          "es": "factura / cuenta"
+        },
+        {
+          "en": "appliance",
+          "es": "electrodoméstico"
+        },
+        {
+          "en": "itinerary",
+          "es": "itinerario"
+        },
+        {
+          "en": "departure",
+          "es": "salida / partida"
+        },
+        {
+          "en": "arrival",
+          "es": "llegada"
+        },
+        {
+          "en": "boarding pass",
+          "es": "tarjeta de embarque"
+        },
+        {
+          "en": "round trip",
+          "es": "ida y vuelta"
+        },
+        {
+          "en": "sightseeing",
+          "es": "turismo / visita a lugares"
+        },
+        {
+          "en": "souvenir",
+          "es": "recuerdo / suvenir"
+        },
+        {
+          "en": "currency",
+          "es": "moneda / divisa"
+        },
+        {
+          "en": "insurance",
+          "es": "seguro"
+        },
+        {
+          "en": "deposit",
+          "es": "depósito / seña"
+        }
+      ]
+    },
+    {
+      "id": "mv-06",
+      "title": "Salud, ciencia y medio ambiente",
+      "pairs": [
+        {
+          "en": "treatment",
+          "es": "tratamiento"
+        },
+        {
+          "en": "disease",
+          "es": "enfermedad"
+        },
+        {
+          "en": "recovery",
+          "es": "recuperación"
+        },
+        {
+          "en": "harm",
+          "es": "daño"
+        },
+        {
+          "en": "waste",
+          "es": "residuos / desperdicio"
+        },
+        {
+          "en": "fuel",
+          "es": "combustible"
+        },
+        {
+          "en": "drought",
+          "es": "sequía"
+        },
+        {
+          "en": "flood",
+          "es": "inundación"
+        },
+        {
+          "en": "evidence",
+          "es": "evidencia / pruebas"
+        },
+        {
+          "en": "findings",
+          "es": "hallazgos"
+        },
+        {
+          "en": "trial",
+          "es": "ensayo (clínico)"
+        },
+        {
+          "en": "sample",
+          "es": "muestra"
+        },
+        {
+          "en": "breakthrough",
+          "es": "avance decisivo"
+        },
+        {
+          "en": "side effect",
+          "es": "efecto secundario"
+        },
+        {
+          "en": "intake",
+          "es": "consumo / ingesta"
+        },
+        {
+          "en": "renewable",
+          "es": "renovable"
+        },
+        {
+          "en": "endangered",
+          "es": "en peligro de extinción"
+        },
+        {
+          "en": "greenhouse gas",
+          "es": "gas de efecto invernadero"
+        },
+        {
+          "en": "cut down on",
+          "es": "reducir el consumo de"
+        },
+        {
+          "en": "wipe out",
+          "es": "erradicar / aniquilar"
+        },
+        {
+          "en": "symptom",
+          "es": "síntoma"
+        },
+        {
+          "en": "cure",
+          "es": "cura"
+        },
+        {
+          "en": "diet",
+          "es": "dieta / alimentación"
+        },
+        {
+          "en": "fitness",
+          "es": "estado físico"
+        },
+        {
+          "en": "injury",
+          "es": "lesión"
+        },
+        {
+          "en": "surgery",
+          "es": "cirugía"
+        },
+        {
+          "en": "vaccine",
+          "es": "vacuna"
+        },
+        {
+          "en": "outbreak",
+          "es": "brote"
+        },
+        {
+          "en": "hypothesis",
+          "es": "hipótesis"
+        },
+        {
+          "en": "experiment",
+          "es": "experimento"
+        },
+        {
+          "en": "data",
+          "es": "datos"
+        },
+        {
+          "en": "accuracy",
+          "es": "exactitud / precisión"
+        },
+        {
+          "en": "pollution",
+          "es": "contaminación"
+        },
+        {
+          "en": "emissions",
+          "es": "emisiones"
+        },
+        {
+          "en": "habitat",
+          "es": "hábitat"
+        },
+        {
+          "en": "species",
+          "es": "especie"
+        },
+        {
+          "en": "recycling",
+          "es": "reciclaje"
+        },
+        {
+          "en": "sustainable",
+          "es": "sostenible"
+        },
+        {
+          "en": "conservation",
+          "es": "conservación"
+        },
+        {
+          "en": "carbon footprint",
+          "es": "huella de carbono"
+        }
+      ]
+    }
+  ];
+
+  /* ============================================================
+     UNIR CON FLECHAS — vocabulario inglés ↔ español
+     Se juega en rondas cortas para que las flechas se lean bien.
+     ============================================================ */
+  (function initMatching() {
+    const elSet = $("mvSet");
+    const elLeft = $("mvLeft");
+    const elRight = $("mvRight");
+    const elBoard = $("mvBoard");
+    const elLines = $("mvLines");
+    const elScore = $("mvScore");
+    const elCheck = $("mvCheck");
+    const elReveal = $("mvReveal");
+    const elClear = $("mvClear");
+    const elShuffle = $("mvShuffle");
+    const elPrev = $("mvPrev");
+    const elNext = $("mvNext");
+    const elRound = $("mvRound");
+    const elProgress = $("mvProgress");
+    if (!elSet || !elLeft || !elRight || !elBoard) return;
+
+    const SETS = (typeof ET_MATCH_SETS !== "undefined" && ET_MATCH_SETS) || [];
+    if (!SETS.length) return;
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const PER_ROUND = 5;               // pares por ronda: clave para que se lea bien
+
+    let curSet = SETS[0];
+    let rounds = [];                   // [[indices de pares], ...]
+    let roundIdx = 0;
+    let leftOrder = [];
+    let rightOrder = [];
+    let links = {};                    // par(izq) -> par(der), solo de la ronda actual
+    let solved = {};                   // { "setId:roundIdx": {correct, total} }
+    let selectedLeft = null;
+    let revealed = false;
+    let checkedOnce = false;
+
+    function shuffle(a) {
+      const r = a.slice();
+      for (let i = r.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = r[i]; r[i] = r[j]; r[j] = t;
+      }
+      return r;
+    }
+
+    function populateSets() {
+      elSet.innerHTML = SETS.map(s =>
+        '<option value="' + esc(s.id) + '">' + esc(s.title) + "</option>").join("");
+    }
+
+    function loadSet(id, keepSolved) {
+      curSet = SETS.find(s => s.id === id) || SETS[0];
+      if (!keepSolved) solved = {};
+      // Reparte los 20 pares en rondas de 5, en orden aleatorio.
+      const all = shuffle(curSet.pairs.map((_, i) => i));
+      rounds = [];
+      for (let i = 0; i < all.length; i += PER_ROUND) rounds.push(all.slice(i, i + PER_ROUND));
+      roundIdx = 0;
+      loadRound();
+    }
+
+    function loadRound() {
+      const ids = rounds[roundIdx] || [];
+      leftOrder = shuffle(ids);
+      rightOrder = shuffle(ids);
+      // Evita que las dos columnas queden alineadas de casualidad.
+      if (ids.length > 1 && rightOrder.every((v, i) => v === leftOrder[i])) {
+        rightOrder = shuffle(ids);
+      }
+      links = {};
+      selectedLeft = null;
+      revealed = false;
+      checkedOnce = false;
+      elReveal.setAttribute("aria-pressed", "false");
+      elReveal.textContent = "Mostrar respuestas";
+      elReveal.classList.remove("is-on");
+      elBoard.classList.remove("is-revealed");
+      elScore.textContent = "";
+      elScore.className = "match-score";
+      render();
+      updateRoundUI();
+    }
+
+    function updateRoundUI() {
+      elRound.textContent = "Ronda " + (roundIdx + 1) + " de " + rounds.length;
+      elPrev.disabled = roundIdx === 0;
+      elNext.disabled = roundIdx >= rounds.length - 1;
+      // Progreso acumulado del conjunto actual
+      let done = 0, corr = 0, tot = 0;
+      rounds.forEach((r, i) => {
+        const rec = solved[curSet.id + ":" + i];
+        if (rec) { done++; corr += rec.correct; tot += rec.total; }
+      });
+      elProgress.textContent = done
+        ? "Rondas corregidas: " + done + "/" + rounds.length + " · aciertos " + corr + "/" + tot
+        : "Rondas corregidas: 0/" + rounds.length;
+    }
+
+    function render() {
+      elLeft.innerHTML = leftOrder.map(i =>
+        '<li><button type="button" class="match-item match-en" data-side="left" data-pair="' + i + '">' +
+        '<span class="match-text">' + esc(curSet.pairs[i].en) + "</span>" +
+        '<span class="match-port" aria-hidden="true"></span>' +
+        "</button></li>").join("");
+      elRight.innerHTML = rightOrder.map(i =>
+        '<li><button type="button" class="match-item match-es" data-side="right" data-pair="' + i + '">' +
+        '<span class="match-port" aria-hidden="true"></span>' +
+        '<span class="match-text">' + esc(curSet.pairs[i].es) + "</span>" +
+        '<span class="match-solution"></span>' +
+        "</button></li>").join("");
+      refresh();
+    }
+
+    function refresh() {
+      const rightLinked = new Set(Object.values(links).map(Number));
+      elLeft.querySelectorAll(".match-item").forEach(btn => {
+        const p = Number(btn.getAttribute("data-pair"));
+        btn.classList.toggle("is-selected", selectedLeft === p);
+        btn.classList.toggle("is-linked", links[p] !== undefined);
+        btn.classList.remove("is-correct", "is-wrong");
+        if (checkedOnce && links[p] !== undefined) {
+          btn.classList.toggle("is-correct", links[p] === p);
+          btn.classList.toggle("is-wrong", links[p] !== p);
+        }
+      });
+      elRight.querySelectorAll(".match-item").forEach(btn => {
+        const p = Number(btn.getAttribute("data-pair"));
+        btn.classList.toggle("is-linked", rightLinked.has(p));
+        btn.classList.remove("is-correct", "is-wrong");
+        if (checkedOnce && rightLinked.has(p)) {
+          const from = Object.keys(links).find(k => Number(links[k]) === p);
+          const ok = from !== undefined && Number(from) === p;
+          btn.classList.toggle("is-correct", ok);
+          btn.classList.toggle("is-wrong", !ok);
+        }
+        // La respuesta correcta se muestra como texto, no como otra flecha:
+        // con 5 pares por ronda queda legible y no se cruza con nada.
+        const sol = btn.querySelector(".match-solution");
+        if (sol) sol.textContent = revealed ? curSet.pairs[p].en : "";
+      });
+      drawLines();
+    }
+
+    // Punto de conexión: el pequeño círculo al borde de cada caja.
+    function portOf(btn, side) {
+      const port = btn.querySelector(".match-port");
+      const b = (port || btn).getBoundingClientRect();
+      const board = elBoard.getBoundingClientRect();
+      return {
+        x: (port ? b.left + b.width / 2 : (side === "left" ? b.right : b.left)) - board.left,
+        y: b.top + b.height / 2 - board.top
+      };
+    }
+
+    function findBtn(listEl, pair) {
+      return listEl.querySelector('.match-item[data-pair="' + pair + '"]');
+    }
+
+    function drawLines() {
+      const board = elBoard.getBoundingClientRect();
+      elLines.setAttribute("width", board.width);
+      elLines.setAttribute("height", board.height);
+      elLines.setAttribute("viewBox", "0 0 " + board.width + " " + board.height);
+      while (elLines.firstChild) elLines.removeChild(elLines.firstChild);
+
+      const defs = document.createElementNS(SVG_NS, "defs");
+      [["mvArrow", "var(--accent)"], ["mvArrowOk", "var(--accent)"],
+       ["mvArrowBad", "var(--accent-2)"]].forEach(([id, col]) => {
+        const m = document.createElementNS(SVG_NS, "marker");
+        m.setAttribute("id", id);
+        m.setAttribute("viewBox", "0 0 10 10");
+        m.setAttribute("refX", "8"); m.setAttribute("refY", "5");
+        m.setAttribute("markerWidth", "5"); m.setAttribute("markerHeight", "5");
+        m.setAttribute("orient", "auto-start-reverse");
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+        path.setAttribute("fill", col);
+        m.appendChild(path);
+        defs.appendChild(m);
+      });
+      elLines.appendChild(defs);
+
+      Object.keys(links).forEach(k => {
+        const from = Number(k), to = Number(links[k]);
+        const a = findBtn(elLeft, from), b = findBtn(elRight, to);
+        if (!a || !b) return;
+        const p1 = portOf(a, "left"), p2 = portOf(b, "right");
+        const dx = Math.max(40, (p2.x - p1.x) * 0.45);
+        let cls = "mv-line", marker = "mvArrow";
+        if (checkedOnce) {
+          const ok = from === to;
+          cls += ok ? " mv-line-ok" : " mv-line-bad";
+          marker = ok ? "mvArrowOk" : "mvArrowBad";
+        }
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d",
+          "M " + p1.x + " " + p1.y +
+          " C " + (p1.x + dx) + " " + p1.y + ", " + (p2.x - dx) + " " + p2.y +
+          ", " + p2.x + " " + p2.y);
+        path.setAttribute("class", cls);
+        path.setAttribute("fill", "none");
+        path.setAttribute("marker-end", "url(#" + marker + ")");
+        elLines.appendChild(path);
+      });
+    }
+
+    function clearScore() {
+      elScore.textContent = "";
+      elScore.className = "match-score";
+    }
+
+    /* ---- interacción ---- */
+    function onLeftClick(ev) {
+      const btn = ev.target.closest(".match-item");
+      if (!btn) return;
+      const p = Number(btn.getAttribute("data-pair"));
+      if (links[p] !== undefined) {
+        delete links[p]; selectedLeft = null; checkedOnce = false; clearScore(); refresh(); return;
+      }
+      selectedLeft = (selectedLeft === p) ? null : p;
+      refresh();
+    }
+
+    function onRightClick(ev) {
+      const btn = ev.target.closest(".match-item");
+      if (!btn) return;
+      const p = Number(btn.getAttribute("data-pair"));
+      const existing = Object.keys(links).find(k => Number(links[k]) === p);
+      if (existing !== undefined) {
+        delete links[Number(existing)];
+        checkedOnce = false; clearScore();
+        if (selectedLeft === null) { refresh(); return; }
+      }
+      if (selectedLeft === null) { refresh(); return; }
+      links[selectedLeft] = p;
+      selectedLeft = null;
+      checkedOnce = false;
+      clearScore();
+      refresh();
+    }
+
+    elLeft.addEventListener("click", onLeftClick);
+    elRight.addEventListener("click", onRightClick);
+
+    /* ---- arrastrar ---- */
+    let dragFrom = null;
+    elBoard.addEventListener("pointerdown", (ev) => {
+      const btn = ev.target.closest(".match-en");
+      if (!btn) return;
+      dragFrom = Number(btn.getAttribute("data-pair"));
+      elBoard.classList.add("is-dragging");
+    });
+    elBoard.addEventListener("pointerup", (ev) => {
+      elBoard.classList.remove("is-dragging");
+      if (dragFrom === null) return;
+      const target = ev.target.closest(".match-es");
+      if (target) {
+        const to = Number(target.getAttribute("data-pair"));
+        const existing = Object.keys(links).find(k => Number(links[k]) === to);
+        if (existing !== undefined) delete links[Number(existing)];
+        links[dragFrom] = to;
+        selectedLeft = null;
+        checkedOnce = false;
+        clearScore();
+        refresh();
+      }
+      dragFrom = null;
+    });
+
+    /* ---- corregir ---- */
+    function verdict(correct, total) {
+      const pct = total ? correct / total : 0;
+      if (pct === 1) return "¡Excelente! Todas correctas.";
+      if (pct >= 0.8) return "Muy bien, casi perfecto.";
+      if (pct >= 0.6) return "Buen trabajo, vas encaminado.";
+      if (pct >= 0.4) return "Aceptable, pero conviene repasar.";
+      if (pct > 0) return "Flojo: repasá el vocabulario y volvé a intentarlo.";
+      return "Ninguna correcta: mirá las respuestas y volvé a probar.";
+    }
+
+    elCheck.addEventListener("click", () => {
+      const ids = rounds[roundIdx] || [];
+      const total = ids.length;
+      const made = Object.keys(links).length;
+      if (!made) {
+        elScore.textContent = "Todavía no uniste ninguna palabra.";
+        elScore.className = "match-score is-warn";
+        return;
+      }
+      let correct = 0;
+      Object.keys(links).forEach(k => { if (Number(k) === Number(links[k])) correct++; });
+      checkedOnce = true;
+      solved[curSet.id + ":" + roundIdx] = { correct: correct, total: total };
+      const falta = total - made;
+      elScore.textContent = correct + "/" + total + " — " + verdict(correct, total) +
+        (falta > 0 ? " (te faltan " + falta + " por unir)" : "");
+      elScore.className = "match-score " +
+        (correct === total ? "is-ok" : correct >= total * 0.6 ? "is-mid" : "is-warn");
+      refresh();
+      updateRoundUI();
+      if (typeof logActivity === "function") logActivity();
+    });
+
+    /* ---- mostrar / ocultar respuestas (toggle) ---- */
+    elReveal.addEventListener("click", () => {
+      revealed = !revealed;
+      elReveal.setAttribute("aria-pressed", revealed ? "true" : "false");
+      elReveal.textContent = revealed ? "Ocultar respuestas" : "Mostrar respuestas";
+      elReveal.classList.toggle("is-on", revealed);
+      elBoard.classList.toggle("is-revealed", revealed);
+      refresh();
+    });
+
+    elClear.addEventListener("click", () => {
+      links = {}; selectedLeft = null; checkedOnce = false; clearScore(); refresh();
+    });
+
+    elShuffle.addEventListener("click", () => { loadRound(); });
+    elPrev.addEventListener("click", () => { if (roundIdx > 0) { roundIdx--; loadRound(); } });
+    elNext.addEventListener("click", () => { if (roundIdx < rounds.length - 1) { roundIdx++; loadRound(); } });
+    elSet.addEventListener("change", () => { loadSet(elSet.value); });
+
+    let rsTimer = null;
+    window.addEventListener("resize", () => {
+      if (rsTimer) clearTimeout(rsTimer);
+      rsTimer = setTimeout(drawLines, 120);
+    });
+    window.addEventListener("scroll", () => {
+      if (rsTimer) clearTimeout(rsTimer);
+      rsTimer = setTimeout(drawLines, 120);
+    }, { passive: true });
+    document.addEventListener("click", (ev) => {
+      const go = ev.target.closest("[data-go]");
+      if (go && go.getAttribute("data-go") === "practica") setTimeout(drawLines, 60);
+    });
+
+    populateSets();
+    loadSet(SETS[0].id);
+  })();
+
+  /* ============================================================
+     QUICK PRACTICE
+     ============================================================ */
+  const quick = [
+    { topic: "Third Conditional", es: "Si hubiera estudiado más, habría aprobado el examen.", a: "If I had studied more, I would have passed the exam.", keys: ["if", "had studied", "would have passed"] },
+    { topic: "First Conditional", es: "Si llueve mañana, me quedaré en casa.", a: "If it rains tomorrow, I will stay at home.", keys: ["if", "rains", "will stay"] },
+    { topic: "Second Conditional", es: "Si tuviera más tiempo, practicaría inglés todos los días.", a: "If I had more time, I would practice English every day.", keys: ["if", "had", "would practice"] },
+    { topic: "Present Perfect", es: "He estudiado inglés durante dos meses.", a: "I have studied English for two months.", keys: ["have studied", "for two months"] },
+    { topic: "Modal verbs", es: "Deberías repasar los phrasal verbs antes del examen.", a: "You should review phrasal verbs before the exam.", keys: ["should", "review", "before"] },
+    { topic: "Future Perfect", es: "Para fin de año, habré mejorado mi escritura.", a: "By the end of the year, I will have improved my writing.", keys: ["will have improved", "by the end"] },
+    { topic: "Despite", es: "A pesar de la dificultad, siguió practicando.", a: "Despite the difficulty, he kept practicing.", keys: ["despite", "kept practicing"] },
+    { topic: "Used to", es: "Antes solía estudiar por la noche.", a: "I used to study at night.", keys: ["used to", "study"] }
+  ];
+  let qi = 0;
+  function renderQuick() {
+    const item = quick[qi % quick.length];
+    $("qTopic").textContent = item.topic; $("qPrompt").textContent = item.es;
+    $("qAnswer").value = ""; $("qFeedback").innerHTML = "";
+  }
+  function checkQuick() {
+    const item = quick[qi % quick.length];
+    const val = $("qAnswer").value.trim();
+    if (!val) { $("qFeedback").innerHTML = '<div class="qf-box no">Escribí tu traducción antes de corregir.</div>'; return; }
+    const low = " " + val.toLowerCase() + " ";
+    const hits = item.keys.filter((k) => low.includes(" " + k.toLowerCase()) || low.includes(k.toLowerCase()));
+    const ratio = hits.length / item.keys.length;
+    const ok = ratio >= 0.6;
+    $("qFeedback").innerHTML = `<div class="qf-box ${ok ? "ok" : "no"}">${ok
+      ? `Muy bien. Captaste la estructura clave (${esc(hits.join(", "))}).`
+      : `Casi. Fijate en estos elementos: <strong>${esc(item.keys.join(", "))}</strong>.`}
+      <div class="model">Modelo: ${esc(item.a)}</div></div>`;
+    logActivity();
+  }
+  $("qCheck").addEventListener("click", checkQuick);
+  $("qModel").addEventListener("click", () => { const item = quick[qi % quick.length]; $("qFeedback").innerHTML = `<div class="qf-box ok"><div class="model">Modelo: ${esc(item.a)}</div></div>`; });
+  $("qNext").addEventListener("click", () => { qi++; renderQuick(); });
+  renderQuick();
+
+  /* ============================================================
+     ACCOUNT & CALENDARIO INTERACTIVO
+     ============================================================ */
+  let calCurrentDate = new Date();
+  let selectedDateKey = today();
+
+  function monthNames() {
+    return [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+  }
+
+  /* El contenido de la app está escrito en el rango B2–C1. Este aviso le dice
+     al usuario, con honestidad, qué le espera según el nivel que declara. */
+  const LEVEL_NOTES = {
+    A1: { t: "warn", m: "Todo el material está en B2–C1, bastante por encima de A1. Te va a resultar muy difícil: conviene reforzar las bases antes." },
+    A2: { t: "warn", m: "Todo el material está en B2–C1. Desde A2 el salto es grande; usá la pronunciación del Reading y el vocabulario como apoyo." },
+    B1: { t: "mid",  m: "El material está en B2–C1, un escalón por encima de B1. Es exigente pero sirve para estirarte: apoyate en las respuestas modelo." },
+    B2: { t: "ok",   m: "Nivel ideal: todo el material está pensado para B2–C1." },
+    C1: { t: "ok",   m: "Nivel ideal: todo el material está pensado para B2–C1." },
+    C2: { t: "mid",  m: "El material llega hasta C1, así que puede quedarte corto. Aprovechá las consignas de Writing para exigirte más." }
+  };
+
+  function updateLevelNote() {
+    const el = $("pLevelNote"), sel = $("pLevel");
+    if (!el || !sel) return;
+    const info = LEVEL_NOTES[sel.value] || LEVEL_NOTES.B2;
+    el.textContent = info.m;
+    el.className = "level-note is-" + info.t;
+  }
+
+  function renderAccount() {
+    const prof = store.get("profile", {});
+    if ($("pName")) $("pName").value = prof.name || "";
+    if ($("pLevel")) { $("pLevel").value = prof.level || "B2"; updateLevelNote(); }
+    const done = store.get("done", 0), streak = computeStreak();
+    if ($("pDone")) $("pDone").textContent = done;
+    if ($("pStreak")) $("pStreak").textContent = streak;
+    if ($("streakBig")) $("streakBig").textContent = streak;
+
+    if ($("calDaysGrid")) {
+      renderType1Calendar();
+    }
+  }
+
+  function selectDate(dateKey) {
+    selectedDateKey = dateKey;
+    const userEvents = store.get("userEvents", {});
+    const existingEvent = userEvents[dateKey] || "";
+
+    const [y, m, d] = dateKey.split("-");
+    const monthName = monthNames()[parseInt(m, 10) - 1];
+
+    if ($("calSelectedDateTitle")) {
+      $("calSelectedDateTitle").textContent = `Día: ${parseInt(d, 10)} de ${monthName} (${y})`;
+    }
+
+    if ($("calEventInput")) {
+      $("calEventInput").value = existingEvent;
+    }
+
+    if ($("calDeleteEventBtn")) {
+      $("calDeleteEventBtn").hidden = !existingEvent;
+    }
+
+    if ($("calSelectedStatus")) {
+      const activeDaysSet = new Set(store.get("days", []));
+      $("calSelectedStatus").textContent = activeDaysSet.has(dateKey) ? "✓ Día practicado" : "";
+    }
+
+    // Actualizar clase 'selected' en las celdas
+    document.querySelectorAll(".cal1-day[data-date]").forEach((el) => {
+      el.classList.toggle("selected", el.dataset.date === dateKey);
+    });
+  }
+
+  function renderType1Calendar() {
+    const year = calCurrentDate.getFullYear();
+    const month = calCurrentDate.getMonth();
+    const names = monthNames();
+
+    if ($("calMonthYearTitle")) {
+      $("calMonthYearTitle").textContent = `${names[month]} ${year}`;
+    }
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const totalDays = lastDay.getDate();
+
+    let startDayOfWeek = firstDay.getDay() - 1;
+    if (startDayOfWeek === -1) startDayOfWeek = 6;
+
+    const activeDaysSet = new Set(store.get("days", []));
+    const userEvents = store.get("userEvents", {});
+    let activeDaysInMonth = 0;
+    let daysHtml = "";
+
+    for (let i = 0; i < startDayOfWeek; i++) {
+      daysHtml += `<div class="cal1-day empty"></div>`;
+    }
+
+    const todayStr = today();
+
+    for (let day = 1; day <= totalDays; day++) {
+      const monthFormatted = String(month + 1).padStart(2, "0");
+      const dayFormatted = String(day).padStart(2, "0");
+      const dateKey = `${year}-${monthFormatted}-${dayFormatted}`;
+
+      const isToday = (dateKey === todayStr);
+      const isStudied = activeDaysSet.has(dateKey);
+      const hasEvent = Boolean(userEvents[dateKey]);
+      const isSelected = (dateKey === selectedDateKey);
+
+      if (isStudied) activeDaysInMonth++;
+
+      let classes = ["cal1-day"];
+      if (isToday) classes.push("today");
+      if (isStudied) classes.push("active-study");
+      if (hasEvent) classes.push("has-event");
+      if (isSelected) classes.push("selected");
+
+      daysHtml += `<div class="${classes.join(" ")}" data-date="${dateKey}" title="${dateKey}">
+        ${day}
+      </div>`;
+    }
+
+    $("calDaysGrid").innerHTML = daysHtml;
+
+    // Timeline / Progreso del mes
+    const progressPercent = Math.round((activeDaysInMonth / totalDays) * 100);
+    if ($("calProgressText")) {
+      $("calProgressText").textContent = `${progressPercent}% completado (${activeDaysInMonth}/${totalDays} días practicados)`;
+    }
+    if ($("calProgressBar")) {
+      $("calProgressBar").style.width = `${progressPercent}%`;
+    }
+
+    // Lista global de eventos del mes
+    if ($("calEventsList")) {
+      let eventsHtml = "";
+      Object.keys(userEvents).sort().forEach((dateKey) => {
+        const [eYear, eMonth, eDay] = dateKey.split("-").map(Number);
+        if (eYear === year && eMonth === (month + 1)) {
+          eventsHtml += `
+            <div class="cal1-event-item" data-date="${dateKey}">
+              <span>📌 <strong>${eDay} de ${names[month]}:</strong> ${esc(userEvents[dateKey])}</span>
+            </div>`;
+        }
+      });
+
+      $("calEventsList").innerHTML = eventsHtml || `<p class="plain" style="font-size: 0.85rem;">No programaste eventos para este mes. Tocá un día para agregar uno.</p>`;
+    }
+
+    // Cargar datos del día actualmente seleccionado en el editor
+    selectDate(selectedDateKey);
+
+    const totalDone = store.get("done", 0);
+    if ($("calNote")) {
+      $("calNote").textContent = `${activeDaysSet.size} días totales con actividad · ${totalDone} ejercicios corregidos.`;
+    }
+  }
+
+  // Guardar evento
+  function saveCurrentEvent() {
+    const text = $("calEventInput").value.trim();
+    const userEvents = store.get("userEvents", {});
+
+    if (text) {
+      userEvents[selectedDateKey] = text;
+    } else {
+      delete userEvents[selectedDateKey];
+    }
+
+    store.set("userEvents", userEvents);
+    renderType1Calendar();
+  }
+
+  // Eliminar evento
+  function deleteCurrentEvent() {
+    const userEvents = store.get("userEvents", {});
+    delete userEvents[selectedDateKey];
+    store.set("userEvents", userEvents);
+    if ($("calEventInput")) $("calEventInput").value = "";
+    renderType1Calendar();
+  }
+
+  // Event Listeners globales del Calendario
+  document.addEventListener("click", (e) => {
+    // Clic en un día de la grilla
+    const dayEl = e.target.closest(".cal1-day[data-date]");
+    if (dayEl) {
+      selectDate(dayEl.dataset.date);
+      return;
+    }
+
+    // Clic en un evento de la lista inferior
+    const eventItem = e.target.closest(".cal1-event-item[data-date]");
+    if (eventItem) {
+      selectDate(eventItem.dataset.date);
+      return;
+    }
+
+    // Navegación
+    if (e.target.closest("#calPrevMonth")) {
+      calCurrentDate.setMonth(calCurrentDate.getMonth() - 1);
+      renderType1Calendar();
+    }
+    if (e.target.closest("#calNextMonth")) {
+      calCurrentDate.setMonth(calCurrentDate.getMonth() + 1);
+      renderType1Calendar();
+    }
+    if (e.target.closest("#calTodayBtn")) {
+      calCurrentDate = new Date();
+      selectedDateKey = today();
+      renderType1Calendar();
+    }
+
+    // Botones del formulario
+    if (e.target.closest("#calSaveEventBtn")) {
+      saveCurrentEvent();
+    }
+    if (e.target.closest("#calDeleteEventBtn")) {
+      deleteCurrentEvent();
+    }
+  });
+
+  // Guardar al presionar Enter en el input
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && document.activeElement === $("calEventInput")) {
+      e.preventDefault();
+      saveCurrentEvent();
+    }
+  });
+
+  if ($("pLevel")) $("pLevel").addEventListener("change", updateLevelNote);
+  if ($("pSave")) $("pSave").addEventListener("click", () => {
+    store.set("profile", { name: $("pName").value.trim(), level: $("pLevel").value });
+    $("pSave").textContent = "Guardado ✓";
+    setTimeout(() => $("pSave").textContent = "Guardar perfil", 1400);
+  });
+  if ($("hSend")) $("hSend").addEventListener("click", () => { $("hStatus").textContent = $("hMsg").value.trim() ? "¡Gracias! Recibimos tu mensaje." : "Escribí un mensaje primero."; if ($("hMsg").value.trim()) $("hMsg").value = ""; });
+
+  renderAccount();
+  go("dashboard");
+})();

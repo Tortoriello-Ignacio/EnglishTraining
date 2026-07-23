@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>English Trainer · IELTS Path</title>
+  <meta name="description" content="Entrenador de inglés formato IELTS: Writing, Reading, Listening y Speaking con corrección asistida por IA Coach, tiempos verbales, práctica rápida y examen." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ============ NAVBAR ============ -->
+  <header class="navbar">
+    <a class="brand" href="#" data-go="dashboard" aria-label="English Trainer inicio">
+      <span class="brand-quill" aria-hidden="true">
+        <svg viewBox="0 0 64 64" class="quill-svg">
+          <rect x="8" y="32" width="22" height="24" rx="4" class="inkpot-base" />
+          <path d="M12 32v-4h14v4" class="inkpot-top" />
+          <path d="M52 10C40 14 24 26 18 40c-2 5-3 9-3 9s5-2 9-4C38 39 50 22 54 12c.6-1.4-.5-2.6-2-2z" class="feather-fill"/>
+          <path d="M18 40c-2 5-4 12-4 12M22 38l6 6M30 30l7 7M38 24l6 6" class="feather-stroke" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="brand-word">English&nbsp;Trainer</span>
+    </a>
+
+    <nav class="nav-actions" aria-label="Secciones de cuenta">
+      <button class="nav-item" data-go="perfil"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M367-527q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm296.5-343.5Q560-607 560-640t-23.5-56.5Q513-720 480-720t-56.5 23.5Q400-673 400-640t23.5 56.5Q447-560 480-560t56.5-23.5ZM480-640Zm0 400Z"/></svg></span>Perfil</button>
+      <button class="nav-item" data-go="calendario"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Z"/></svg></span>Calendario</button>
+      <button class="nav-item" data-go="racha"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M240-400q0 52 21 98.5t60 81.5q-1-5-1-9v-9q0-32 12-60t35-51l113-111 113 111q23 23 35 51t12 60v9q0 4-1 9 39-35 60-81.5t21-98.5q0-50-18.5-94.5T648-574q-20 13-42 19.5t-45 6.5q-62 0-107.5-41T401-690q-39 33-69 68.5t-50.5 72Q261-513 250.5-475T240-400Zm240 52-57 56q-11 11-17 25t-6 29q0 32 23.5 55t56.5 23q33 0 56.5-23t23.5-55q0-16-6-29.5T537-292l-57-56Zm0-492v132q0 34 23.5 57t57.5 23q18 0 33.5-7.5T622-658l18-22q74 42 117 117t43 163q0 134-93 227T480-80q-134 0-227-93t-93-227q0-129 86.5-245T480-840Z"/></svg></span>Racha</button>
+      <button class="nav-item" data-go="comunidad"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M480-600 340-740l140-140 140 140-140 140ZM40-160v-160q0-34 23.5-57t56.5-23h131q20 0 38 10t29 27q29 39 71.5 61t90.5 22q49 0 91.5-22t70.5-61q13-17 30.5-27t36.5-10h131q34 0 57 23t23 57v160H640v-91q-35 25-75.5 38T480-200q-43 0-84-13.5T320-252v92H40Zm120-280q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T280-560q0 50-34.5 85T160-440Zm640 0q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T920-560q0 50-34.5 85T800-440Z"/></svg></span>Comunidad</button>
+      <button class="nav-item" data-go="ayuda"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M440-280h80l12-60q12-5 22.5-10.5T576-364l58 18 40-68-46-40q2-14 2-26t-2-26l46-40-40-68-58 18q-11-8-21.5-13.5T532-620l-12-60h-80l-12 60q-12 5-22.5 10.5T384-596l-58-18-40 68 46 40q-2 14-2 26t2 26l-46 40 40 68 58-18q11 8 21.5 13.5T428-340l12 60Zm-16.5-143.5Q400-447 400-480t23.5-56.5Q447-560 480-560t56.5 23.5Q560-513 560-480t-23.5 56.5Q513-400 480-400t-56.5-23.5ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></span>Ayuda / Servicio</button>
+      <button class="nav-item" data-go="faqs"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M515.5-254.5Q530-269 530-290t-14.5-35.5Q501-340 480-340t-35.5 14.5Q430-311 430-290t14.5 35.5Q459-240 480-240t35.5-14.5ZM444-394h74q0-36 8-53t34-43q35-35 49.5-58.5T624-602q0-53-36-85.5T491-720q-55 0-93.5 27T344-618l66 26q7-27 28-43.5t49-16.5q27 0 45 14.5t18 38.5q0 17-11 36t-37 42q-33 29-45.5 55.5T444-394ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></span>FAQs</button>
+      <div class="translator-shell">
+        <button id="translatorToggle" class="nav-item translator-toggle" type="button" aria-expanded="false" aria-controls="translatorPanel">
+          <span class="ni-ico translator-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+              <path d="M4 5.5h8.5M8.25 3v2.5M6 8.5c1.55 2.5 3.55 4.25 6.2 5.35M11.9 7.2c-.85 2.2-2.35 4.15-4.55 5.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13.5 11.5h5L21 19h-2.1l-.55-1.8H13.7L13.1 19H11l2.5-7.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+            </svg>
+          </span>Traductor
+        </button>
+        <div id="translatorPanel" class="translator-panel hidden" role="dialog" aria-label="Mini extensión de Google Traductor">
+          <div class="translator-head">
+            <div><span class="translator-google-mark">G</span><strong>Mini Traductor</strong></div>
+            <button id="translatorClose" type="button" aria-label="Cerrar traductor">×</button>
+          </div>
+          <div class="translator-language-row">
+            <select id="translatorSource" aria-label="Idioma de origen">
+              <option value="auto">Detectar idioma</option>
+              <option value="en">Inglés</option>
+              <option value="es">Español</option>
+              <option value="pt">Portugués</option>
+              <option value="it">Italiano</option>
+              <option value="fr">Francés</option>
+              <option value="de">Alemán</option>
+            </select>
+            <button id="translatorSwap" class="translator-swap" type="button" title="Intercambiar idiomas" aria-label="Intercambiar idiomas">⇄</button>
+            <select id="translatorTarget" aria-label="Idioma de destino">
+              <option value="es">Español</option>
+              <option value="en">Inglés</option>
+              <option value="pt">Portugués</option>
+              <option value="it">Italiano</option>
+              <option value="fr">Francés</option>
+              <option value="de">Alemán</option>
+            </select>
+          </div>
+          <textarea id="translatorText" rows="4" maxlength="1800" placeholder="Escribí o pegá una palabra, frase o párrafo…"></textarea>
+          <div class="translator-actions">
+            <button id="translatorSelection" class="btn btn-ghost" type="button">Usar texto seleccionado</button>
+            <button id="translatorOpen" class="btn btn-primary" type="button">Traducir con Google</button>
+          </div>
+          <p class="translator-note">La traducción se abre precompletada en Google Translate.</p>
+        </div>
+      </div>
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Cambiar tema">
+        <span class="tt-track"><span class="tt-thumb"></span></span>
+      </button>
+    </nav>
+  </header>
+
+  <main id="app">
+    <!-- ============ DASHBOARD ============ -->
+    <section id="view-dashboard" class="view is-active">
+      <div class="hero">
+        <p class="eyebrow">IELTS Path · Inglés desde español</p>
+        <h1 class="hero-title">Entrená tu <em>inglés</em>.</h1>
+        <p class="hero-lead">Elegí un módulo para empezar. Cada sección genera consignas al estilo IELTS y te devuelve corrección con el IA Coach.</p>
+      </div>
+
+      <div class="tile-grid">
+        <button class="tile tile-writing" data-go="writing">
+          <span class="tile-name">Writing</span>
+          <span class="tile-desc">Task con corrección de AI Coach</span>
+        </button>
+        <button class="tile tile-reading" data-go="reading">
+          <span class="tile-name">Reading</span>
+          <span class="tile-desc">TFNG</span>
+        </button>
+        <button class="tile tile-speaking" data-go="speaking">
+          <span class="tile-name">Speaking</span>
+          <span class="tile-desc">Grabá y auto-evaluá</span>
+        </button>
+        <button class="tile tile-listening" data-go="listening">
+          <span class="tile-name">Listening</span>
+          <span class="tile-desc">Escuchá y respondé</span>
+        </button>
+
+        <button class="tile tile-wide tile-tenses" data-go="tiempos">
+          <span class="tile-name">Tiempos Verbales</span>
+          <span class="tile-desc">Estructuras, usos y ejemplos de cada tiempo verbal</span>
+        </button>
+
+        <button class="tile tile-half tile-practica" data-go="practica">
+          <span class="tile-name">Práctica</span>
+          <span class="tile-desc">Ejercicios para mejorar tus habilidades</span>
+        </button>
+        <button class="tile tile-half tile-examen" data-go="examen">
+          <span class="tile-name">Examen</span>
+          <span class="tile-desc">Formato IELTS</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ WRITING (módulo interactivo) ============ -->
+    <section id="view-writing" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">Writing IELTS</span>
+        <h2>Taller de escritura</h2>
+        <p>160 ejercicios originales de nivel B2 alto–C1, organizados en cuatro modalidades. Escribí desde una consigna, respondé después de una lectura, trabajá con material visual u ordená oraciones en inglés a partir del español.</p>
+      </header>
+
+      <!-- Selección por modalidad -->
+      <div class="wr-filters" role="region" aria-label="Selección de ejercicios de Writing">
+        <div class="wr-filter-field">
+          <span class="wr-filter-legend" id="wrModalityLabel">Modalidad</span>
+          <div class="wr-modality-bar" role="radiogroup" aria-labelledby="wrModalityLabel">
+            <button type="button" class="wr-mod-chip is-active" data-modality="all" role="radio" aria-checked="true">
+              <span class="wr-dot wr-dot-all" aria-hidden="true"></span>Todas
+            </button>
+            <button type="button" class="wr-mod-chip" data-modality="prompt" role="radio" aria-checked="false">
+              <span class="wr-dot wr-dot-prompt" aria-hidden="true"></span>Escribir desde una consigna
+            </button>
+            <button type="button" class="wr-mod-chip" data-modality="read" role="radio" aria-checked="false">
+              <span class="wr-dot wr-dot-read" aria-hidden="true"></span>Leer y responder
+            </button>
+            <button type="button" class="wr-mod-chip" data-modality="visual" role="radio" aria-checked="false">
+              <span class="wr-dot wr-dot-visual" aria-hidden="true"></span>Escritura visual
+            </button>
+            <button type="button" class="wr-mod-chip" data-modality="order" role="radio" aria-checked="false">
+              <span class="wr-dot wr-dot-order" aria-hidden="true"></span>Ordenar la oración
+            </button>
+          </div>
+        </div>
+        <div class="wr-filter-actions">
+          <button id="wrRandom" class="btn btn-primary" type="button">🎲 Actividad aleatoria</button>
+          <span id="wrCountFilter" class="wr-count-badge">160 actividades</span>
+        </div>
+      </div>
+
+      <div class="writing-workspace">
+        <!-- Lista de ejercicios -->
+        <aside class="wr-list-pane">
+          <div class="wr-list-head">
+            <strong>Ejercicios</strong>
+            <span id="wrProgressBadge" class="wr-progress-badge">0 / 160 completados</span>
+          </div>
+          <div id="wrList" class="wr-list" role="listbox" aria-label="Lista de ejercicios"></div>
+        </aside>
+
+        <!-- Panel de trabajo del ejercicio activo -->
+        <article class="wr-work-pane">
+          <div id="wrEmpty" class="wr-empty">
+            <p>Elegí un ejercicio de la lista o tocá <strong>“Actividad aleatoria”</strong> para empezar a escribir.</p>
+          </div>
+
+          <div id="wrActive" class="wr-active hidden">
+            <!-- Encabezado del ejercicio -->
+            <div class="wr-ex-head">
+              <div class="wr-ex-tags">
+                <span id="wrExModality" class="wr-dot wr-dot-prompt" role="img" aria-label=""></span>
+              </div>
+              <h3 id="wrExTitle"></h3>
+              <p id="wrExMeta" class="wr-ex-meta"></p>
+            </div>
+
+            <!-- Material del ejercicio (pasaje, datos visuales, texto original) -->
+            <div id="wrMaterial" class="wr-material hidden"></div>
+
+            <!-- Consigna -->
+            <div class="wr-brief">
+              <div class="wr-brief-head">
+                <span>Consigna</span>
+                <button id="wrCopyPrompt" class="wr-icon-btn" type="button" title="Copiar consigna">⧉ Copiar</button>
+              </div>
+              <p id="wrExPrompt"></p>
+              <ul id="wrExPoints" class="wr-points"></ul>
+            </div>
+
+            <!-- Área de escritura -->
+            <div class="wr-editor">
+              <div class="wr-editor-top">
+                <label id="wrAnswerLabel" for="wrText">Tu texto</label>
+                <div class="wr-editor-stats">
+                  <span id="wrTimer" class="wr-timer" hidden>⏱ 00:00</span>
+                  <span id="wrWordCount" class="word-count">0 palabras</span>
+                </div>
+              </div>
+              <textarea id="wrText" placeholder="Write your answer here…"></textarea>
+              <div id="wrShortAnswer" class="wr-short-answer hidden">
+                <p id="wrGapSentence" class="wr-gap-sentence"></p>
+                <label for="wrGapInput">Escribí únicamente la palabra o las palabras faltantes</label>
+                <input id="wrGapInput" type="text" autocomplete="off" spellcheck="false" placeholder="1–2 words" />
+                <p id="wrShortFeedback" class="wr-short-feedback" aria-live="polite"></p>
+              </div>
+
+              <!-- Ordenar la oración (arrastrar fichas) -->
+              <div id="wrOrder" class="wr-order hidden">
+                <div class="wr-order-source">
+                  <span class="wr-order-label">Oración en español</span>
+                  <p id="wrOrderSpanish" class="wr-order-spanish"></p>
+                </div>
+                <div class="wr-order-toolbar">
+                  <button id="wrOrderCheck" class="btn btn-primary" type="button">Comprobar</button>
+                  <button id="wrOrderUndo" class="btn btn-ghost" type="button">Deshacer</button>
+                  <button id="wrOrderReset" class="btn btn-ghost" type="button">Reiniciar</button>
+                  <button id="wrOrderHint" class="btn btn-ghost" type="button">Pista</button>
+                </div>
+                <span class="wr-order-label">Tu oración en inglés</span>
+                <div id="wrOrderAnswer" class="wr-order-zone wr-order-answer" role="list"
+                     aria-label="Oración construida: arrastrá o tocá las fichas para ordenarlas"></div>
+                <span class="wr-order-label">Fichas disponibles</span>
+                <div id="wrOrderBank" class="wr-order-zone wr-order-bank" role="list"
+                     aria-label="Fichas desordenadas disponibles"></div>
+                <p id="wrOrderFeedback" class="wr-order-feedback" aria-live="polite"></p>
+              </div>
+              <p id="wrSaveHint" class="wr-save-hint" aria-live="polite"></p>
+              <div class="tool-row wr-tool-row">
+                <button id="wrTimerToggle" class="btn btn-ghost" type="button">Iniciar temporizador</button>
+                <button id="wrClear" class="btn btn-ghost" type="button">Borrar borrador</button>
+                <button id="wrCheckShort" class="btn btn-primary hidden" type="button">Comprobar respuesta</button>
+                <button id="wrToggleVocab" class="btn btn-ghost" type="button">Ver vocabulario útil</button>
+                <button id="wrToggleModel" class="btn btn-primary" type="button">Ver respuesta modelo</button>
+                <button id="wrComplete" class="btn btn-ghost wr-complete-btn" type="button">Marcar como completado</button>
+              </div>
+            </div>
+
+            <!-- Vocabulario útil (oculto por defecto) -->
+            <div id="wrVocabBox" class="wr-reveal-box hidden">
+              <strong>Vocabulario y expresiones útiles</strong>
+              <ul id="wrVocabList" class="wr-vocab-list"></ul>
+            </div>
+
+            <!-- Respuesta modelo + análisis (oculto por defecto) -->
+            <div id="wrModelBox" class="wr-reveal-box hidden">
+              <strong>Respuesta modelo</strong>
+              <p id="wrExpectedType" class="wr-expected-type"></p>
+              <div id="wrModelText" class="wr-model-text"></div>
+              <details class="details-panel wr-analysis">
+                <summary>Análisis: vocabulario, gramática y estructura</summary>
+                <p id="wrAnalysisText"></p>
+              </details>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ READING ============ -->
+    <section id="view-reading" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">IELTS Reading</span>
+        <h2>Lectura académica y comprensión</h2>
+        <p>Leé el pasaje y resolvé preguntas de True / False / Not Given y respuestas cortas. Corregí y mirá la explicación.</p>
+      </header>
+
+      <div class="reading-controls">
+        <div class="reading-pick">
+          <label for="rSelect">Pasaje</label>
+          <select id="rSelect"></select>
+        </div>
+        <button id="rPron" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar pronunciación</button>
+      </div>
+
+      <div class="reading-layout">
+        <article class="passage-card">
+          <h3 id="rTitle">Passage title</h3>
+          <div id="rBody" class="passage-body"></div>
+        </article>
+
+        <article class="questions-card">
+          <div class="q-head">
+            <strong id="rQTitle">Questions</strong>
+            <p id="rInstruction" class="q-instruction"></p>
+          </div>
+          <div id="rQuestions" class="reading-questions"></div>
+
+          <div id="rChoiceBlock" class="reading-choice-block">
+            <div class="q-head">
+              <strong>Ejercicio 1 · Elegí la opción correcta</strong>
+              <p class="q-instruction">Según lo que dice el texto, marcá la oración correcta en cada pregunta.</p>
+            </div>
+            <div id="rChoiceQuestions" class="reading-questions"></div>
+          </div>
+
+          <div class="tool-row">
+            <button id="rCheck" class="btn btn-primary" type="button">Corregir reading</button>
+            <button id="rClearAns" class="btn btn-ghost" type="button">Limpiar</button>
+            <span id="rScore" class="score-pill"></span>
+          </div>
+          <details id="rAnswerPanel" class="details-panel">
+            <summary>Respuestas y explicación</summary>
+            <p id="rAnswersHint" class="answers-hint">Pulsá <strong>Corregir reading</strong> para ver acá las respuestas correctas con su explicación.</p>
+            <ol id="rAnswers"></ol>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ SPEAKING ============ -->
+    <section id="view-speaking" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">IELTS Speaking</span>
+        <h2>Habla, grabá y escuchate</h2>
+        <p>Practicá las tres partes del Speaking. Escuchá la pregunta del examinador, grabá tu respuesta y volvé a escucharte.</p>
+      </header>
+
+      <div class="speaking-controls">
+        <div class="seg" role="tablist" aria-label="Parte del speaking">
+          <button class="seg-btn is-active" data-part="1" role="tab">Part 1 · Intro</button>
+          <button class="seg-btn" data-part="2" role="tab">Part 2 · Cue card</button>
+          <button class="seg-btn" data-part="3" role="tab">Part 3 · Discussion</button>
+        </div>
+        <button id="sNew" class="btn btn-ghost" type="button">Nueva pregunta</button>
+      </div>
+
+      <div class="speaking-layout">
+        <article class="cue-card">
+          <span class="level-pill" id="sPartLabel">Part 1</span>
+          <p id="sPrompt" class="cue-prompt"></p>
+          <ul id="sBullets" class="cue-bullets"></ul>
+          <div class="examiner-row">
+            <button id="sHear" class="btn btn-ghost" type="button">🔊 Escuchar al examinador</button>
+            <span id="sPrepTimer" class="prep-timer" hidden>Preparación 00:00</span>
+          </div>
+        </article>
+
+        <article class="record-card">
+          <div class="rec-visual">
+            <span id="recDot" class="rec-dot"></span>
+            <span id="recTime" class="rec-time">00:00</span>
+          </div>
+          <div class="tool-row rec-actions">
+            <button id="recStart" class="btn btn-primary" type="button">● Grabar</button>
+            <button id="recStop" class="btn btn-ghost" type="button" disabled>■ Detener</button>
+          </div>
+          <audio id="recPlayback" controls class="rec-playback" hidden></audio>
+          <p id="recHint" class="rec-hint">Consejo: apuntá a 1–2 min en Part 2. Hablá sin frenar, aunque cometas errores.</p>
+          <div class="band-descriptors">
+            <strong>Te evalúan por:</strong>
+            <span>Fluidez y coherencia · Recursos léxicos · Gramática y precisión · Pronunciación</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ LISTENING ============ -->
+    <section id="view-listening" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">Listening Lab</span>
+        <h2>Escuchá, seguí el texto y practicá</h2>
+        <p>Reproducí cada historia, acompañá la lectura y practicá con cloze, oraciones breves y dictado. Las actividades usan textos originales de nivel B2 alto–C1.</p>
+      </header>
+
+      <div class="listen-practice-header" role="region" aria-label="Selección de práctica de listening">
+        <div>
+          <span class="listen-practice-kicker">Seleccionar ejercicio</span>
+          <label for="lPracticeSelect">Número de práctica</label>
+        </div>
+        <select id="lPracticeSelect" aria-label="Número de práctica"></select>
+      </div>
+
+      <div class="listening-studio">
+        <div class="listen-topbar">
+          <div class="listen-lesson-info">
+            <h3 id="lTitle">Listening lesson</h3>
+            <p id="lLessonMeta" class="listen-lesson-meta"></p>
+          </div>
+
+          <div class="listen-player" aria-label="Controles de audio">
+            <div class="audio-actions listen-main-actions">
+              <button id="lPlay" class="btn btn-primary" type="button">▶ Reproducir</button>
+              <button id="lPause" class="btn btn-ghost" type="button">⏸ Pausar</button>
+              <button id="lStop" class="btn btn-ghost listen-stop" type="button">■</button>
+            </div>
+            <div class="listen-progress" aria-hidden="true"><div class="bar-track"><div id="lBar" class="bar-fill"></div></div></div>
+            <div class="listen-status-row"><strong id="lStatus">Listo</strong><span id="lProgressText">0%</span></div>
+          </div>
+
+          <div class="listen-top-actions">
+            <button id="lSettingsToggle" class="listen-settings-btn" type="button" aria-expanded="false" aria-controls="lSettingsPanel" title="Configurar voz y velocidad">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94a7.8 7.8 0 0 0 .05-.94 7.8 7.8 0 0 0-.05-.94l2.03-1.58-1.92-3.32-2.39.96a7.4 7.4 0 0 0-1.63-.95L14.87 3h-3.84l-.36 3.17c-.58.24-1.12.56-1.63.95l-2.39-.96-1.92 3.32 2.03 1.58a7.8 7.8 0 0 0-.05.94c0 .32.02.63.05.94l-2.03 1.58 1.92 3.32 2.39-.96c.5.39 1.05.71 1.63.95l.36 3.17h3.84l.36-3.17c.58-.24 1.12-.56 1.63-.95l2.39.96 1.92-3.32-2.03-1.58ZM12.95 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
+              <span>Audio</span>
+            </button>
+            <div id="lSettingsPanel" class="listen-settings-panel hidden" role="dialog" aria-label="Ajustes de audio">
+              <div class="listen-settings-head"><strong>Ajustes de audio</strong><button id="lSettingsClose" type="button" aria-label="Cerrar ajustes">×</button></div>
+              <label for="lVoice">Voz</label>
+              <select id="lVoice"><option value="">Cargando voces…</option></select>
+              <label class="range-row" for="lWpm"><span>Velocidad</span><em id="lWpmVal">145 WPM</em></label>
+              <input id="lWpm" type="range" min="90" max="190" step="5" value="145" />
+              <p class="listen-settings-note">Voces disponibles: Mujer A, Mujer B, Hombre A y Hombre B.</p>
+            </div>
+          </div>
+        </div>
+
+        <nav class="listen-tabs" role="tablist" aria-label="Tipos de práctica">
+          <button class="listen-tab is-active" type="button" role="tab" aria-selected="true" data-ltab="read">Texto y audio</button>
+          <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="cloze">Cloze</button>
+          <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="sentences">Sentences</button>
+          <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="dictation">Dictation</button>
+        </nav>
+
+        <article class="listen-panel">
+          <section id="lPanelRead" class="listen-tab-panel" data-lpanel="read">
+            <div class="listen-panel-head"><div><span class="listen-kicker">Read along</span><h4>Seguí el texto mientras escuchás</h4></div></div>
+            <div id="lReadText" class="listen-passage" aria-live="polite"></div>
+          </section>
+
+          <section id="lPanelCloze" class="listen-tab-panel hidden" data-lpanel="cloze">
+            <div class="listen-panel-head"><div><span class="listen-kicker">Cloze</span><h4>Completá el texto mientras escuchás</h4></div><span class="listen-limit">1–3 palabras por espacio</span></div>
+            <p class="q-instruction">Reproducí el audio y escribí las palabras que faltan. Para pedir una pista, seleccioná un espacio: cada toque revela una sola letra de esa respuesta.</p>
+            <div id="lClozeText" class="listen-passage listen-cloze"></div>
+            <div class="tool-row">
+              <button id="lClozeCheck" class="btn btn-primary" type="button">Corregir cloze</button>
+              <button id="lClozeHint" class="btn btn-ghost" type="button">Pista</button>
+              <button id="lClozeReset" class="btn btn-ghost" type="button">Reiniciar</button>
+              <span id="lClozeScore" class="score-pill" aria-live="polite"></span>
+            </div>
+          </section>
+
+          <section id="lPanelSentences" class="listen-tab-panel hidden" data-lpanel="sentences">
+            <div class="listen-panel-head"><div><span class="listen-kicker">Sentences</span><h4>Completá con información del audio</h4></div><span class="listen-limit">1–2 palabras</span></div>
+            <div id="lSentenceQuestions" class="listen-sentence-list"></div>
+            <div class="tool-row">
+              <button id="lSentenceCheck" class="btn btn-primary" type="button">Corregir oraciones</button>
+              <button id="lSentenceReveal" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar respuestas</button>
+              <button id="lSentenceReset" class="btn btn-ghost" type="button">Limpiar</button>
+              <span id="lSentenceScore" class="score-pill" aria-live="polite"></span>
+            </div>
+          </section>
+
+          <section id="lPanelDictation" class="listen-tab-panel hidden" data-lpanel="dictation">
+            <div class="listen-panel-head"><div><span class="listen-kicker">Dictation</span><h4>Escuchá cada fragmento y escribilo</h4></div></div>
+            <p class="q-instruction">Cada botón reproduce una oración. Podés escucharla varias veces antes de corregir.</p>
+            <div id="lDictationList" class="listen-dictation-list"></div>
+            <div class="tool-row">
+              <button id="lDictationCheck" class="btn btn-primary" type="button">Corregir dictado</button>
+              <button id="lDictationReset" class="btn btn-ghost" type="button">Limpiar</button>
+              <span id="lDictationScore" class="score-pill" aria-live="polite"></span>
+            </div>
+          </section>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ TIEMPOS ============ -->
+    <section id="view-tiempos" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">Gramática</span>
+        <h2>Tiempos verbales</h2>
+        <p>Elegí un tiempo para ver su estructura, cuándo se usa y ejemplos con traducción.</p>
+      </header>
+      <div class="tenses-layout">
+        <div id="tGrid" class="tense-grid"></div>
+        <article id="tDetail" class="tense-detail">
+          <span class="level-pill" id="tLevel"></span>
+          <h3 id="tName">Elegí un tiempo</h3>
+          <p id="tSummary" class="tense-summary"></p>
+          <div class="struct-grid">
+            <div><span>Afirmativa</span><code id="tAff"></code></div>
+            <div><span>Negativa</span><code id="tNeg"></code></div>
+            <div><span>Interrogativa</span><code id="tQ"></code></div>
+          </div>
+          <h4>Usos</h4><ul id="tUses" class="tense-uses"></ul>
+          <h4>Ejemplos</h4><ul id="tExamples" class="tense-examples"></ul>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ PRACTICA ============ -->
+    <section id="view-practica" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">Práctica rápida</span>
+        <h2>Traducción y estructura inmediata</h2>
+        <p>Traducí la oración, corregila y pasá a la siguiente. Ideal para condicionales, perfectos y modales.</p>
+      </header>
+      <div class="quick-card">
+        <span id="qTopic" class="level-pill"></span>
+        <h3 id="qPrompt"></h3>
+        <textarea id="qAnswer" placeholder="Write your translation here…"></textarea>
+        <div class="tool-row">
+          <button id="qCheck" class="btn btn-primary" type="button">Corregir respuesta</button>
+          <button id="qModel" class="btn btn-ghost" type="button">Ver respuesta modelo</button>
+          <button id="qNext" class="btn btn-ghost" type="button">Nueva oración</button>
+        </div>
+        <div id="qFeedback" class="quick-feedback"></div>
+      </div>
+
+      <!-- ============ UNIR CON FLECHAS: inglés ↔ español ============ -->
+      <header class="sec-head mt-block">
+        <span class="eyebrow">Vocabulario</span>
+        <h2>Unir con flechas</h2>
+        <p>Uní cada palabra o phrasal verb en inglés con su significado en español. Tocá una palabra de la izquierda y después su par de la derecha, o arrastrá de una a otra.</p>
+      </header>
+
+      <div class="match-card">
+        <div class="match-toolbar">
+          <div class="match-set-field">
+            <label for="mvSet">Conjunto</label>
+            <select id="mvSet"></select>
+          </div>
+          <div class="match-actions">
+            <button id="mvCheck" class="btn btn-primary" type="button">Corregir</button>
+            <button id="mvReveal" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar respuestas</button>
+            <button id="mvClear" class="btn btn-ghost" type="button">Borrar uniones</button>
+            <button id="mvShuffle" class="btn btn-ghost" type="button">Mezclar</button>
+          </div>
+        </div>
+
+        <div class="match-roundbar">
+          <div class="match-round-nav">
+            <button id="mvPrev" class="match-nav-btn" type="button" aria-label="Ronda anterior">‹</button>
+            <span id="mvRound" class="match-round-label">Ronda 1 de 4</span>
+            <button id="mvNext" class="match-nav-btn" type="button" aria-label="Ronda siguiente">›</button>
+          </div>
+          <span id="mvProgress" class="match-progress"></span>
+        </div>
+
+        <p id="mvScore" class="match-score" aria-live="polite"></p>
+
+        <div id="mvBoard" class="match-board">
+          <svg id="mvLines" class="match-lines" aria-hidden="true"></svg>
+          <div class="match-col">
+            <span class="match-col-head">Inglés</span>
+            <ul id="mvLeft" class="match-list" role="list"></ul>
+          </div>
+          <div class="match-gutter" aria-hidden="true"></div>
+          <div class="match-col">
+            <span class="match-col-head">Español</span>
+            <ul id="mvRight" class="match-list" role="list"></ul>
+          </div>
+        </div>
+
+        <p class="match-hint">Tocá una palabra en inglés y después su significado — o arrastrá de una a otra. Tocá una unión existente para deshacerla.</p>
+      </div>
+    </section>
+
+    <!-- ============ EXAMEN ============ -->
+    <section id="view-examen" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">IELTS Express</span>
+        <h2>Simulacro rápido</h2>
+        <p>Practicá las cuatro habilidades en versiones cortas que evalúan los mismos criterios que el examen oficial. Elegí un módulo para saltar a su sección.</p>
+      </header>
+      <div class="express-grid">
+        <button class="express-card" data-go="listening">
+          <span class="ec-ico" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M360-120H200q-33 0-56.5-23.5T120-200v-280q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480v280q0 33-23.5 56.5T760-120H600v-320h160v-40q0-117-81.5-198.5T480-760q-117 0-198.5 81.5T200-480v40h160v320Zm-80-240h-80v160h80v-160Zm400 0v160h80v-160h-80Zm-400 0h-80 80Zm400 0h80-80Z"/></svg>
+          </span>
+          <strong>Express Listening</strong><small>1 audio corto · preguntas variadas</small><em>5–7 min</em>
+        </button>
+        <button class="express-card" data-go="reading">
+          <span class="ec-ico" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M560-564v-68q33-14 67.5-21t72.5-7q26 0 51 4t49 10v64q-24-9-48.5-13.5T700-600q-38 0-73 9.5T560-564Zm0 220v-68q33-14 67.5-21t72.5-7q26 0 51 4t49 10v64q-24-9-48.5-13.5T700-380q-38 0-73 9t-67 27Zm0-110v-68q33-14 67.5-21t72.5-7q26 0 51 4t49 10v64q-24-9-48.5-13.5T700-490q-38 0-73 9.5T560-454ZM260-320q47 0 91.5 10.5T440-278v-394q-41-24-87-36t-93-12q-36 0-71.5 7T120-692v396q35-12 69.5-18t70.5-6Zm260 42q44-21 88.5-31.5T700-320q36 0 70.5 6t69.5 18v-396q-33-14-68.5-21t-71.5-7q-47 0-93 12t-87 36v394Zm-40 118q-48-38-104-59t-116-21q-42 0-82.5 11T100-198q-21 11-40.5-1T40-234v-482q0-11 5.5-21T62-752q46-24 96-36t102-12q58 0 113.5 15T480-740q51-30 106.5-45T700-800q52 0 102 12t96 36q11 5 16.5 15t5.5 21v482q0 23-19.5 35t-40.5 1q-37-20-77.5-31T700-240q-60 0-116 21t-104 59ZM280-494Z"/></svg>
+          </span>
+          <strong>Express Reading</strong><small>1 texto · True/False/Not Given</small><em>7–10 min</em>
+        </button>
+        <button class="express-card" data-go="writing">
+          <span class="ec-ico" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h357l-80 80H200v560h560v-278l80-80v358q0 33-23.5 56.5T760-120H200Zm280-360ZM360-360v-170l382-382q12-12 27-18t30-6q16 0 30.5 6t26.5 18l56 57q11 12 17 26.5t6 29.5q0 15-5.5 29.5T912-742L530-360H360Zm481-384-56-56 56 56ZM440-440h56l232-232-28-28-27-28-233 231v57Zm260-260-27-28 27 28 28 28-28-28Z"/></svg>
+          </span>
+          <strong>Express Writing</strong><small>Ensayo corto · corrección IA Coach</small><em>15 min</em>
+        </button>
+        <button class="express-card" data-go="speaking">
+          <span class="ec-ico" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M480-400q-50 0-85-35t-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35Zm0-240Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm40-360q17 0 28.5-11.5T520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480Z"/></svg>
+          </span>
+          <strong>Express Speaking</strong><small>Preguntas rápidas · grabación</small><em>3–5 min</em>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ ACCOUNT VIEWS ============ -->
+    <section id="view-perfil" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head"><span class="eyebrow">Cuenta</span><h2>Perfil</h2><p>Tu progreso se guarda en este navegador.</p></header>
+      <div class="account-card">
+        <label for="pName">Nombre</label>
+        <input id="pName" type="text" placeholder="Tu nombre" />
+        <label for="pLevel">Nivel de inglés actual</label>
+        <select id="pLevel">
+          <option value="A1">A1 · Principiante</option>
+          <option value="A2">A2 · Elemental</option>
+          <option value="B1">B1 · Intermedio</option>
+          <option value="B2" selected>B2 · Intermedio alto</option>
+          <option value="C1">C1 · Avanzado</option>
+          <option value="C2">C2 · Maestría</option>
+        </select>
+        <p id="pLevelNote" class="level-note" aria-live="polite"></p>
+        <button id="pSave" class="btn btn-primary" type="button">Guardar perfil</button>
+        <div class="stat-row">
+          <div><strong id="pDone">0</strong><span>ejercicios corregidos</span></div>
+          <div><strong id="pStreak">0</strong><span>días de racha</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ACCOUNT VIEWS: CALENDARIO INTERACTIVO ============ -->
+    <section id="view-calendario" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">Cuenta</span>
+        <h2>Calendario de Actividad</h2>
+        <p>Hacé clic en cualquier día para programar o consultar tus metas de estudio.</p>
+      </header>
+
+      <div class="cal-card-type1">
+        <!-- Header con navegación de Mes/Año -->
+        <div class="cal-header-type1">
+          <div class="cal-title-box">
+            <span class="cal-num">English Trainer</span>
+            <span id="calMonthYearTitle" class="cal-name">Cargando mes...</span>
+          </div>
+          <div class="cal-nav-buttons">
+            <button id="calPrevMonth" class="btn btn-ghost" type="button" aria-label="Mes anterior">&lsaquo;</button>
+            <button id="calTodayBtn" class="btn btn-ghost" type="button">Hoy</button>
+            <button id="calNextMonth" class="btn btn-ghost" type="button" aria-label="Mes siguiente">&rsaquo;</button>
+          </div>
+        </div>
+
+        <!-- Timeline / Barra de progreso mensual -->
+        <div class="timeline-progress">
+          <div class="tl-info">
+            <span>Progreso de Actividad</span>
+            <strong id="calProgressText">0% completado</strong>
+          </div>
+          <div class="tl-bar-bg">
+            <div id="calProgressBar" class="tl-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Grilla de días -->
+        <div class="cal1-grid-container">
+          <div class="cal1-weekdays">
+            <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+          </div>
+          <div id="calDaysGrid" class="cal1-grid-days"></div>
+        </div>
+
+        <!-- Formulario para agregar / editar eventos en la fecha seleccionada -->
+        <div class="cal1-editor-panel">
+          <div class="cal1-editor-head">
+            <strong id="calSelectedDateTitle">Seleccioná un día</strong>
+            <span id="calSelectedStatus" class="cal-status-badge"></span>
+          </div>
+          <div class="cal1-input-group">
+            <input type="text" id="calEventInput" placeholder="Escribí un evento o meta para este día..." />
+            <button id="calSaveEventBtn" class="btn btn-primary" type="button">Guardar</button>
+            <button id="calDeleteEventBtn" class="btn btn-ghost" type="button" hidden>Eliminar</button>
+          </div>
+        </div>
+
+        <!-- Lista de Eventos del mes -->
+        <div class="cal1-events-panel">
+          <h4>Eventos programados del mes</h4>
+          <div id="calEventsList" class="cal1-events-list"></div>
+        </div>
+
+        <p class="cal-note" id="calNote"></p>
+      </div>
+    </section>
+
+    <section id="view-racha" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head"><span class="eyebrow">Cuenta</span><h2>Racha</h2></header>
+      <div class="account-card streak-card"><span class="streak-fire">🔥</span><strong id="streakBig">0</strong><span>días seguidos practicando</span><p class="cal-note">Corregí al menos un ejercicio por día para no perder la racha.</p></div>
+    </section>
+
+    <section id="view-comunidad" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head"><span class="eyebrow">Cuenta</span><h2>Comunidad</h2></header>
+      <div class="account-card"><p class="plain">Compartí tus dudas y respuestas con otros estudiantes. Muy pronto vas a poder publicar párrafos y recibir feedback de la comunidad, además del IA Coach.</p></div>
+    </section>
+
+    <section id="view-ayuda" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head"><span class="eyebrow">Cuenta</span><h2>Ayuda / Servicio</h2></header>
+      <div class="account-card">
+        <p class="plain">¿Algo no funciona o querés sugerir una mejora? Contanos.</p>
+        <label for="hMsg">Mensaje</label>
+        <textarea id="hMsg" placeholder="Escribí tu consulta…"></textarea>
+        <button id="hSend" class="btn btn-primary" type="button">Enviar</button>
+        <p id="hStatus" class="cal-note"></p>
+      </div>
+    </section>
+
+    <section id="view-faqs" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head"><span class="eyebrow">Cuenta</span><h2>Preguntas frecuentes</h2></header>
+      <div class="account-card faq-list">
+        <details class="details-panel"><summary>¿Cómo corrige el IA Coach?</summary><p class="plain">Analiza tu texto (longitud, conectores, complejidad y errores frecuentes), estima un band orientativo y te sugiere mejoras. Es una guía de estudio, no una evaluación oficial.</p></details>
+        <details class="details-panel"><summary>¿Necesito conexión para el Listening?</summary><p class="plain">El audio usa la voz del navegador (Web Speech). Funciona sin internet una vez cargada la página, aunque las voces disponibles dependen de tu sistema.</p></details>
+        <details class="details-panel"><summary>¿Dónde se guarda mi progreso?</summary><p class="plain">En el almacenamiento local de este navegador. Si borrás los datos del sitio, se reinicia.</p></details>
+        <details class="details-panel"><summary>¿La grabación de Speaking se sube a algún lado?</summary><p class="plain">No. Se queda en tu dispositivo para que puedas escucharte. Nada sale de tu navegador.</p></details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-foot"><span>English Trainer · IELTS Path</span><span>Practicá un poco cada día.</span></footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

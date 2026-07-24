@@ -1491,3 +1491,18 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .tr-source.hidden{display:none}
 .translator-note.is-warn{color:var(--accent-2)}
 #translatorRun:disabled{opacity:.6;cursor:progress}
+
+/* ============================================================
+   LISTENING — aviso de calidad de voz
+   ============================================================ */
+.listen-quality-hint{
+  margin-top:12px;padding:11px 13px;
+  font-size:.8rem;line-height:1.55;color:var(--ink);
+  background:var(--paper-2);
+  border:1px solid var(--line);
+  border-left:3px solid var(--gold);
+  border-radius:var(--radius-sm);
+}
+.listen-quality-hint.hidden{display:none}
+.listen-quality-hint strong{color:var(--ink)}
+.listen-quality-hint em{font-style:normal;font-weight:600;color:var(--accent)}

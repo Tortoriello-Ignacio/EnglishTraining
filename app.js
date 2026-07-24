@@ -13740,14 +13740,16 @@
       "hazel", "susan", "emma", "ava", "olivia", "molly", "rosa", "luna", "imani", "asillia", "neerja", "ezinne",
       // macOS / iOS
       "samantha", "victoria", "allison", "susan", "fiona", "karen", "moira", "tessa",
-      "veena", "kate", "serena", "stephanie", "shelley", "sandy", "kathy", "flo"
+      "veena", "kate", "serena", "stephanie", "shelley", "sandy", "kathy", "flo",
+      "ava", "zoe", "nicky", "vicki", "princess", "isha"
     ],
     male: [
       // Windows / Edge / Google
       "ryan", "steffan", "guy", "christopher", "george", "david", "mark", "james",
       "william", "liam", "mitchell", "wayne", "abeo", "prabhat", "chilimba", "elimu", "ravi",
       // macOS / iOS
-      "alex", "daniel", "fred", "tom", "aaron", "arthur", "gordon", "oliver", "rishi", "reed", "eddy", "grandpa"
+      "alex", "daniel", "fred", "tom", "aaron", "arthur", "gordon", "oliver", "rishi", "reed", "eddy", "grandpa",
+      "evan", "nathan", "jacques", "thomas", "lee", "bruce", "junior", "ralph", "albert"
     ]
   };
 
@@ -13761,15 +13763,33 @@
     return "unknown";
   }
 
+  // Voces de macOS de alta calidad ("Premium"/"Enhanced") frente a las
+  // "compact" que vienen por defecto y suenan robóticas. También marcamos
+  // las voces neural/natural de otros sistemas.
+  const HIGH_QUALITY_VOICE = /premium|enhanced|neural|natural|siri|online|wavenet|studio/i;
+  const LOW_QUALITY_VOICE = /compact|eloquence|espeak|pico/i;
+
   function listeningVoiceScore(voice, gender) {
     const name = String(voice.name || "").toLowerCase();
+    const uri = String(voice.voiceURI || "").toLowerCase();
     const locale = String(voice.lang || "").toLowerCase();
     const profile = LISTENING_VOICE_PROFILES[gender] || [];
     const preferredIndex = profile.findIndex((token) => name.includes(token));
-    let score = voice.localService ? 1000 : 0;
-    if (preferredIndex >= 0) score += 500 - preferredIndex;
+    let score = 0;
+
+    // La CALIDAD manda por encima de todo: una voz neural/premium suena natural,
+    // una "compact" suena robótica. Esto es lo que fallaba en Mac, donde las
+    // voces compactas locales ganaban a las de alta calidad.
+    if (HIGH_QUALITY_VOICE.test(name) || HIGH_QUALITY_VOICE.test(uri)) score += 2000;
+    if (LOW_QUALITY_VOICE.test(name) || LOW_QUALITY_VOICE.test(uri)) score -= 800;
+
+    // Preferimos una voz nombrada de nuestra lista, pero sin que pese más que la calidad.
+    if (preferredIndex >= 0) score += 300 - preferredIndex;
     if (/en-(gb|us|au|ca)/i.test(locale)) score += 100;
-    if (/natural|neural/i.test(name)) score += 40;
+
+    // Como último desempate, una voz local evita depender de la red,
+    // pero vale mucho menos que la calidad de la voz.
+    if (voice.localService) score += 30;
     return score;
   }
 
@@ -13933,6 +13953,7 @@
     if (!profiles.length) {
       $("lVoice").innerHTML = '<option value="">No hay voces inglesas disponibles</option>';
       $("lVoice").disabled = true;
+      updateVoiceQualityHint([]);
       return;
     }
     $("lVoice").disabled = false;
@@ -13943,6 +13964,44 @@
     const available = profiles.some(({ voice }) => (voice.voiceURI || voice.name) === selected);
     $("lVoice").value = available ? selected : (profiles[0].voice.voiceURI || profiles[0].voice.name);
     store.set("listening_voice", $("lVoice").value);
+    updateVoiceQualityHint(listenVoices);
+  }
+
+  // ¿La voz que suena ahora es de baja calidad (compacta/robótica)?
+  function isLowQualityVoice(voice) {
+    if (!voice) return false;
+    const n = String(voice.name || "").toLowerCase();
+    const u = String(voice.voiceURI || "").toLowerCase();
+    if (HIGH_QUALITY_VOICE.test(n) || HIGH_QUALITY_VOICE.test(u)) return false;
+    return true; // sin marca de alta calidad la tratamos como básica
+  }
+
+  // Muestra un aviso con instrucciones cuando todas las voces son básicas.
+  function updateVoiceQualityHint(voices) {
+    const el = $("lVoiceQualityHint");
+    if (!el) return;
+    const anyGood = (voices || []).some((v) => !isLowQualityVoice(v));
+    if (anyGood || !voices || !voices.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+
+    const ua = String(navigator.userAgent || "");
+    const isMac = /Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua);
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    let msg;
+    if (isMac) {
+      msg = "<strong>¿Las voces suenan robóticas?</strong> macOS trae voces básicas por defecto. " +
+            "Para voces mucho más naturales: abrí <em>Ajustes del Sistema → Accesibilidad → Contenido hablado → Voz del sistema → Gestionar voces…</em> " +
+            "y descargá una voz inglesa marcada como <em>Premium</em> o <em>Mejorada</em> (por ejemplo <em>Ava</em>, <em>Zoe</em> o <em>Evan</em>). " +
+            "Después recargá esta página y elegila en la lista de arriba.";
+    } else if (isIOS) {
+      msg = "<strong>¿Las voces suenan robóticas?</strong> En iPhone/iPad entrá a " +
+            "<em>Ajustes → Accesibilidad → Contenido hablado → Voces → Inglés</em> y descargá una voz marcada como " +
+            "<em>Premium</em> o <em>Mejorada</em>. Luego recargá la página.";
+    } else {
+      msg = "<strong>¿Las voces suenan robóticas?</strong> Probá abrir la app en Google Chrome o Microsoft Edge, " +
+            "que incluyen voces inglesas más naturales sin instalar nada.";
+    }
+    el.innerHTML = msg;
+    el.classList.remove("hidden");
   }
 
   function selectedListeningVoice() {
@@ -14263,6 +14322,10 @@
     if (voice) utterance.voice = voice;
     utterance.lang = voice?.lang || "en-GB";
     utterance.rate = Math.max(0.65, Math.min(1.45, Number($("lWpm").value) / 145));
+    // Tono y volumen neutros: algunas voces básicas suenan más artificiales
+    // con los valores por defecto del navegador si quedan sin fijar.
+    utterance.pitch = 1;
+    utterance.volume = 1;
     if (track) {
       const total = Math.max(1, text.length);
       utterance.onboundary = (event) => {

@@ -13735,17 +13735,27 @@
 
   const LISTENING_VOICE_PROFILES = {
     female: [
+      // Windows / Edge / Google
       "sonia", "libby", "jenny", "aria", "michelle", "natasha", "clara", "zira",
-      "hazel", "susan", "emma", "ava", "olivia", "molly", "rosa", "luna", "imani", "asillia", "neerja", "ezinne"
+      "hazel", "susan", "emma", "ava", "olivia", "molly", "rosa", "luna", "imani", "asillia", "neerja", "ezinne",
+      // macOS / iOS
+      "samantha", "victoria", "allison", "susan", "fiona", "karen", "moira", "tessa",
+      "veena", "kate", "serena", "stephanie", "shelley", "sandy", "kathy", "flo"
     ],
     male: [
+      // Windows / Edge / Google
       "ryan", "steffan", "guy", "christopher", "george", "david", "mark", "james",
-      "william", "liam", "mitchell", "wayne", "abeo", "prabhat", "chilimba", "elimu", "ravi"
+      "william", "liam", "mitchell", "wayne", "abeo", "prabhat", "chilimba", "elimu", "ravi",
+      // macOS / iOS
+      "alex", "daniel", "fred", "tom", "aaron", "arthur", "gordon", "oliver", "rishi", "reed", "eddy", "grandpa"
     ]
   };
 
   function listeningVoiceGender(voice) {
     const name = String(voice?.name || "").toLowerCase();
+    // Palabras explícitas de género (p. ej. "Google UK English Female")
+    if (/\bfemale\b|\bwoman\b|\bmujer\b/.test(name)) return "female";
+    if (/\bmale\b|\bman\b|\bhombre\b/.test(name)) return "male";
     if (LISTENING_VOICE_PROFILES.female.some((token) => name.includes(token))) return "female";
     if (LISTENING_VOICE_PROFILES.male.some((token) => name.includes(token))) return "male";
     return "unknown";
@@ -13764,30 +13774,65 @@
   }
 
   function selectReliableListeningVoices(voices) {
-    const english = voices.filter((voice) => /^en(?:-|_)/i.test(voice.lang || ""));
-    const unique = [...new Map(english.map((voice) => [voice.voiceURI || `${voice.name}|${voice.lang}`, voice])).values()];
-    const byGender = (gender) => unique
-      .filter((voice) => listeningVoiceGender(voice) === gender)
-      .sort((a, b) => listeningVoiceScore(b, gender) - listeningVoiceScore(a, gender));
+    // Aceptamos cualquier variante de inglés (en-US, en-GB, en_AU, "en", etc.)
+    const english = (voices || []).filter((voice) =>
+      /^en\b|^en[-_]/i.test(String(voice.lang || "")) || /english/i.test(String(voice.name || ""))
+    );
+    const unique = [...new Map(
+      english.map((voice) => [voice.voiceURI || `${voice.name}|${voice.lang}`, voice])
+    ).values()];
 
-    const femaleRanked = byGender("female").slice(0, 4);
-    const maleRanked = byGender("male").slice(0, 4);
-    const selectedKeys = new Set([...femaleRanked, ...maleRanked].map((voice) => voice.voiceURI || `${voice.name}|${voice.lang}`));
-    const unknown = unique
-      .filter((voice) => !selectedKeys.has(voice.voiceURI || `${voice.name}|${voice.lang}`))
+    if (!unique.length) return [];
+
+    const keyOf = (voice) => voice.voiceURI || `${voice.name}|${voice.lang}`;
+    const byScore = (a, b, g) => listeningVoiceScore(b, g) - listeningVoiceScore(a, g);
+
+    const females = unique.filter((v) => listeningVoiceGender(v) === "female").sort((a, b) => byScore(a, b, "female"));
+    const males   = unique.filter((v) => listeningVoiceGender(v) === "male").sort((a, b) => byScore(a, b, "male"));
+    const unknown = unique.filter((v) => listeningVoiceGender(v) === "unknown")
       .sort((a, b) => Number(b.localService) - Number(a.localService));
 
-    while (femaleRanked.length < 4 && unknown.length) femaleRanked.push(unknown.shift());
-    while (maleRanked.length < 4 && unknown.length) maleRanked.push(unknown.shift());
+    // Construimos hasta 4 opciones sin dejar huecos: primero mujeres y hombres
+    // reconocidos, luego rellenamos con lo que haya (incluidas voces sin género
+    // identificable, frecuentes en macOS). Nunca devolvemos slots vacíos.
+    const used = new Set();
+    const take = (list) => {
+      for (const v of list) {
+        const k = keyOf(v);
+        if (!used.has(k)) { used.add(k); return v; }
+      }
+      return null;
+    };
 
-    const profiles = [
-      { voice: femaleRanked[0], gender: "female", label: "Mujer A" },
-      { voice: femaleRanked[2], gender: "female", label: "Mujer B" },
-      { voice: maleRanked[0], gender: "male", label: "Hombre A" },
-      { voice: maleRanked[3], gender: "male", label: "Hombre B" }
+    const picks = [];
+    const order = [
+      { list: females, g: "female", base: "Mujer" },
+      { list: males, g: "male", base: "Hombre" },
+      { list: females, g: "female", base: "Mujer" },
+      { list: males, g: "male", base: "Hombre" }
     ];
+    const counts = { Mujer: 0, Hombre: 0, Voz: 0 };
+    for (const slot of order) {
+      let v = take(slot.list);
+      if (!v) v = take(unknown);
+      if (!v) continue;
+      const base = listeningVoiceGender(v) === "female" ? "Mujer"
+                 : listeningVoiceGender(v) === "male" ? "Hombre" : "Voz";
+      counts[base] += 1;
+      picks.push({ voice: v, gender: listeningVoiceGender(v),
+        label: base + " " + String.fromCharCode(64 + counts[base]) });
+    }
+    // Si todavía faltan y quedan voces sin usar, las agregamos igual.
+    for (const v of unique) {
+      if (picks.length >= 4) break;
+      const k = keyOf(v);
+      if (used.has(k)) continue;
+      used.add(k);
+      counts.Voz += 1;
+      picks.push({ voice: v, gender: "unknown", label: "Voz " + String.fromCharCode(64 + counts.Voz) });
+    }
 
-    return profiles.filter((profile) => Boolean(profile.voice));
+    return picks;
   }
 
   function initListening() {
@@ -13799,7 +13844,19 @@
     $("lWpmVal").textContent = $("lWpm").value + " WPM";
 
     loadListeningVoices();
-    if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = loadListeningVoices;
+    if ("speechSynthesis" in window) {
+      speechSynthesis.onvoiceschanged = loadListeningVoices;
+      // Safari/macOS a veces devuelve getVoices() vacío en el primer intento
+      // porque las voces cargan de forma asíncrona y no siempre dispara
+      // onvoiceschanged. Reintentamos unas cuantas veces hasta que aparezcan.
+      let voiceTries = 0;
+      const voicePoll = setInterval(() => {
+        voiceTries += 1;
+        const have = speechSynthesis.getVoices().length > 0 && listenVoices.length > 0;
+        if (have || voiceTries >= 10) { clearInterval(voicePoll); }
+        if (!have) loadListeningVoices();
+      }, 300);
+    }
 
     document.querySelectorAll("[data-ltab]").forEach((button) => {
       button.addEventListener("click", () => setListeningTab(button.dataset.ltab));
@@ -14214,10 +14271,27 @@
         highlightListeningWord(event.charIndex);
       };
       utterance.onstart = () => { setListeningStatus("Reproduciendo…"); listeningPaused = false; $("lPause").textContent = "⏸ Pausar"; };
-      utterance.onend = () => { setListeningProgress(100); setListeningStatus("Audio terminado"); clearListeningHighlight(); listeningPaused = false; };
-      utterance.onerror = () => { setListeningStatus("No se pudo reproducir"); clearListeningHighlight(); };
+      utterance.onend = () => { stopTtsKeepAlive(); setListeningProgress(100); setListeningStatus("Audio terminado"); clearListeningHighlight(); listeningPaused = false; };
+      utterance.onerror = () => { stopTtsKeepAlive(); setListeningStatus("No se pudo reproducir"); clearListeningHighlight(); };
     }
     return utterance;
+  }
+
+  // Safari corta las locuciones largas (~15 s) si no se le "recuerda" que siga.
+  // Este truco de pause()+resume() cada pocos segundos evita ese corte.
+  let ttsKeepAlive = null;
+  function startTtsKeepAlive() {
+    stopTtsKeepAlive();
+    ttsKeepAlive = setInterval(() => {
+      if (!("speechSynthesis" in window)) return;
+      if (speechSynthesis.speaking && !speechSynthesis.paused) {
+        speechSynthesis.pause();
+        speechSynthesis.resume();
+      }
+    }, 10000);
+  }
+  function stopTtsKeepAlive() {
+    if (ttsKeepAlive) { clearInterval(ttsKeepAlive); ttsKeepAlive = null; }
   }
 
   function playListening() {
@@ -14227,13 +14301,17 @@
       listeningPaused = false;
       $("lPause").textContent = "⏸ Pausar";
       setListeningStatus("Reproduciendo…");
+      startTtsKeepAlive();
       return;
     }
     speechSynthesis.cancel();
     setListeningProgress(0);
     clearListeningHighlight();
+    // Si las voces aún no cargaron (típico en Safari), forzamos una recarga.
+    if (!listenVoices.length) loadListeningVoices();
     ttsUtter = makeListeningUtterance(listeningTranscript(curLesson), { track: true });
     speechSynthesis.speak(ttsUtter);
+    startTtsKeepAlive();
   }
 
   function pauseResumeListening() {
@@ -14243,15 +14321,18 @@
       listeningPaused = false;
       $("lPause").textContent = "⏸ Pausar";
       setListeningStatus("Reproduciendo…");
+      startTtsKeepAlive();
     } else {
       speechSynthesis.pause();
       listeningPaused = true;
       $("lPause").textContent = "▶ Continuar";
       setListeningStatus("En pausa");
+      stopTtsKeepAlive();
     }
   }
 
   function stopListening() {
+    stopTtsKeepAlive();
     if ("speechSynthesis" in window) speechSynthesis.cancel();
     ttsUtter = null;
     listeningPaused = false;

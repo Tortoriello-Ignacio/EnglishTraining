@@ -67,7 +67,13 @@
   function setTranslatorOpen(open) {
     translatorPanel.classList.toggle("hidden", !open);
     translatorToggle.setAttribute("aria-expanded", String(open));
-    if (open) translatorText.focus();
+    if (open) { translatorText.focus(); }
+    else {
+      // Al cerrar, limpiamos el resultado para no mostrar datos viejos al reabrir.
+      const r = $("translatorResult");
+      if (r) r.classList.add("hidden");
+      setTranslatorStatus("");
+    }
   }
 
   translatorToggle.addEventListener("click", (event) => {
@@ -90,20 +96,135 @@
     if (selected) translatorText.value = selected.slice(0, 1800);
     translatorText.focus();
   });
-  $("translatorOpen").addEventListener("click", () => {
+  /* ---------- traducción dentro de la página ---------- */
+  const LANG_NAMES = { auto:"Detectado", en:"Inglés", es:"Español", pt:"Portugués",
+                       it:"Italiano", fr:"Francés", de:"Alemán" };
+
+  // Diccionario local: se arma con el vocabulario que ya trae la app (inglés <-> español).
+  let localDict = null;
+  function buildLocalDict() {
+    if (localDict) return localDict;
+    const en2es = new Map(), es2en = new Map();
+    try {
+      (typeof ET_MATCH_SETS !== "undefined" ? ET_MATCH_SETS : []).forEach((set) => {
+        (set.pairs || []).forEach((pair) => {
+          const en = String(pair.en || "").toLowerCase().trim();
+          const es = String(pair.es || "").trim();
+          if (!en || !es) return;
+          if (!en2es.has(en)) en2es.set(en, es);
+          // el español puede traer variantes separadas por "/"
+          es.split("/").map((x) => x.toLowerCase().trim()).forEach((v) => {
+            if (v && !es2en.has(v)) es2en.set(v, pair.en);
+          });
+        });
+      });
+    } catch (err) { /* si falla, el diccionario queda vacío */ }
+    localDict = { en2es, es2en };
+    return localDict;
+  }
+
+  // Respaldo sin conexión: sólo resuelve palabras o expresiones sueltas.
+  function translateLocally(text, source, target) {
+    const dict = buildLocalDict();
+    const key = text.toLowerCase().trim().replace(/[.,;:!?¡¿]+$/g, "");
+    let hit = null;
+    if (target === "es" && dict.en2es.has(key)) hit = dict.en2es.get(key);
+    else if (target === "en" && dict.es2en.has(key)) hit = dict.es2en.get(key);
+    else if (source === "auto") hit = dict.en2es.get(key) || dict.es2en.get(key) || null;
+    return hit;
+  }
+
+  function setTranslatorStatus(msg, kind) {
+    const el = $("translatorStatus");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.className = "translator-note" + (kind ? " is-" + kind : "");
+  }
+
+  function showTranslation(out, detected, target, note) {
+    $("translatorResult").classList.remove("hidden");
+    $("translatorOutput").textContent = out;
+    $("translatorResultLang").textContent =
+      (LANG_NAMES[detected] || detected || "?") + " → " + (LANG_NAMES[target] || target);
+    $("translatorSource2").textContent = note || "";
+    $("translatorSource2").classList.toggle("hidden", !note);
+  }
+
+  // Pide la traducción al endpoint público de Google Translate.
+  async function fetchTranslation(text, source, target) {
+    const url = "https://translate.googleapis.com/translate_a/single?client=gtx"
+      + "&sl=" + encodeURIComponent(source)
+      + "&tl=" + encodeURIComponent(target)
+      + "&dt=t&q=" + encodeURIComponent(text);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    // data[0] es una lista de segmentos; data[2] el idioma detectado
+    const out = (data[0] || []).map((seg) => (seg && seg[0]) || "").join("");
+    if (!out) throw new Error("respuesta vacía");
+    return { out: out, detected: data[2] || source };
+  }
+
+  async function runTranslation() {
     const text = translatorText.value.trim();
     if (!text) {
       translatorText.focus();
       translatorText.setAttribute("aria-invalid", "true");
+      setTranslatorStatus("Escribí algo para traducir.", "warn");
       return;
     }
     translatorText.removeAttribute("aria-invalid");
-    const url = new URL("https://translate.google.com/");
-    url.searchParams.set("sl", translatorSource.value);
-    url.searchParams.set("tl", translatorTarget.value);
-    url.searchParams.set("text", text);
-    url.searchParams.set("op", "translate");
-    window.open(url.toString(), "_blank", "noopener,noreferrer");
+    const source = translatorSource.value, target = translatorTarget.value;
+    if (source !== "auto" && source === target) {
+      setTranslatorStatus("El idioma de origen y el de destino son el mismo.", "warn");
+      return;
+    }
+
+    const btn = $("translatorRun");
+    btn.disabled = true;
+    setTranslatorStatus("Traduciendo…");
+    try {
+      const r = await fetchTranslation(text, source, target);
+      showTranslation(r.out, r.detected, target, "");
+      setTranslatorStatus("");
+    } catch (err) {
+      // Sin conexión al servicio: intentamos con el vocabulario propio de la app.
+      const local = translateLocally(text, source, target);
+      if (local) {
+        showTranslation(local, source, target, "Resuelto con el vocabulario de la app (sin conexión al traductor).");
+        setTranslatorStatus("");
+      } else {
+        $("translatorResult").classList.add("hidden");
+        setTranslatorStatus("No se pudo traducir ahora. Revisá la conexión e intentá de nuevo.", "warn");
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  $("translatorRun").addEventListener("click", runTranslation);
+  // Ctrl/Cmd + Enter traduce sin salir del cuadro de texto
+  translatorText.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      runTranslation();
+    }
+  });
+  $("translatorCopy").addEventListener("click", () => {
+    const out = $("translatorOutput").textContent;
+    if (!out) return;
+    const done = () => {
+      $("translatorCopy").textContent = "¡Copiado!";
+      setTimeout(() => { $("translatorCopy").textContent = "Copiar"; }, 1400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(out).then(done).catch(done);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = out; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta); done();
+    }
   });
   document.addEventListener("click", (event) => {
     if (!translatorPanel.classList.contains("hidden") && !event.target.closest(".translator-shell")) setTranslatorOpen(false);

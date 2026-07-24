@@ -72,9 +72,17 @@
           <textarea id="translatorText" rows="4" maxlength="1800" placeholder="Escribí o pegá una palabra, frase o párrafo…"></textarea>
           <div class="translator-actions">
             <button id="translatorSelection" class="btn btn-ghost" type="button">Usar texto seleccionado</button>
-            <button id="translatorOpen" class="btn btn-primary" type="button">Traducir con Google</button>
+            <button id="translatorRun" class="btn btn-primary" type="button">Traducir</button>
           </div>
-          <p class="translator-note">La traducción se abre precompletada en Google Translate.</p>
+          <div id="translatorResult" class="translator-result hidden">
+            <div class="tr-result-head">
+              <span id="translatorResultLang" class="tr-result-lang"></span>
+              <button id="translatorCopy" class="tr-copy" type="button">Copiar</button>
+            </div>
+            <p id="translatorOutput" class="tr-output" aria-live="polite"></p>
+            <p id="translatorSource2" class="tr-source"></p>
+          </div>
+          <p id="translatorStatus" class="translator-note" aria-live="polite"></p>
         </div>
       </div>
       <button id="themeToggle" class="theme-toggle" type="button" aria-label="Cambiar tema">

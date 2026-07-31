@@ -39,6 +39,8 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
     if (name === "tiempos" && !tensesInit) initTenses();
     if (name === "listening" && !listeningInit) initListening();
+    if (name === "micro" && !microInit) initMicro();
+    if (name === "daily" && !dailyInit) initDaily();
     if (name === "speaking") renderSpeaking();
     if (["perfil", "calendario", "racha"].includes(name)) renderAccount();
   }
@@ -46,6 +48,69 @@
     const el = e.target.closest("[data-go]");
     if (el) { e.preventDefault(); go(el.dataset.go); }
   });
+
+
+  /* ---------- Card Nav ---------- */
+  const cardNav = $("cardNav");
+  const cardNavToggle = $("cardNavToggle");
+  const cardNavContent = $("cardNavContent");
+  const cardNavTop = cardNav?.querySelector(".card-nav-top");
+  let cardNavOpen = false;
+
+  function cardNavHeight(open) {
+    if (!cardNav || !cardNavTop || !cardNavContent) return 64;
+    const closed = Math.max(64, Math.ceil(cardNavTop.getBoundingClientRect().height));
+    if (!open) return closed;
+    const full = closed + Math.ceil(cardNavContent.scrollHeight) + 4;
+    return Math.min(full, Math.max(closed, window.innerHeight - 14));
+  }
+
+  function setCardNavOpen(open, options = {}) {
+    if (!cardNav || !cardNavToggle || !cardNavContent) return;
+    cardNavOpen = Boolean(open);
+    cardNav.classList.toggle("open", cardNavOpen);
+    cardNavToggle.classList.toggle("open", cardNavOpen);
+    cardNavToggle.setAttribute("aria-expanded", String(cardNavOpen));
+    cardNavToggle.setAttribute("aria-label", cardNavOpen ? "Cerrar menú" : "Abrir menú");
+    cardNavContent.setAttribute("aria-hidden", String(!cardNavOpen));
+    cardNav.style.height = cardNavHeight(cardNavOpen) + "px";
+    document.body.classList.toggle("card-nav-is-open", cardNavOpen);
+    if (!cardNavOpen) {
+      const panel = $("translatorPanel");
+      if (panel && !panel.classList.contains("hidden") && typeof setTranslatorOpen === "function") {
+        setTranslatorOpen(false);
+      }
+    }
+    if (cardNavOpen && options.focusFirst) {
+      window.setTimeout(() => cardNavContent.querySelector(".nav-card-link")?.focus(), 180);
+    }
+  }
+
+  if (cardNav && cardNavToggle && cardNavContent) {
+    requestAnimationFrame(() => setCardNavOpen(false));
+    cardNavToggle.addEventListener("click", () => setCardNavOpen(!cardNavOpen));
+    cardNavToggle.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" && !cardNavOpen) {
+        event.preventDefault();
+        setCardNavOpen(true, { focusFirst: true });
+      }
+    });
+    cardNav.addEventListener("click", (event) => {
+      if (event.target.closest("[data-go]")) setCardNavOpen(false);
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (cardNavOpen && !cardNav.contains(event.target)) setCardNavOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && cardNavOpen) {
+        setCardNavOpen(false);
+        cardNavToggle.focus();
+      }
+    });
+    window.addEventListener("resize", () => {
+      cardNav.style.height = cardNavHeight(cardNavOpen) + "px";
+    });
+  }
 
   /* ---------- theme ---------- */
   const themeToggle = $("themeToggle");
@@ -55,6 +120,233 @@
     const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
     store.set("theme", next); applyTheme(next);
   });
+
+  /* ============================================================
+     SHAPE GRID BACKGROUND — adaptación vanilla del componente
+     ============================================================ */
+  function initShapeGridBackground() {
+    const canvas = $("shapeGridBackground");
+    if (!canvas || !canvas.getContext) return;
+
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return;
+
+    const config = {
+      direction: "diagonal",
+      speed: 0.22,
+      size: 31,
+      shape: "hexagon",
+      hoverTrailAmount: 5
+    };
+
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let reducedMotion = reducedMotionQuery.matches;
+    let cssWidth = 1;
+    let cssHeight = 1;
+    let dpr = 1;
+    let rafId = 0;
+    let lastTime = performance.now();
+    let gridOffset = { x: 0, y: 0 };
+    let pointer = null;
+    let hoveredCell = null;
+    let trailCells = [];
+    const cellOpacities = new Map();
+    let palette = readPalette();
+
+    const hexHoriz = () => config.size * 1.5;
+    const hexVert = () => config.size * Math.sqrt(3);
+
+    function readPalette() {
+      const styles = getComputedStyle(document.documentElement);
+      return {
+        border: styles.getPropertyValue("--shape-grid-border").trim() || "rgba(47,111,107,.18)",
+        hover: styles.getPropertyValue("--shape-grid-hover").trim() || "rgba(185,85,46,.22)",
+        fade: styles.getPropertyValue("--shape-grid-fade").trim() || "rgba(244,239,230,.72)"
+      };
+    }
+
+    function resizeCanvas() {
+      cssWidth = Math.max(1, window.innerWidth);
+      cssHeight = Math.max(1, window.innerHeight);
+      dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+      canvas.width = Math.round(cssWidth * dpr);
+      canvas.height = Math.round(cssHeight * dpr);
+      canvas.style.width = cssWidth + "px";
+      canvas.style.height = cssHeight + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawGrid();
+    }
+
+    function pathHex(cx, cy, radius) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i;
+        const x = cx + radius * Math.cos(angle);
+        const y = cy + radius * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+
+    function currentCellAt(x, y) {
+      const hX = hexHoriz();
+      const hY = hexVert();
+      const colShift = Math.floor(gridOffset.x / hX);
+      const offsetX = ((gridOffset.x % hX) + hX) % hX;
+      const offsetY = ((gridOffset.y % hY) + hY) % hY;
+      const col = Math.round((x - offsetX) / hX);
+      const rowOffset = ((col + colShift) % 2 !== 0) ? hY / 2 : 0;
+      const row = Math.round((y - offsetY - rowOffset) / hY);
+      return { x: col, y: row };
+    }
+
+    function updateHoveredCell() {
+      if (!pointer) {
+        hoveredCell = null;
+        return;
+      }
+      const next = currentCellAt(pointer.x, pointer.y);
+      if (!hoveredCell || hoveredCell.x !== next.x || hoveredCell.y !== next.y) {
+        if (hoveredCell && config.hoverTrailAmount > 0) {
+          trailCells.unshift({ ...hoveredCell });
+          trailCells = trailCells.slice(0, config.hoverTrailAmount);
+        }
+        hoveredCell = next;
+      }
+    }
+
+    function updateCellOpacities(immediate = false) {
+      const targets = new Map();
+      if (hoveredCell) targets.set(`${hoveredCell.x},${hoveredCell.y}`, 1);
+      trailCells.forEach((cell, index) => {
+        const key = `${cell.x},${cell.y}`;
+        if (!targets.has(key)) {
+          targets.set(key, (trailCells.length - index) / (trailCells.length + 1));
+        }
+      });
+
+      targets.forEach((_, key) => {
+        if (!cellOpacities.has(key)) cellOpacities.set(key, 0);
+      });
+
+      for (const [key, opacity] of cellOpacities) {
+        const target = targets.get(key) || 0;
+        const next = immediate ? target : opacity + (target - opacity) * 0.16;
+        if (next < 0.006) cellOpacities.delete(key);
+        else cellOpacities.set(key, next);
+      }
+    }
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, cssWidth, cssHeight);
+      const hX = hexHoriz();
+      const hY = hexVert();
+      const colShift = Math.floor(gridOffset.x / hX);
+      const offsetX = ((gridOffset.x % hX) + hX) % hX;
+      const offsetY = ((gridOffset.y % hY) + hY) % hY;
+      const cols = Math.ceil(cssWidth / hX) + 4;
+      const rows = Math.ceil(cssHeight / hY) + 4;
+
+      ctx.lineWidth = 1;
+      for (let col = -3; col < cols; col++) {
+        for (let row = -3; row < rows; row++) {
+          const cx = col * hX + offsetX;
+          const cy = row * hY + (((col + colShift) % 2 !== 0) ? hY / 2 : 0) + offsetY;
+          const key = `${col},${row}`;
+          const alpha = cellOpacities.get(key) || 0;
+
+          if (alpha > 0) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            pathHex(cx, cy, config.size);
+            ctx.fillStyle = palette.hover;
+            ctx.fill();
+            ctx.restore();
+          }
+
+          pathHex(cx, cy, config.size);
+          ctx.strokeStyle = palette.border;
+          ctx.stroke();
+        }
+      }
+
+      const radius = Math.sqrt(cssWidth * cssWidth + cssHeight * cssHeight) * 0.58;
+      const vignette = ctx.createRadialGradient(
+        cssWidth / 2, cssHeight / 2, Math.min(cssWidth, cssHeight) * 0.08,
+        cssWidth / 2, cssHeight / 2, radius
+      );
+      vignette.addColorStop(0, "rgba(0,0,0,0)");
+      vignette.addColorStop(0.72, "rgba(0,0,0,0)");
+      vignette.addColorStop(1, palette.fade);
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
+    }
+
+    function animate(now) {
+      const delta = Math.min(40, now - lastTime || 16.67) / 16.67;
+      lastTime = now;
+
+      if (!reducedMotion && !document.hidden) {
+        const amount = config.speed * delta;
+        const wrapX = hexHoriz() * 2;
+        const wrapY = hexVert();
+        gridOffset.x = (gridOffset.x - amount + wrapX) % wrapX;
+        gridOffset.y = (gridOffset.y - amount + wrapY) % wrapY;
+      }
+
+      updateHoveredCell();
+      updateCellOpacities(reducedMotion);
+      drawGrid();
+      rafId = requestAnimationFrame(animate);
+    }
+
+    function handlePointerMove(event) {
+      pointer = { x: event.clientX, y: event.clientY };
+      if (reducedMotion) {
+        updateHoveredCell();
+        updateCellOpacities(true);
+        drawGrid();
+      }
+    }
+
+    function clearPointer() {
+      pointer = null;
+      hoveredCell = null;
+      trailCells = [];
+      if (reducedMotion) {
+        cellOpacities.clear();
+        drawGrid();
+      }
+    }
+
+    function refreshTheme() {
+      palette = readPalette();
+      drawGrid();
+    }
+
+    window.addEventListener("resize", resizeCanvas, { passive: true });
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    document.documentElement.addEventListener("mouseleave", clearPointer);
+    window.addEventListener("blur", clearPointer);
+    reducedMotionQuery.addEventListener?.("change", (event) => {
+      reducedMotion = event.matches;
+      lastTime = performance.now();
+      drawGrid();
+    });
+
+    new MutationObserver(refreshTheme).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"]
+    });
+
+    resizeCanvas();
+    rafId = requestAnimationFrame(animate);
+
+    window.addEventListener("beforeunload", () => cancelAnimationFrame(rafId), { once: true });
+  }
+
+  initShapeGridBackground();
 
   /* ---------- mini Google Translate launcher ---------- */
   const translatorToggle = $("translatorToggle");
@@ -6287,5745 +6579,5937 @@
      READING — TFNG + short answer
      ============================================================ */
             const readingPassages = [
-    {
-      "title": "The man who decided to walk the world",
-      "body": [
-        "When Arturo Benet was nineteen, a close friend died in a car accident on a road they had driven together dozens of times. The loss did not push him into grief so much as into a strange, restless clarity. He began to measure his own life in decades rather than years, and the arithmetic frightened him. Within a week he had written a single sentence in a notebook: walk every continent before I turn forty.",
-        "It took him six years to leave. He finished a degree in geology he no longer wanted, worked nights in a warehouse, and saved with the grim discipline of someone paying off a debt. Friends assumed the plan had quietly died. In fact he was reading maps, learning to repair boots, and teaching himself enough Portuguese and Arabic to ask for water and directions.",
-        "He set out from a coastal town in northern Spain in the spring of 2016, pushing a converted stroller rather than carrying a rucksack. The choice looked absurd to onlookers, but it spared his spine and let him carry twenty kilos of water across dry country. He walked south through Morocco, then east along the Mediterranean, averaging thirty-five kilometres a day and burning through a pair of boots every eleven weeks.",
-        "A dog joined him outside a village in Tunisia and never left. He had originally wanted an animal for protection; what he got was a companion who slept against his back on cold nights and refused to walk when he had a fever, effectively forcing rest days. Crossing borders with her proved far simpler than he feared, once a veterinarian in Tunis issued the paperwork.",
-        "The difficulties were rarely the ones he had rehearsed. Bandits and wild animals never materialised. What wore him down were the small administrative cruelties: a visa refused for a missing stamp, a month lost in a provincial office, a border closed for reasons nobody would explain. Twice he came close to abandoning the walk entirely, and both times it was the impossibility of explaining the decision to himself, rather than any surge of courage, that kept him going.",
-        "He also discovered that walking changes the way information arrives. A traveller in a car sees a region as a sequence of destinations; a walker experiences it as a slow gradient, where the accent, the bread and the shape of the roofs shift so gradually that no single day contains a border. He came to distrust the tidy summaries he had read before leaving.",
-        "Benet reached his ninth country in the spring of 2022 and has not set a finishing date. Asked what he will do afterwards, he tends to change the subject. The honest answer, he admitted once, is that the walk stopped being a project some years ago and became simply the way he lives, which makes the question of its ending harder than anyone expects."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+  {
+    "title": "The man who decided to walk the world",
+    "body": [
+      "When Arturo Benet was nineteen, a close friend died in a car accident on a road they had driven together dozens of times. The loss did not push him into grief so much as into a strange, restless clarity. He began to measure his own life in decades rather than years, and the arithmetic frightened him. Within a week he had written a single sentence in a notebook: walk every continent before I turn forty.",
+      "It took him six years to leave. He finished a degree in geology he no longer wanted, worked nights in a warehouse, and saved with the grim discipline of someone paying off a debt. Friends assumed the plan had quietly died. In fact he was reading maps, learning to repair boots, and teaching himself enough Portuguese and Arabic to ask for water and directions.",
+      "He set out from a coastal town in northern Spain in the spring of 2016, pushing a converted stroller rather than carrying a rucksack. The choice looked absurd to onlookers, but it spared his spine and let him carry twenty kilos of water across dry country. He walked south through Morocco, then east along the Mediterranean, averaging thirty-five kilometres a day and burning through a pair of boots every eleven weeks.",
+      "A dog joined him outside a village in Tunisia and never left. He had originally wanted an animal for protection; what he got was a companion who slept against his back on cold nights and refused to walk when he had a fever, effectively forcing rest days. Crossing borders with her proved far simpler than he feared, once a veterinarian in Tunis issued the paperwork.",
+      "The difficulties were rarely the ones he had rehearsed. Bandits and wild animals never materialised. What wore him down were the small administrative cruelties: a visa refused for a missing stamp, a month lost in a provincial office, a border closed for reasons nobody would explain. Twice he came close to abandoning the walk entirely, and both times it was the impossibility of explaining the decision to himself, rather than any surge of courage, that kept him going.",
+      "He also discovered that walking changes the way information arrives. A traveller in a car sees a region as a sequence of destinations; a walker experiences it as a slow gradient, where the accent, the bread and the shape of the roofs shift so gradually that no single day contains a border. He came to distrust the tidy summaries he had read before leaving.",
+      "Benet reached his ninth country in the spring of 2022 and has not set a finishing date. Asked what he will do afterwards, he tends to change the subject. The honest answer, he admitted once, is that the walk stopped being a project some years ago and became simply the way he lives, which makes the question of its ending harder than anyone expects."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Benet left on his journey immediately after his friend died.",
+        "a": "False",
+        "why": "The passage says it took him six years to leave; he finished a degree and worked first."
+      },
+      {
+        "q": "He chose a stroller because it reduced strain on his back.",
+        "a": "True",
+        "why": "The text states the choice spared his spine and let him carry water."
+      },
+      {
+        "q": "The dog was originally intended to serve a practical purpose.",
+        "a": "True",
+        "why": "He had wanted an animal for protection."
+      },
+      {
+        "q": "Attacks by bandits were among his most serious problems.",
+        "a": "False",
+        "why": "The passage says bandits never materialised; the difficulties were administrative."
+      },
+      {
+        "q": "Benet earns money by writing about his journey.",
+        "a": "Not Given",
+        "why": "How he finances the walk after leaving is never mentioned."
+      }
+    ],
+    "short": [
+      {
+        "q": "How often did Benet need to replace his boots?",
+        "a": "every eleven weeks"
+      },
+      {
+        "q": "In which country did the dog join him?",
+        "a": "Tunisia"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What does the writer suggest about Benet's reaction to his friend's death?",
+        "options": [
+          "It made him withdraw from other people for several years.",
+          "It produced an urgent awareness of how short life is.",
+          "It convinced him that travelling by car was dangerous.",
+          "It caused him to abandon his university studies at once."
+        ],
+        "a": 1,
+        "why": "The first paragraph describes a 'restless clarity' and his fear at measuring life in decades — an urgent awareness of time, not withdrawal."
+      },
+      {
+        "q": "According to the fifth paragraph, what most threatened the journey?",
+        "options": [
+          "Physical exhaustion and repeated illness.",
+          "The hostility of people he met on the road.",
+          "Bureaucratic obstacles such as visas and closed borders.",
+          "The cost of replacing his equipment."
+        ],
+        "a": 2,
+        "why": "The paragraph lists visas refused, months lost in offices and closed borders as what wore him down."
+      },
+      {
+        "q": "What point does the writer make about walking in the sixth paragraph?",
+        "options": [
+          "It is a more reliable way of measuring distance.",
+          "It reveals that regions change gradually rather than at fixed lines.",
+          "It allows a traveller to visit more destinations.",
+          "It is the only honest way to understand a foreign culture."
+        ],
+        "a": 1,
+        "why": "The paragraph contrasts a driver's sequence of destinations with a walker's slow gradient where no single day contains a border."
+      },
+      {
+        "q": "How does Benet now regard the walk?",
+        "options": [
+          "As a project he is eager to complete.",
+          "As a mistake he is reluctant to admit.",
+          "As a way of life rather than a task with an end.",
+          "As a duty he owes to his late friend."
+        ],
+        "a": 2,
+        "why": "The final paragraph says it stopped being a project and became the way he lives."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Benet left on his journey immediately after his friend died.",
-          "a": "False",
-          "why": "The passage says it took him six years to leave; he finished a degree and worked first."
+          "t": "When Arturo Benet was nineteen, a close friend died in a car accident on",
+          "p": "uén artero benet uós naintín, a klóus frend dáid in a kar aksident on"
         },
         {
-          "q": "He chose a stroller because it reduced strain on his back.",
-          "a": "True",
-          "why": "The text states the choice spared his spine and let him carry water."
+          "t": "a road they had driven together dozens of times.",
+          "p": "a róud déi jad driven tuguéder dosens ov táims."
         },
         {
-          "q": "The dog was originally intended to serve a practical purpose.",
-          "a": "True",
-          "why": "He had wanted an animal for protection."
+          "t": "The loss did not push him into grief so much as into a strange,",
+          "p": "de los did not push jim íntu grif sóu mach as íntu a stréinch,"
         },
         {
-          "q": "Attacks by bandits were among his most serious problems.",
-          "a": "False",
-          "why": "The passage says bandits never materialised; the difficulties were administrative."
+          "t": "restless clarity. He began to measure his own life in decades rather",
+          "p": "restles klariti. ji began tu méshur jis óun láif in dékeids ráder"
         },
         {
-          "q": "Benet earns money by writing about his journey.",
-          "a": "Not Given",
-          "why": "How he finances the walk after leaving is never mentioned."
+          "t": "than years, and the arithmetic frightened him.",
+          "p": "dan yirs, end de arismetik fráitend jim."
+        },
+        {
+          "t": "Within a week he had written a single sentence in a notebook:",
+          "p": "uidín a uik ji jad riten a singol sentens in a notebuk:"
+        },
+        {
+          "t": "walk every continent before I turn forty.",
+          "p": "uók évri kontinent bifór ái tern forti."
         }
       ],
-      "short": [
+      [
         {
-          "q": "How often did Benet need to replace his boots?",
-          "a": "every eleven weeks"
+          "t": "It took him six years to leave. He finished a degree in geology he no",
+          "p": "it tuk jim siks yirs tu léiv. ji finished a degri in yeoloyi ji nóu"
         },
         {
-          "q": "In which country did the dog join him?",
-          "a": "Tunisia"
+          "t": "longer wanted, worked nights in a warehouse,",
+          "p": "lonyer uanted, uérkt náits in a uarejoiús,"
+        },
+        {
+          "t": "and saved with the grim discipline of someone paying off a debt.",
+          "p": "end séivd uíd de grim disipláin ov somóun péing of a debt."
+        },
+        {
+          "t": "Friends assumed the plan had quietly died. In fact he was reading maps,",
+          "p": "frends asumd de plan jad kuitli dáid. in fakt ji uós ríding maps,"
+        },
+        {
+          "t": "learning to repair boots, and teaching himself enough Portuguese and",
+          "p": "lirning tu repéar buts, end tiching jimself ináf portuguís end"
+        },
+        {
+          "t": "Arabic to ask for water and directions.",
+          "p": "arabik tu ask for uóter end derekshons."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What does the writer suggest about Benet's reaction to his friend's death?",
-          "options": [
-            "It made him withdraw from other people for several years.",
-            "It produced an urgent awareness of how short life is.",
-            "It convinced him that travelling by car was dangerous.",
-            "It caused him to abandon his university studies at once."
-          ],
-          "a": 1,
-          "why": "The first paragraph describes a 'restless clarity' and his fear at measuring life in decades — an urgent awareness of time, not withdrawal."
+          "t": "He set out from a coastal town in northern Spain in the spring of 2016,",
+          "p": "ji set áut from a kóustal tóun in norsern spéin in de spring ov 2016,"
         },
         {
-          "q": "According to the fifth paragraph, what most threatened the journey?",
-          "options": [
-            "Physical exhaustion and repeated illness.",
-            "The hostility of people he met on the road.",
-            "Bureaucratic obstacles such as visas and closed borders.",
-            "The cost of replacing his equipment."
-          ],
-          "a": 2,
-          "why": "The paragraph lists visas refused, months lost in offices and closed borders as what wore him down."
+          "t": "pushing a converted stroller rather than carrying a rucksack.",
+          "p": "pushing a konverted stroler ráder dan karying a ruksak."
         },
         {
-          "q": "What point does the writer make about walking in the sixth paragraph?",
-          "options": [
-            "It is a more reliable way of measuring distance.",
-            "It reveals that regions change gradually rather than at fixed lines.",
-            "It allows a traveller to visit more destinations.",
-            "It is the only honest way to understand a foreign culture."
-          ],
-          "a": 1,
-          "why": "The paragraph contrasts a driver's sequence of destinations with a walker's slow gradient where no single day contains a border."
+          "t": "The choice looked absurd to onlookers, but it spared his spine and let",
+          "p": "de choáik loóukt abserd tu onloóukers, bat it spéerd jis spáin end let"
         },
         {
-          "q": "How does Benet now regard the walk?",
-          "options": [
-            "As a project he is eager to complete.",
-            "As a mistake he is reluctant to admit.",
-            "As a way of life rather than a task with an end.",
-            "As a duty he owes to his late friend."
-          ],
-          "a": 2,
-          "why": "The final paragraph says it stopped being a project and became the way he lives."
+          "t": "him carry twenty kilos of water across dry country.",
+          "p": "jim kari tuénti kilos ov uóter acrós dri cántri."
+        },
+        {
+          "t": "He walked south through Morocco, then east along the Mediterranean,",
+          "p": "ji uókt sos zru morokko, den ist alóng de mediteranin,"
+        },
+        {
+          "t": "averaging thirty-five kilometres a day and burning through a pair of",
+          "p": "averéiying serti-fáiv kilometres a déi end berning zru a péar ov"
+        },
+        {
+          "t": "boots every eleven weeks.",
+          "p": "buts évri iléven uiks."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "When Arturo Benet was nineteen, a close friend died in a car accident on",
-            "p": "uén artero benet uós naintín, a klóus frend dáid in a kar aksident on"
-          },
-          {
-            "t": "a road they had driven together dozens of times.",
-            "p": "a róud déi jad driven tuguéder dosens ov táims."
-          },
-          {
-            "t": "The loss did not push him into grief so much as into a strange,",
-            "p": "de los did not push jim íntu grif sóu mach as íntu a stréinch,"
-          },
-          {
-            "t": "restless clarity. He began to measure his own life in decades rather",
-            "p": "restles klariti. ji began tu méshur jis óun láif in dékeids ráder"
-          },
-          {
-            "t": "than years, and the arithmetic frightened him.",
-            "p": "dan yirs, end de arismetik fráitend jim."
-          },
-          {
-            "t": "Within a week he had written a single sentence in a notebook:",
-            "p": "uidín a uik ji jad riten a singol sentens in a notebuk:"
-          },
-          {
-            "t": "walk every continent before I turn forty.",
-            "p": "uók évri kontinent bifór ái tern forti."
-          }
-        ],
-        [
-          {
-            "t": "It took him six years to leave. He finished a degree in geology he no",
-            "p": "it tuk jim siks yirs tu léiv. ji finished a degri in yeoloyi ji nóu"
-          },
-          {
-            "t": "longer wanted, worked nights in a warehouse,",
-            "p": "lonyer uanted, uérkt náits in a uarejoiús,"
-          },
-          {
-            "t": "and saved with the grim discipline of someone paying off a debt.",
-            "p": "end séivd uíd de grim disipláin ov somóun péing of a debt."
-          },
-          {
-            "t": "Friends assumed the plan had quietly died. In fact he was reading maps,",
-            "p": "frends asumd de plan jad kuitli dáid. in fakt ji uós ríding maps,"
-          },
-          {
-            "t": "learning to repair boots, and teaching himself enough Portuguese and",
-            "p": "lirning tu repéar buts, end tiching jimself ináf portuguís end"
-          },
-          {
-            "t": "Arabic to ask for water and directions.",
-            "p": "arabik tu ask for uóter end derekshons."
-          }
-        ],
-        [
-          {
-            "t": "He set out from a coastal town in northern Spain in the spring of 2016,",
-            "p": "ji set áut from a kóustal tóun in norsern spéin in de spring ov 2016,"
-          },
-          {
-            "t": "pushing a converted stroller rather than carrying a rucksack.",
-            "p": "pushing a konverted stroler ráder dan karying a ruksak."
-          },
-          {
-            "t": "The choice looked absurd to onlookers, but it spared his spine and let",
-            "p": "de choáik loóukt abserd tu onloóukers, bat it spéerd jis spáin end let"
-          },
-          {
-            "t": "him carry twenty kilos of water across dry country.",
-            "p": "jim kari tuénti kilos ov uóter acrós dri cántri."
-          },
-          {
-            "t": "He walked south through Morocco, then east along the Mediterranean,",
-            "p": "ji uókt sos zru morokko, den ist alóng de mediteranin,"
-          },
-          {
-            "t": "averaging thirty-five kilometres a day and burning through a pair of",
-            "p": "averéiying serti-fáiv kilometres a déi end berning zru a péar ov"
-          },
-          {
-            "t": "boots every eleven weeks.",
-            "p": "buts évri iléven uiks."
-          }
-        ],
-        [
-          {
-            "t": "A dog joined him outside a village in Tunisia and never left.",
-            "p": "a dog yoáind jim otsáid a vílich in tunisia end néver left."
-          },
-          {
-            "t": "He had originally wanted an animal for protection;",
-            "p": "ji jad oriyinali uanted an animal for protekshon;"
-          },
-          {
-            "t": "what he got was a companion who slept against his back on cold nights",
-            "p": "uót ji got uós a kompanion ju slept eguénst jis bak on kóuld náits"
-          },
-          {
-            "t": "and refused to walk when he had a fever, effectively forcing rest days.",
-            "p": "end refust tu uók uén ji jad a fever, efektiveli forsing rest déis."
-          },
-          {
-            "t": "Crossing borders with her proved far simpler than he feared,",
-            "p": "krosing borders uíd jer pruvd far simpler dan ji féerd,"
-          },
-          {
-            "t": "once a veterinarian in Tunis issued the paperwork.",
-            "p": "uáns a veterinarian in tunis isued de paperuork."
-          }
-        ],
-        [
-          {
-            "t": "The difficulties were rarely the ones he had rehearsed.",
-            "p": "de difikultis uér rareli de uáns ji jad rejirst."
-          },
-          {
-            "t": "Bandits and wild animals never materialised.",
-            "p": "bandits end uáild animals néver materialáist."
-          },
-          {
-            "t": "What wore him down were the small administrative cruelties:",
-            "p": "uót uóer jim dóun uér de smal administratáiv krueltis:"
-          },
-          {
-            "t": "a visa refused for a missing stamp, a month lost in a provincial office,",
-            "p": "a visa refust for a mising stamp, a manz lost in a provinshal ófis,"
-          },
-          {
-            "t": "a border closed for reasons nobody would explain.",
-            "p": "a border klóust for risons nobodi vud ekspléin."
-          },
-          {
-            "t": "Twice he came close to abandoning the walk entirely,",
-            "p": "tuáik ji kéim klóus tu abandóuning de uók entereli,"
-          },
-          {
-            "t": "and both times it was the impossibility of explaining the decision to",
-            "p": "end bóuz táims it uós de imposibiliti ov eksplaáining de desishon tu"
-          },
-          {
-            "t": "himself, rather than any surge of courage, that kept him going.",
-            "p": "jimself, ráder dan éni sery ov kérich, dat kept jim going."
-          }
-        ],
-        [
-          {
-            "t": "He also discovered that walking changes the way information arrives.",
-            "p": "ji ólsou diskoverd dat uóking chéinches de uéi informashon aráivs."
-          },
-          {
-            "t": "A traveller in a car sees a region as a sequence of destinations;",
-            "p": "a traveler in a kar sis a reyion as a skuens ov destinashons;"
-          },
-          {
-            "t": "a walker experiences it as a slow gradient, where the accent,",
-            "p": "a uóker eksperinses it as a slo gradint, uér de aksent,"
-          },
-          {
-            "t": "the bread and the shape of the roofs shift so gradually that no single",
-            "p": "de bred end de shéip ov de rufs shift sóu graduali dat nóu singol"
-          },
-          {
-            "t": "day contains a border. He came to distrust the tidy summaries he had",
-            "p": "déi kontéins a border. ji kéim tu distrust de tidi sumaris ji jad"
-          },
-          {
-            "t": "read before leaving.",
-            "p": "rid bifór léiving."
-          }
-        ],
-        [
-          {
-            "t": "Benet reached his ninth country in the spring of 2022 and has not set a",
-            "p": "benet riched jis nins cántri in de spring ov 2022 end jas not set a"
-          },
-          {
-            "t": "finishing date. Asked what he will do afterwards,",
-            "p": "finishing déit. askt uót ji uíl du afteruards,"
-          },
-          {
-            "t": "he tends to change the subject. The honest answer,",
-            "p": "ji tends tu chéinch de sábyect. de ónest ánser,"
-          },
-          {
-            "t": "he admitted once, is that the walk stopped being a project some years",
-            "p": "ji admited uáns, is dat de uók stopt bing a próyect sam yirs"
-          },
-          {
-            "t": "ago and became simply the way he lives, which makes the question of its",
-            "p": "ago end bikéim símpli de uéi ji livs, uích méiks de kuéschon ov its"
-          },
-          {
-            "t": "ending harder than anyone expects.",
-            "p": "ending jarder dan anióun ekspekts."
-          }
-        ]
+      [
+        {
+          "t": "A dog joined him outside a village in Tunisia and never left.",
+          "p": "a dog yoáind jim otsáid a vílich in tunisia end néver left."
+        },
+        {
+          "t": "He had originally wanted an animal for protection;",
+          "p": "ji jad oriyinali uanted an animal for protekshon;"
+        },
+        {
+          "t": "what he got was a companion who slept against his back on cold nights",
+          "p": "uót ji got uós a kompanion ju slept eguénst jis bak on kóuld náits"
+        },
+        {
+          "t": "and refused to walk when he had a fever, effectively forcing rest days.",
+          "p": "end refust tu uók uén ji jad a fever, efektiveli forsing rest déis."
+        },
+        {
+          "t": "Crossing borders with her proved far simpler than he feared,",
+          "p": "krosing borders uíd jer pruvd far simpler dan ji féerd,"
+        },
+        {
+          "t": "once a veterinarian in Tunis issued the paperwork.",
+          "p": "uáns a veterinarian in tunis isued de paperuork."
+        }
+      ],
+      [
+        {
+          "t": "The difficulties were rarely the ones he had rehearsed.",
+          "p": "de difikultis uér rareli de uáns ji jad rejirst."
+        },
+        {
+          "t": "Bandits and wild animals never materialised.",
+          "p": "bandits end uáild animals néver materialáist."
+        },
+        {
+          "t": "What wore him down were the small administrative cruelties:",
+          "p": "uót uóer jim dóun uér de smal administratáiv krueltis:"
+        },
+        {
+          "t": "a visa refused for a missing stamp, a month lost in a provincial office,",
+          "p": "a visa refust for a mising stamp, a manz lost in a provinshal ófis,"
+        },
+        {
+          "t": "a border closed for reasons nobody would explain.",
+          "p": "a border klóust for risons nobodi vud ekspléin."
+        },
+        {
+          "t": "Twice he came close to abandoning the walk entirely,",
+          "p": "tuáik ji kéim klóus tu abandóuning de uók entereli,"
+        },
+        {
+          "t": "and both times it was the impossibility of explaining the decision to",
+          "p": "end bóuz táims it uós de imposibiliti ov eksplaáining de desishon tu"
+        },
+        {
+          "t": "himself, rather than any surge of courage, that kept him going.",
+          "p": "jimself, ráder dan éni sery ov kérich, dat kept jim going."
+        }
+      ],
+      [
+        {
+          "t": "He also discovered that walking changes the way information arrives.",
+          "p": "ji ólsou diskoverd dat uóking chéinches de uéi informashon aráivs."
+        },
+        {
+          "t": "A traveller in a car sees a region as a sequence of destinations;",
+          "p": "a traveler in a kar sis a reyion as a skuens ov destinashons;"
+        },
+        {
+          "t": "a walker experiences it as a slow gradient, where the accent,",
+          "p": "a uóker eksperinses it as a slo gradint, uér de aksent,"
+        },
+        {
+          "t": "the bread and the shape of the roofs shift so gradually that no single",
+          "p": "de bred end de shéip ov de rufs shift sóu graduali dat nóu singol"
+        },
+        {
+          "t": "day contains a border. He came to distrust the tidy summaries he had",
+          "p": "déi kontéins a border. ji kéim tu distrust de tidi sumaris ji jad"
+        },
+        {
+          "t": "read before leaving.",
+          "p": "rid bifór léiving."
+        }
+      ],
+      [
+        {
+          "t": "Benet reached his ninth country in the spring of 2022 and has not set a",
+          "p": "benet riched jis nins cántri in de spring ov 2022 end jas not set a"
+        },
+        {
+          "t": "finishing date. Asked what he will do afterwards,",
+          "p": "finishing déit. askt uót ji uíl du afteruards,"
+        },
+        {
+          "t": "he tends to change the subject. The honest answer,",
+          "p": "ji tends tu chéinch de sábyect. de ónest ánser,"
+        },
+        {
+          "t": "he admitted once, is that the walk stopped being a project some years",
+          "p": "ji admited uáns, is dat de uók stopt bing a próyect sam yirs"
+        },
+        {
+          "t": "ago and became simply the way he lives, which makes the question of its",
+          "p": "ago end bikéim símpli de uéi ji livs, uích méiks de kuéschon ov its"
+        },
+        {
+          "t": "ending harder than anyone expects.",
+          "p": "ending jarder dan anióun ekspekts."
+        }
       ]
-    },
-    {
-      "title": "The town that turned off its lights",
-      "body": [
-        "Ardmoor is not a remarkable place. It sits in a shallow valley in the north of England, has a population of just under four thousand, and until recently was known chiefly for a bridge that appears on regional postcards. In 2019 it became, unexpectedly, the subject of academic papers, television segments and a steady trickle of visitors who arrive after dark and leave before breakfast.",
-        "The change began with a budget shortfall. Faced with repairing an ageing street-lighting network, the council calculated that full replacement would consume most of a decade's capital funding. A junior officer suggested, half in jest, that they might simply switch some of it off. The proposal was politically awkward — nobody wants to be the councillor who made the streets dark — but a trial was approved for a single winter on three residential roads.",
-        "Residents were, predictably, alarmed. A public meeting produced warnings about burglary, traffic accidents and children walking home from clubs. The council agreed to monitor incidents closely and to restore the lighting immediately if anything went wrong. What followed was closer to an anticlimax than a catastrophe: over the trial period, recorded crime on the three roads did not rise, and the small number of collisions was consistent with previous years.",
-        "The interesting result was one nobody had set out to measure. Within weeks, residents began reporting that they were sleeping better. A local doctor, initially sceptical, noticed a modest fall in requests for sleep medication among patients on those streets. None of this constituted proof, and the sample was far too small for confident conclusions, but it prompted a university team to design a fuller study.",
-        "That study, published three years later, was careful in its claims. It found a measurable improvement in self-reported sleep quality but could not rule out the possibility that residents were simply reporting what they expected to find, having read about the trial in the local press. Its authors were clear that a single town proves very little, and that the effect might vanish in a city where light arrives from many directions at once.",
-        "Meanwhile Ardmoor acquired something it had never had: a sky. Astronomy groups began organising visits, a pub started opening late for what it called stargazing suppers, and the bridge on the postcards was quietly displaced by photographs of the Milky Way above the valley. The council, which had acted purely to save money, found itself accidentally in possession of a tourist attraction.",
-        "Not everyone is pleased. Some residents dislike the visitors, others still find the walk from the bus stop uncomfortable, and a campaign to restore lighting on one road succeeded in 2023. The council's own position remains resolutely unromantic. Asked whether Ardmoor had discovered something important about modern life, the officer who first made the suggestion replied that they had discovered a way to avoid replacing four hundred lamp posts."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Cuando Arturo Benet tenía diecinueve años, un amigo cercano murió en un accidente de coche en una carretera que habían recorrido juntos decenas de veces. La pérdida no lo empujó tanto hacia el dolor como hacia una extraña y desasosegante lucidez. Empezó a medir su propia vida en décadas en lugar de años, y esa aritmética lo asustó. En una semana había escrito una sola frase en un cuaderno: caminar todos los continentes antes de cumplir cuarenta.",
+      "Tardó seis años en partir. Terminó una carrera de geología que ya no quería, trabajó de noche en un depósito y ahorró con la disciplina sombría de quien salda una deuda. Sus amigos supusieron que el plan se había apagado en silencio. En realidad estaba leyendo mapas, aprendiendo a reparar botas y enseñándose a sí mismo suficiente portugués y árabe para pedir agua e indicaciones.",
+      "Partió de un pueblo costero del norte de España en la primavera de 2016, empujando un cochecito adaptado en lugar de cargar una mochila. La elección les parecía absurda a los espectadores, pero le ahorraba la espalda y le permitía transportar veinte kilos de agua por tierras secas. Caminó hacia el sur por Marruecos y luego hacia el este por el Mediterráneo, con un promedio de treinta y cinco kilómetros diarios y gastando un par de botas cada once semanas.",
+      "Una perra se le unió a las afueras de un pueblo de Túnez y ya no se separó de él. En un principio había querido un animal para protegerse; lo que consiguió fue una compañera que dormía contra su espalda en las noches frías y se negaba a caminar cuando él tenía fiebre, obligándolo así a descansar. Cruzar fronteras con ella resultó mucho más sencillo de lo que temía, una vez que un veterinario de Túnez le tramitó los papeles.",
+      "Las dificultades rara vez eran las que había ensayado. Los bandidos y los animales salvajes nunca aparecieron. Lo que lo fue desgastando fueron las pequeñas crueldades administrativas: un visado denegado por un sello que faltaba, un mes perdido en una oficina provincial, una frontera cerrada por razones que nadie quería explicar. Dos veces estuvo a punto de abandonar la caminata por completo, y en ambas fue la imposibilidad de explicarse a sí mismo la decisión, más que cualquier arranque de valentía, lo que lo mantuvo en marcha.",
+      "También descubrió que caminar cambia la manera en que llega la información. Un viajero en coche ve una región como una secuencia de destinos; quien camina la experimenta como un lento degradado, donde el acento, el pan y la forma de los tejados cambian tan gradualmente que ningún día contiene una frontera. Llegó a desconfiar de los resúmenes prolijos que había leído antes de partir.",
+      "Benet llegó a su noveno país en la primavera de 2022 y no ha fijado una fecha de finalización. Cuando le preguntan qué hará después, suele cambiar de tema. La respuesta honesta, admitió una vez, es que la caminata dejó de ser un proyecto hace ya varios años y se convirtió simplemente en su forma de vivir, lo que hace que la cuestión de su final sea más difícil de lo que cualquiera espera."
+    ]
+  },
+  {
+    "title": "The town that turned off its lights",
+    "body": [
+      "Ardmoor is not a remarkable place. It sits in a shallow valley in the north of England, has a population of just under four thousand, and until recently was known chiefly for a bridge that appears on regional postcards. In 2019 it became, unexpectedly, the subject of academic papers, television segments and a steady trickle of visitors who arrive after dark and leave before breakfast.",
+      "The change began with a budget shortfall. Faced with repairing an ageing street-lighting network, the council calculated that full replacement would consume most of a decade's capital funding. A junior officer suggested, half in jest, that they might simply switch some of it off. The proposal was politically awkward — nobody wants to be the councillor who made the streets dark — but a trial was approved for a single winter on three residential roads.",
+      "Residents were, predictably, alarmed. A public meeting produced warnings about burglary, traffic accidents and children walking home from clubs. The council agreed to monitor incidents closely and to restore the lighting immediately if anything went wrong. What followed was closer to an anticlimax than a catastrophe: over the trial period, recorded crime on the three roads did not rise, and the small number of collisions was consistent with previous years.",
+      "The interesting result was one nobody had set out to measure. Within weeks, residents began reporting that they were sleeping better. A local doctor, initially sceptical, noticed a modest fall in requests for sleep medication among patients on those streets. None of this constituted proof, and the sample was far too small for confident conclusions, but it prompted a university team to design a fuller study.",
+      "That study, published three years later, was careful in its claims. It found a measurable improvement in self-reported sleep quality but could not rule out the possibility that residents were simply reporting what they expected to find, having read about the trial in the local press. Its authors were clear that a single town proves very little, and that the effect might vanish in a city where light arrives from many directions at once.",
+      "Meanwhile Ardmoor acquired something it had never had: a sky. Astronomy groups began organising visits, a pub started opening late for what it called stargazing suppers, and the bridge on the postcards was quietly displaced by photographs of the Milky Way above the valley. The council, which had acted purely to save money, found itself accidentally in possession of a tourist attraction.",
+      "Not everyone is pleased. Some residents dislike the visitors, others still find the walk from the bus stop uncomfortable, and a campaign to restore lighting on one road succeeded in 2023. The council's own position remains resolutely unromantic. Asked whether Ardmoor had discovered something important about modern life, the officer who first made the suggestion replied that they had discovered a way to avoid replacing four hundred lamp posts."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Ardmoor switched off its lights mainly for environmental reasons.",
+        "a": "False",
+        "why": "The change began with a budget shortfall and the cost of replacing the network."
+      },
+      {
+        "q": "Crime increased significantly during the trial period.",
+        "a": "False",
+        "why": "Recorded crime on the three roads did not rise."
+      },
+      {
+        "q": "The university study proved conclusively that darkness improves sleep.",
+        "a": "False",
+        "why": "The study was careful, could not rule out expectation effects, and said one town proves little."
+      },
+      {
+        "q": "Lighting has been restored on one of the roads.",
+        "a": "True",
+        "why": "A campaign to restore lighting on one road succeeded in 2023."
+      },
+      {
+        "q": "The council has since advised other towns to copy the scheme.",
+        "a": "Not Given",
+        "why": "The passage never says the council advised others."
+      }
+    ],
+    "short": [
+      {
+        "q": "What was Ardmoor previously known for?",
+        "a": "a bridge"
+      },
+      {
+        "q": "What did the pub begin hosting in the evenings?",
+        "a": "stargazing suppers"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why was the original proposal described as 'politically awkward'?",
+        "options": [
+          "It would have required raising local taxes.",
+          "No councillor wished to be blamed for darkening the streets.",
+          "It had been suggested by someone without authority.",
+          "It contradicted a promise made at the previous election."
+        ],
+        "a": 1,
+        "why": "The text says nobody wants to be the councillor who made the streets dark."
+      },
+      {
+        "q": "How does the writer characterise the outcome of the winter trial?",
+        "options": [
+          "As a disaster that confirmed residents' fears.",
+          "As an undramatic result in which predicted harms did not occur.",
+          "As proof that street lighting serves no purpose.",
+          "As too brief to produce any usable information."
+        ],
+        "a": 1,
+        "why": "It is described as 'closer to an anticlimax than a catastrophe', with no rise in crime."
+      },
+      {
+        "q": "What limitation of the university study does the writer emphasise?",
+        "options": [
+          "The researchers had no medical training.",
+          "Residents may have reported the results they anticipated.",
+          "The council refused to share its crime figures.",
+          "The study lasted only a single winter."
+        ],
+        "a": 1,
+        "why": "The study could not rule out that residents reported what they expected, having read about the trial."
+      },
+      {
+        "q": "What is the effect of the officer's remark in the final paragraph?",
+        "options": [
+          "It confirms that the council planned the outcome from the start.",
+          "It deflates the grander interpretations placed on the story.",
+          "It suggests the scheme will soon be abandoned.",
+          "It criticises the residents who opposed the trial."
+        ],
+        "a": 1,
+        "why": "The reply is 'resolutely unromantic', reducing the story to avoiding the replacement of lamp posts."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Ardmoor switched off its lights mainly for environmental reasons.",
-          "a": "False",
-          "why": "The change began with a budget shortfall and the cost of replacing the network."
+          "t": "Ardmoor is not a remarkable place. It sits in a shallow valley in the",
+          "p": "ardmúar is not a remarkabol pléis. it sits in a shalo vali in de"
         },
         {
-          "q": "Crime increased significantly during the trial period.",
-          "a": "False",
-          "why": "Recorded crime on the three roads did not rise."
+          "t": "north of England, has a population of just under four thousand,",
+          "p": "nors ov england, jas a populashon ov chast ánder for záusand,"
         },
         {
-          "q": "The university study proved conclusively that darkness improves sleep.",
-          "a": "False",
-          "why": "The study was careful, could not rule out expectation effects, and said one town proves little."
+          "t": "and until recently was known chiefly for a bridge that appears on",
+          "p": "end antíl resentli uós nóun chífli for a brich dat apirs on"
         },
         {
-          "q": "Lighting has been restored on one of the roads.",
-          "a": "True",
-          "why": "A campaign to restore lighting on one road succeeded in 2023."
+          "t": "regional postcards. In 2019 it became, unexpectedly,",
+          "p": "reyional postkards. in 2019 it bikéim, unekspektedli,"
         },
         {
-          "q": "The council has since advised other towns to copy the scheme.",
-          "a": "Not Given",
-          "why": "The passage never says the council advised others."
+          "t": "the subject of academic papers, television segments and a steady trickle",
+          "p": "de sábyect ov akademik péipers, televishon segments end a stidi trikkol"
+        },
+        {
+          "t": "of visitors who arrive after dark and leave before breakfast.",
+          "p": "ov visitors ju aráiv áfter dark end léiv bifór brikfast."
         }
       ],
-      "short": [
+      [
         {
-          "q": "What was Ardmoor previously known for?",
-          "a": "a bridge"
+          "t": "The change began with a budget shortfall. Faced with repairing an ageing",
+          "p": "de chéinch began uíd a báchet shortfal. féist uíd repaáering an aying"
         },
         {
-          "q": "What did the pub begin hosting in the evenings?",
-          "a": "stargazing suppers"
+          "t": "street-lighting network, the council calculated that full replacement",
+          "p": "strit-láiting netuork, de konsil kalkuléited dat ful repléisement"
+        },
+        {
+          "t": "would consume most of a decade's capital funding.",
+          "p": "vud konsiúm móust ov a dékeids kapital funding."
+        },
+        {
+          "t": "A junior officer suggested, half in jest, that they might simply switch",
+          "p": "a yunior ofáiser sagchésted, jaf in yest, dat déi máit símpli suich"
+        },
+        {
+          "t": "some of it off. The proposal was politically awkward — nobody wants to",
+          "p": "sam ov it of. de proposal uós politikali okuard — nobodi uants tu"
+        },
+        {
+          "t": "be the councillor who made the streets dark — but a trial was approved",
+          "p": "bi de konsilor ju méid de strits dark — bat a trial uós apróuvd"
+        },
+        {
+          "t": "for a single winter on three residential roads.",
+          "p": "for a singol uinter on zri residenshal róuds."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why was the original proposal described as 'politically awkward'?",
-          "options": [
-            "It would have required raising local taxes.",
-            "No councillor wished to be blamed for darkening the streets.",
-            "It had been suggested by someone without authority.",
-            "It contradicted a promise made at the previous election."
-          ],
-          "a": 1,
-          "why": "The text says nobody wants to be the councillor who made the streets dark."
+          "t": "Residents were, predictably, alarmed. A public meeting produced warnings",
+          "p": "residents uér, prediktabli, alarmd. a publik miting produst uarnings"
         },
         {
-          "q": "How does the writer characterise the outcome of the winter trial?",
-          "options": [
-            "As a disaster that confirmed residents' fears.",
-            "As an undramatic result in which predicted harms did not occur.",
-            "As proof that street lighting serves no purpose.",
-            "As too brief to produce any usable information."
-          ],
-          "a": 1,
-          "why": "It is described as 'closer to an anticlimax than a catastrophe', with no rise in crime."
+          "t": "about burglary, traffic accidents and children walking home from clubs.",
+          "p": "abáut berglari, trafik aksidents end chíldren uóking jóum from klubs."
         },
         {
-          "q": "What limitation of the university study does the writer emphasise?",
-          "options": [
-            "The researchers had no medical training.",
-            "Residents may have reported the results they anticipated.",
-            "The council refused to share its crime figures.",
-            "The study lasted only a single winter."
-          ],
-          "a": 1,
-          "why": "The study could not rule out that residents reported what they expected, having read about the trial."
+          "t": "The council agreed to monitor incidents closely and to restore the",
+          "p": "de konsil agrid tu monitor insidents kloseli end tu restóer de"
         },
         {
-          "q": "What is the effect of the officer's remark in the final paragraph?",
-          "options": [
-            "It confirms that the council planned the outcome from the start.",
-            "It deflates the grander interpretations placed on the story.",
-            "It suggests the scheme will soon be abandoned.",
-            "It criticises the residents who opposed the trial."
-          ],
-          "a": 1,
-          "why": "The reply is 'resolutely unromantic', reducing the story to avoiding the replacement of lamp posts."
+          "t": "lighting immediately if anything went wrong.",
+          "p": "láiting imediateli if énizing uent rong."
+        },
+        {
+          "t": "What followed was closer to an anticlimax than a catastrophe:",
+          "p": "uót folóued uós klóuser tu an antiklimaks dan a katastrof:"
+        },
+        {
+          "t": "over the trial period, recorded crime on the three roads did not rise,",
+          "p": "óuver de trial period, rekorded kráim on de zri róuds did not ráis,"
+        },
+        {
+          "t": "and the small number of collisions was consistent with previous years.",
+          "p": "end de smal number ov kolishons uós konsistent uíd previas yirs."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Ardmoor is not a remarkable place. It sits in a shallow valley in the",
-            "p": "ardmúar is not a remarkabol pléis. it sits in a shalo vali in de"
-          },
-          {
-            "t": "north of England, has a population of just under four thousand,",
-            "p": "nors ov england, jas a populashon ov chast ánder for záusand,"
-          },
-          {
-            "t": "and until recently was known chiefly for a bridge that appears on",
-            "p": "end antíl resentli uós nóun chífli for a brich dat apirs on"
-          },
-          {
-            "t": "regional postcards. In 2019 it became, unexpectedly,",
-            "p": "reyional postkards. in 2019 it bikéim, unekspektedli,"
-          },
-          {
-            "t": "the subject of academic papers, television segments and a steady trickle",
-            "p": "de sábyect ov akademik péipers, televishon segments end a stidi trikkol"
-          },
-          {
-            "t": "of visitors who arrive after dark and leave before breakfast.",
-            "p": "ov visitors ju aráiv áfter dark end léiv bifór brikfast."
-          }
-        ],
-        [
-          {
-            "t": "The change began with a budget shortfall. Faced with repairing an ageing",
-            "p": "de chéinch began uíd a báchet shortfal. féist uíd repaáering an aying"
-          },
-          {
-            "t": "street-lighting network, the council calculated that full replacement",
-            "p": "strit-láiting netuork, de konsil kalkuléited dat ful repléisement"
-          },
-          {
-            "t": "would consume most of a decade's capital funding.",
-            "p": "vud konsiúm móust ov a dékeids kapital funding."
-          },
-          {
-            "t": "A junior officer suggested, half in jest, that they might simply switch",
-            "p": "a yunior ofáiser sagchésted, jaf in yest, dat déi máit símpli suich"
-          },
-          {
-            "t": "some of it off. The proposal was politically awkward — nobody wants to",
-            "p": "sam ov it of. de proposal uós politikali okuard — nobodi uants tu"
-          },
-          {
-            "t": "be the councillor who made the streets dark — but a trial was approved",
-            "p": "bi de konsilor ju méid de strits dark — bat a trial uós apróuvd"
-          },
-          {
-            "t": "for a single winter on three residential roads.",
-            "p": "for a singol uinter on zri residenshal róuds."
-          }
-        ],
-        [
-          {
-            "t": "Residents were, predictably, alarmed. A public meeting produced warnings",
-            "p": "residents uér, prediktabli, alarmd. a publik miting produst uarnings"
-          },
-          {
-            "t": "about burglary, traffic accidents and children walking home from clubs.",
-            "p": "abáut berglari, trafik aksidents end chíldren uóking jóum from klubs."
-          },
-          {
-            "t": "The council agreed to monitor incidents closely and to restore the",
-            "p": "de konsil agrid tu monitor insidents kloseli end tu restóer de"
-          },
-          {
-            "t": "lighting immediately if anything went wrong.",
-            "p": "láiting imediateli if énizing uent rong."
-          },
-          {
-            "t": "What followed was closer to an anticlimax than a catastrophe:",
-            "p": "uót folóued uós klóuser tu an antiklimaks dan a katastrof:"
-          },
-          {
-            "t": "over the trial period, recorded crime on the three roads did not rise,",
-            "p": "óuver de trial period, rekorded kráim on de zri róuds did not ráis,"
-          },
-          {
-            "t": "and the small number of collisions was consistent with previous years.",
-            "p": "end de smal number ov kolishons uós konsistent uíd previas yirs."
-          }
-        ],
-        [
-          {
-            "t": "The interesting result was one nobody had set out to measure.",
-            "p": "de interesting result uós uán nobodi jad set áut tu méshur."
-          },
-          {
-            "t": "Within weeks, residents began reporting that they were sleeping better.",
-            "p": "uidín uiks, residents began reporting dat déi uér sliping beter."
-          },
-          {
-            "t": "A local doctor, initially sceptical, noticed a modest fall in requests",
-            "p": "a lokal doktor, initiali septikal, notáist a modest fal in rkuests"
-          },
-          {
-            "t": "for sleep medication among patients on those streets.",
-            "p": "for slip medikashon amáng patints on dóus strits."
-          },
-          {
-            "t": "None of this constituted proof, and the sample was far too small for",
-            "p": "nan ov dis konstituted pruf, end de sampol uós far tu smal for"
-          },
-          {
-            "t": "confident conclusions, but it prompted a university team to design a",
-            "p": "konfident konklushons, bat it prompted a universiti tim tu disáin a"
-          },
-          {
-            "t": "fuller study.",
-            "p": "fuler studi."
-          }
-        ],
-        [
-          {
-            "t": "That study, published three years later, was careful in its claims.",
-            "p": "dat studi, published zri yirs léiter, uós kareful in its kléims."
-          },
-          {
-            "t": "It found a measurable improvement in self-reported sleep quality but",
-            "p": "it fond a miserabol impróuvement in self-reported slip kualiti bat"
-          },
-          {
-            "t": "could not rule out the possibility that residents were simply reporting",
-            "p": "cud not riúl áut de posibiliti dat residents uér símpli reporting"
-          },
-          {
-            "t": "what they expected to find, having read about the trial in the local",
-            "p": "uót déi ekspekted tu fáind, jáving rid abáut de trial in de lokal"
-          },
-          {
-            "t": "press. Its authors were clear that a single town proves very little,",
-            "p": "pres. its osors uér klíar dat a singol tóun pruvs véri litol,"
-          },
-          {
-            "t": "and that the effect might vanish in a city where light arrives from many",
-            "p": "end dat de efekt máit vanish in a siti uér láit aráivs from méni"
-          },
-          {
-            "t": "directions at once.",
-            "p": "derekshons at uáns."
-          }
-        ],
-        [
-          {
-            "t": "Meanwhile Ardmoor acquired something it had never had:",
-            "p": "minuáil ardmúar akkuáerd sámzing it jad néver jad:"
-          },
-          {
-            "t": "a sky. Astronomy groups began organising visits,",
-            "p": "a ski. astronomi grops began organáising visits,"
-          },
-          {
-            "t": "a pub started opening late for what it called stargazing suppers,",
-            "p": "a pub started opening léit for uót it kald stargéising supers,"
-          },
-          {
-            "t": "and the bridge on the postcards was quietly displaced by photographs of",
-            "p": "end de brich on de postkards uós kuitli displéist bái fóutografs ov"
-          },
-          {
-            "t": "the Milky Way above the valley. The council,",
-            "p": "de milki uéi abáv de vali. de konsil,"
-          },
-          {
-            "t": "which had acted purely to save money, found itself accidentally in",
-            "p": "uích jad akted pereli tu séiv máni, fond itself aksidentali in"
-          },
-          {
-            "t": "possession of a tourist attraction.",
-            "p": "poséshon ov a tóurist atrakshon."
-          }
-        ],
-        [
-          {
-            "t": "Not everyone is pleased. Some residents dislike the visitors,",
-            "p": "not everióun is poléist. sam residents disláik de visitors,"
-          },
-          {
-            "t": "others still find the walk from the bus stop uncomfortable,",
-            "p": "áders stil fáind de uók from de bus stop unkomfortabol,"
-          },
-          {
-            "t": "and a campaign to restore lighting on one road succeeded in 2023.",
-            "p": "end a campéin tu restóer láiting on uán róud suksided in 2023."
-          },
-          {
-            "t": "The council's own position remains resolutely unromantic.",
-            "p": "de konsil's óun posishon reméins resoluteli unromantik."
-          },
-          {
-            "t": "Asked whether Ardmoor had discovered something important about modern",
-            "p": "askt uéder ardmúar jad diskoverd sámzing important abáut modern"
-          },
-          {
-            "t": "life, the officer who first made the suggestion replied that they had",
-            "p": "láif, de ofáiser ju férst méid de sagchéschon repláid dat déi jad"
-          },
-          {
-            "t": "discovered a way to avoid replacing four hundred lamp posts.",
-            "p": "diskoverd a uéi tu avoid repléising for jándred lamp posts."
-          }
-        ]
+      [
+        {
+          "t": "The interesting result was one nobody had set out to measure.",
+          "p": "de interesting result uós uán nobodi jad set áut tu méshur."
+        },
+        {
+          "t": "Within weeks, residents began reporting that they were sleeping better.",
+          "p": "uidín uiks, residents began reporting dat déi uér sliping beter."
+        },
+        {
+          "t": "A local doctor, initially sceptical, noticed a modest fall in requests",
+          "p": "a lokal doktor, initiali septikal, notáist a modest fal in rkuests"
+        },
+        {
+          "t": "for sleep medication among patients on those streets.",
+          "p": "for slip medikashon amáng patints on dóus strits."
+        },
+        {
+          "t": "None of this constituted proof, and the sample was far too small for",
+          "p": "nan ov dis konstituted pruf, end de sampol uós far tu smal for"
+        },
+        {
+          "t": "confident conclusions, but it prompted a university team to design a",
+          "p": "konfident konklushons, bat it prompted a universiti tim tu disáin a"
+        },
+        {
+          "t": "fuller study.",
+          "p": "fuler studi."
+        }
+      ],
+      [
+        {
+          "t": "That study, published three years later, was careful in its claims.",
+          "p": "dat studi, published zri yirs léiter, uós kareful in its kléims."
+        },
+        {
+          "t": "It found a measurable improvement in self-reported sleep quality but",
+          "p": "it fond a miserabol impróuvement in self-reported slip kualiti bat"
+        },
+        {
+          "t": "could not rule out the possibility that residents were simply reporting",
+          "p": "cud not riúl áut de posibiliti dat residents uér símpli reporting"
+        },
+        {
+          "t": "what they expected to find, having read about the trial in the local",
+          "p": "uót déi ekspekted tu fáind, jáving rid abáut de trial in de lokal"
+        },
+        {
+          "t": "press. Its authors were clear that a single town proves very little,",
+          "p": "pres. its osors uér klíar dat a singol tóun pruvs véri litol,"
+        },
+        {
+          "t": "and that the effect might vanish in a city where light arrives from many",
+          "p": "end dat de efekt máit vanish in a siti uér láit aráivs from méni"
+        },
+        {
+          "t": "directions at once.",
+          "p": "derekshons at uáns."
+        }
+      ],
+      [
+        {
+          "t": "Meanwhile Ardmoor acquired something it had never had:",
+          "p": "minuáil ardmúar akkuáerd sámzing it jad néver jad:"
+        },
+        {
+          "t": "a sky. Astronomy groups began organising visits,",
+          "p": "a ski. astronomi grops began organáising visits,"
+        },
+        {
+          "t": "a pub started opening late for what it called stargazing suppers,",
+          "p": "a pub started opening léit for uót it kald stargéising supers,"
+        },
+        {
+          "t": "and the bridge on the postcards was quietly displaced by photographs of",
+          "p": "end de brich on de postkards uós kuitli displéist bái fóutografs ov"
+        },
+        {
+          "t": "the Milky Way above the valley. The council,",
+          "p": "de milki uéi abáv de vali. de konsil,"
+        },
+        {
+          "t": "which had acted purely to save money, found itself accidentally in",
+          "p": "uích jad akted pereli tu séiv máni, fond itself aksidentali in"
+        },
+        {
+          "t": "possession of a tourist attraction.",
+          "p": "poséshon ov a tóurist atrakshon."
+        }
+      ],
+      [
+        {
+          "t": "Not everyone is pleased. Some residents dislike the visitors,",
+          "p": "not everióun is poléist. sam residents disláik de visitors,"
+        },
+        {
+          "t": "others still find the walk from the bus stop uncomfortable,",
+          "p": "áders stil fáind de uók from de bus stop unkomfortabol,"
+        },
+        {
+          "t": "and a campaign to restore lighting on one road succeeded in 2023.",
+          "p": "end a campéin tu restóer láiting on uán róud suksided in 2023."
+        },
+        {
+          "t": "The council's own position remains resolutely unromantic.",
+          "p": "de konsil's óun posishon reméins resoluteli unromantik."
+        },
+        {
+          "t": "Asked whether Ardmoor had discovered something important about modern",
+          "p": "askt uéder ardmúar jad diskoverd sámzing important abáut modern"
+        },
+        {
+          "t": "life, the officer who first made the suggestion replied that they had",
+          "p": "láif, de ofáiser ju férst méid de sagchéschon repláid dat déi jad"
+        },
+        {
+          "t": "discovered a way to avoid replacing four hundred lamp posts.",
+          "p": "diskoverd a uéi tu avoid repléising for jándred lamp posts."
+        }
       ]
-    },
-    {
-      "title": "Why we misremember what we read",
-      "body": [
-        "Most people assume that reading works something like photography: a text enters the mind and a faithful copy is stored, fading slowly over time. Decades of experimental work suggest something less flattering and considerably more interesting. What we retain is not the text but a reconstruction of it, assembled from fragments, expectations and the gist of what we believe the writer intended.",
-        "One of the earliest demonstrations involved asking participants to read a short story from an unfamiliar culture and retell it after intervals of days, weeks and months. The retellings did not simply lose detail. They actively changed, smoothing away the elements that made no sense to the readers and replacing them with material that fitted their own assumptions about how stories work. Participants were confident that they were reporting accurately.",
-        "This tendency has practical consequences. Readers routinely remember having encountered information that was merely implied, and they remember it as strongly as material that was explicitly stated. If a passage describes a driver braking sharply and a pedestrian lying in the road, many readers will later recall reading that the car struck the pedestrian, even though no such sentence appeared.",
-        "Expertise changes what is remembered but does not eliminate distortion. Specialists reading in their own field retain far more of the substance of an argument, because they have existing structures into which new material can be fitted. However, the same structures make them more likely to remember a text as agreeing with their prior position than it actually did. Reconstruction is not the enemy of expertise; it is part of how expertise operates.",
-        "The effect is amplified by the confidence readers place in fluency. Text that is easy to process — clear typography, familiar vocabulary, a rhythm that carries the eye forward — is judged more truthful and better remembered than text that requires effort. Researchers have repeatedly shown that making a passage slightly harder to read can improve later recall, a finding that irritates almost everyone who encounters it.",
-        "None of this means memory is unreliable in a way that should alarm us. A system that stored every text verbatim would be enormously expensive and largely useless, since most of what we read matters only in summary. Reconstruction is efficient. The difficulty arises when we treat a reconstructed memory as though it were a recording, particularly in disputes about what a document actually said.",
-        "The practical remedy is unglamorous. Rereading a text before relying on it, noting quotations at the time rather than later, and remaining suspicious of memories that conveniently support one's own case are all more effective than any technique for improving retention. The problem is not that we forget too much. It is that we remember with such confidence."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Ardmoor no es un lugar notable. Se asienta en un valle poco profundo en el norte de Inglaterra, tiene una población de algo menos de cuatro mil habitantes y, hasta hace poco, era conocido principalmente por un puente que aparece en las postales de la región. En 2019 se convirtió, inesperadamente, en tema de artículos académicos, segmentos de televisión y un goteo constante de visitantes que llegan de noche y se van antes del desayuno.",
+      "El cambio empezó con un déficit presupuestario. Ante la necesidad de reparar una envejecida red de alumbrado público, el ayuntamiento calculó que reemplazarla por completo consumiría la mayor parte del presupuesto de inversión de una década. Un funcionario subalterno sugirió, medio en broma, que quizá bastara con apagar una parte. La propuesta era políticamente incómoda —nadie quiere ser el concejal que dejó las calles a oscuras—, pero se aprobó una prueba durante un solo invierno en tres calles residenciales.",
+      "Los vecinos se alarmaron, como era de esperar. Una reunión pública generó advertencias sobre robos, accidentes de tráfico y niños volviendo a casa desde sus actividades. El ayuntamiento se comprometió a vigilar de cerca los incidentes y a restablecer el alumbrado de inmediato si algo salía mal. Lo que siguió se pareció más a una decepción que a una catástrofe: durante el período de prueba, la delincuencia registrada en las tres calles no aumentó, y el reducido número de choques fue coherente con el de años anteriores.",
+      "El resultado interesante fue uno que nadie se había propuesto medir. En pocas semanas, los vecinos empezaron a informar que dormían mejor. Un médico local, escéptico al principio, notó una modesta disminución en las solicitudes de medicación para dormir entre los pacientes de esas calles. Nada de esto constituía una prueba, y la muestra era demasiado pequeña para sacar conclusiones seguras, pero motivó a un equipo universitario a diseñar un estudio más completo.",
+      "Ese estudio, publicado tres años después, fue prudente en sus afirmaciones. Encontró una mejora medible en la calidad del sueño según lo declarado por los propios vecinos, pero no pudo descartar la posibilidad de que simplemente estuvieran informando lo que esperaban encontrar, tras haber leído sobre la prueba en la prensa local. Sus autores dejaron claro que un solo pueblo demuestra muy poco, y que el efecto podría desaparecer en una ciudad donde la luz llega desde muchas direcciones a la vez.",
+      "Mientras tanto, Ardmoor adquirió algo que nunca había tenido: un cielo. Grupos de astronomía empezaron a organizar visitas, un pub empezó a abrir hasta tarde para lo que llamaba cenas de observación de estrellas, y el puente de las postales fue desplazado discretamente por fotografías de la Vía Láctea sobre el valle. El ayuntamiento, que había actuado únicamente para ahorrar dinero, se encontró por accidente en posesión de una atracción turística.",
+      "No todos están contentos. A algunos vecinos les disgustan los visitantes, otros siguen encontrando incómoda la caminata desde la parada del autobús, y una campaña para restablecer el alumbrado en una calle tuvo éxito en 2023. La propia postura del ayuntamiento sigue siendo resueltamente poco romántica. Cuando le preguntaron si Ardmoor había descubierto algo importante sobre la vida moderna, el funcionario que hizo la sugerencia respondió que habían descubierto una manera de no tener que reemplazar cuatrocientas farolas."
+    ]
+  },
+  {
+    "title": "Why we misremember what we read",
+    "body": [
+      "Most people assume that reading works something like photography: a text enters the mind and a faithful copy is stored, fading slowly over time. Decades of experimental work suggest something less flattering and considerably more interesting. What we retain is not the text but a reconstruction of it, assembled from fragments, expectations and the gist of what we believe the writer intended.",
+      "One of the earliest demonstrations involved asking participants to read a short story from an unfamiliar culture and retell it after intervals of days, weeks and months. The retellings did not simply lose detail. They actively changed, smoothing away the elements that made no sense to the readers and replacing them with material that fitted their own assumptions about how stories work. Participants were confident that they were reporting accurately.",
+      "This tendency has practical consequences. Readers routinely remember having encountered information that was merely implied, and they remember it as strongly as material that was explicitly stated. If a passage describes a driver braking sharply and a pedestrian lying in the road, many readers will later recall reading that the car struck the pedestrian, even though no such sentence appeared.",
+      "Expertise changes what is remembered but does not eliminate distortion. Specialists reading in their own field retain far more of the substance of an argument, because they have existing structures into which new material can be fitted. However, the same structures make them more likely to remember a text as agreeing with their prior position than it actually did. Reconstruction is not the enemy of expertise; it is part of how expertise operates.",
+      "The effect is amplified by the confidence readers place in fluency. Text that is easy to process — clear typography, familiar vocabulary, a rhythm that carries the eye forward — is judged more truthful and better remembered than text that requires effort. Researchers have repeatedly shown that making a passage slightly harder to read can improve later recall, a finding that irritates almost everyone who encounters it.",
+      "None of this means memory is unreliable in a way that should alarm us. A system that stored every text verbatim would be enormously expensive and largely useless, since most of what we read matters only in summary. Reconstruction is efficient. The difficulty arises when we treat a reconstructed memory as though it were a recording, particularly in disputes about what a document actually said.",
+      "The practical remedy is unglamorous. Rereading a text before relying on it, noting quotations at the time rather than later, and remaining suspicious of memories that conveniently support one's own case are all more effective than any technique for improving retention. The problem is not that we forget too much. It is that we remember with such confidence."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Reading stores an accurate copy of a text in the mind.",
+        "a": "False",
+        "why": "The passage argues we store a reconstruction, not the text itself."
+      },
+      {
+        "q": "Participants in the retelling study knew their accounts had changed.",
+        "a": "False",
+        "why": "They were confident they were reporting accurately."
+      },
+      {
+        "q": "Experts are entirely free from memory distortion.",
+        "a": "False",
+        "why": "Expertise changes what is remembered but does not eliminate distortion."
+      },
+      {
+        "q": "Harder-to-read text can sometimes be remembered better.",
+        "a": "True",
+        "why": "Making a passage slightly harder to read can improve later recall."
+      },
+      {
+        "q": "The research described was funded by publishing companies.",
+        "a": "Not Given",
+        "why": "No funding source is mentioned anywhere in the passage."
+      }
+    ],
+    "short": [
+      {
+        "q": "What do readers often recall encountering, though it was only suggested?",
+        "a": "implied information"
+      },
+      {
+        "q": "According to the last paragraph, what quality of our memories causes the real difficulty?",
+        "a": "confidence"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What comparison does the writer reject in the first paragraph?",
+        "options": [
+          "Reading as a form of conversation.",
+          "Reading as a photographic record.",
+          "Reading as a skill that declines with age.",
+          "Reading as a substitute for direct experience."
+        ],
+        "a": 1,
+        "why": "The paragraph opens with the photography assumption and calls the evidence 'less flattering'."
+      },
+      {
+        "q": "What does the example of the driver and pedestrian illustrate?",
+        "options": [
+          "That readers forget dramatic events more quickly.",
+          "That implied information is later recalled as though stated.",
+          "That eyewitness accounts are usually accurate.",
+          "That short passages are remembered better than long ones."
+        ],
+        "a": 1,
+        "why": "Readers recall that the car struck the pedestrian although no such sentence appeared."
+      },
+      {
+        "q": "What does the writer say about reconstruction in the sixth paragraph?",
+        "options": [
+          "It is a flaw that better education could correct.",
+          "It is efficient, and only problematic when mistaken for a recording.",
+          "It affects casual readers but not professionals.",
+          "It has been exaggerated by recent research."
+        ],
+        "a": 1,
+        "why": "Reconstruction is called efficient; the difficulty arises when it is treated as a recording."
+      },
+      {
+        "q": "How would the writer's proposed remedy best be described?",
+        "options": [
+          "Ambitious but impractical.",
+          "Modest and procedural rather than clever.",
+          "Dependent on new technology.",
+          "Suitable only for academic readers."
+        ],
+        "a": 1,
+        "why": "The remedy is called 'unglamorous': rereading, noting quotations at the time, and staying suspicious."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Reading stores an accurate copy of a text in the mind.",
-          "a": "False",
-          "why": "The passage argues we store a reconstruction, not the text itself."
+          "t": "Most people assume that reading works something like photography:",
+          "p": "móust pípol asiúm dat ríding uérks sámzing láik fotógrafi:"
         },
         {
-          "q": "Participants in the retelling study knew their accounts had changed.",
-          "a": "False",
-          "why": "They were confident they were reporting accurately."
+          "t": "a text enters the mind and a faithful copy is stored,",
+          "p": "a tekst enters de máind end a féisful kopi is stóerd,"
         },
         {
-          "q": "Experts are entirely free from memory distortion.",
-          "a": "False",
-          "why": "Expertise changes what is remembered but does not eliminate distortion."
+          "t": "fading slowly over time. Decades of experimental work suggest something",
+          "p": "féiding slóuli óuver táim. dékeids ov eksperimental uérk sagchést sámzing"
         },
         {
-          "q": "Harder-to-read text can sometimes be remembered better.",
-          "a": "True",
-          "why": "Making a passage slightly harder to read can improve later recall."
+          "t": "less flattering and considerably more interesting.",
+          "p": "les flatering end konsiderabli mor interesting."
         },
         {
-          "q": "The research described was funded by publishing companies.",
-          "a": "Not Given",
-          "why": "No funding source is mentioned anywhere in the passage."
+          "t": "What we retain is not the text but a reconstruction of it,",
+          "p": "uót uí retéin is not de tekst bat a rekonstrukshon ov it,"
+        },
+        {
+          "t": "assembled from fragments, expectations and the gist of what we believe",
+          "p": "asembld from fragments, ekspektashons end de yist ov uót uí beliív"
+        },
+        {
+          "t": "the writer intended.",
+          "p": "de ráiter intended."
         }
       ],
-      "short": [
+      [
         {
-          "q": "What do readers often recall encountering, though it was only suggested?",
-          "a": "implied information"
+          "t": "One of the earliest demonstrations involved asking participants to read",
+          "p": "uán ov de irlist demonstrashons involvd asking partisipants tu rid"
         },
         {
-          "q": "According to the last paragraph, what quality of our memories causes the real difficulty?",
-          "a": "confidence"
+          "t": "a short story from an unfamiliar culture and retell it after intervals",
+          "p": "a short stori from an unfamiliar cálcher end retel it áfter intervals"
+        },
+        {
+          "t": "of days, weeks and months. The retellings did not simply lose detail.",
+          "p": "ov déis, uiks end manzs. de retelings did not símpli lóus detéil."
+        },
+        {
+          "t": "They actively changed, smoothing away the elements that made no sense to",
+          "p": "déi aktiveli chéinchd, smusing oéi de elements dat méid nóu sens tu"
+        },
+        {
+          "t": "the readers and replacing them with material that fitted their own",
+          "p": "de ríders end repléising dem uíd material dat fited déar óun"
+        },
+        {
+          "t": "assumptions about how stories work. Participants were confident that",
+          "p": "asumpshons abáut jáu storis uérk. partisipants uér konfident dat"
+        },
+        {
+          "t": "they were reporting accurately.",
+          "p": "déi uér reporting akserateli."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What comparison does the writer reject in the first paragraph?",
-          "options": [
-            "Reading as a form of conversation.",
-            "Reading as a photographic record.",
-            "Reading as a skill that declines with age.",
-            "Reading as a substitute for direct experience."
-          ],
-          "a": 1,
-          "why": "The paragraph opens with the photography assumption and calls the evidence 'less flattering'."
+          "t": "This tendency has practical consequences. Readers routinely remember",
+          "p": "dis tendensi jas praktikal konskuenses. ríders rotineli remember"
         },
         {
-          "q": "What does the example of the driver and pedestrian illustrate?",
-          "options": [
-            "That readers forget dramatic events more quickly.",
-            "That implied information is later recalled as though stated.",
-            "That eyewitness accounts are usually accurate.",
-            "That short passages are remembered better than long ones."
-          ],
-          "a": 1,
-          "why": "Readers recall that the car struck the pedestrian although no such sentence appeared."
+          "t": "having encountered information that was merely implied,",
+          "p": "jáving enkonterd informashon dat uós mereli impláid,"
         },
         {
-          "q": "What does the writer say about reconstruction in the sixth paragraph?",
-          "options": [
-            "It is a flaw that better education could correct.",
-            "It is efficient, and only problematic when mistaken for a recording.",
-            "It affects casual readers but not professionals.",
-            "It has been exaggerated by recent research."
-          ],
-          "a": 1,
-          "why": "Reconstruction is called efficient; the difficulty arises when it is treated as a recording."
+          "t": "and they remember it as strongly as material that was explicitly stated.",
+          "p": "end déi remember it as strongli as material dat uós eksplisitli stéited."
         },
         {
-          "q": "How would the writer's proposed remedy best be described?",
-          "options": [
-            "Ambitious but impractical.",
-            "Modest and procedural rather than clever.",
-            "Dependent on new technology.",
-            "Suitable only for academic readers."
-          ],
-          "a": 1,
-          "why": "The remedy is called 'unglamorous': rereading, noting quotations at the time, and staying suspicious."
+          "t": "If a passage describes a driver braking sharply and a pedestrian lying",
+          "p": "if a paséig deskráibs a dráiver bréiking sharpli end a pedestrian lying"
+        },
+        {
+          "t": "in the road, many readers will later recall reading that the car struck",
+          "p": "in de róud, méni ríders uíl léiter rekal ríding dat de kar struk"
+        },
+        {
+          "t": "the pedestrian, even though no such sentence appeared.",
+          "p": "de pedestrian, íven dóu nóu sach sentens apéerd."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Most people assume that reading works something like photography:",
-            "p": "móust pípol asiúm dat ríding uérks sámzing láik fotógrafi:"
-          },
-          {
-            "t": "a text enters the mind and a faithful copy is stored,",
-            "p": "a tekst enters de máind end a féisful kopi is stóerd,"
-          },
-          {
-            "t": "fading slowly over time. Decades of experimental work suggest something",
-            "p": "féiding slóuli óuver táim. dékeids ov eksperimental uérk sagchést sámzing"
-          },
-          {
-            "t": "less flattering and considerably more interesting.",
-            "p": "les flatering end konsiderabli mor interesting."
-          },
-          {
-            "t": "What we retain is not the text but a reconstruction of it,",
-            "p": "uót uí retéin is not de tekst bat a rekonstrukshon ov it,"
-          },
-          {
-            "t": "assembled from fragments, expectations and the gist of what we believe",
-            "p": "asembld from fragments, ekspektashons end de yist ov uót uí beliív"
-          },
-          {
-            "t": "the writer intended.",
-            "p": "de ráiter intended."
-          }
-        ],
-        [
-          {
-            "t": "One of the earliest demonstrations involved asking participants to read",
-            "p": "uán ov de irlist demonstrashons involvd asking partisipants tu rid"
-          },
-          {
-            "t": "a short story from an unfamiliar culture and retell it after intervals",
-            "p": "a short stori from an unfamiliar cálcher end retel it áfter intervals"
-          },
-          {
-            "t": "of days, weeks and months. The retellings did not simply lose detail.",
-            "p": "ov déis, uiks end manzs. de retelings did not símpli lóus detéil."
-          },
-          {
-            "t": "They actively changed, smoothing away the elements that made no sense to",
-            "p": "déi aktiveli chéinchd, smusing oéi de elements dat méid nóu sens tu"
-          },
-          {
-            "t": "the readers and replacing them with material that fitted their own",
-            "p": "de ríders end repléising dem uíd material dat fited déar óun"
-          },
-          {
-            "t": "assumptions about how stories work. Participants were confident that",
-            "p": "asumpshons abáut jáu storis uérk. partisipants uér konfident dat"
-          },
-          {
-            "t": "they were reporting accurately.",
-            "p": "déi uér reporting akserateli."
-          }
-        ],
-        [
-          {
-            "t": "This tendency has practical consequences. Readers routinely remember",
-            "p": "dis tendensi jas praktikal konskuenses. ríders rotineli remember"
-          },
-          {
-            "t": "having encountered information that was merely implied,",
-            "p": "jáving enkonterd informashon dat uós mereli impláid,"
-          },
-          {
-            "t": "and they remember it as strongly as material that was explicitly stated.",
-            "p": "end déi remember it as strongli as material dat uós eksplisitli stéited."
-          },
-          {
-            "t": "If a passage describes a driver braking sharply and a pedestrian lying",
-            "p": "if a paséig deskráibs a dráiver bréiking sharpli end a pedestrian lying"
-          },
-          {
-            "t": "in the road, many readers will later recall reading that the car struck",
-            "p": "in de róud, méni ríders uíl léiter rekal ríding dat de kar struk"
-          },
-          {
-            "t": "the pedestrian, even though no such sentence appeared.",
-            "p": "de pedestrian, íven dóu nóu sach sentens apéerd."
-          }
-        ],
-        [
-          {
-            "t": "Expertise changes what is remembered but does not eliminate distortion.",
-            "p": "ekspertáis chéinches uót is rememberd bat das not eliminéit distorshon."
-          },
-          {
-            "t": "Specialists reading in their own field retain far more of the substance",
-            "p": "spesialists ríding in déar óun fild retéin far mor ov de substans"
-          },
-          {
-            "t": "of an argument, because they have existing structures into which new",
-            "p": "ov an argument, bicós déi jav eksisting strukchers íntu uích neu"
-          },
-          {
-            "t": "material can be fitted. However, the same structures make them more",
-            "p": "material can bi fited. jauéver, de séim strukchers méik dem mor"
-          },
-          {
-            "t": "likely to remember a text as agreeing with their prior position than it",
-            "p": "likeli tu remember a tekst as agring uíd déar prior posishon dan it"
-          },
-          {
-            "t": "actually did. Reconstruction is not the enemy of expertise;",
-            "p": "aktuali did. rekonstrukshon is not de enemi ov ekspertáis;"
-          },
-          {
-            "t": "it is part of how expertise operates.",
-            "p": "it is part ov jáu ekspertáis óuperéits."
-          }
-        ],
-        [
-          {
-            "t": "The effect is amplified by the confidence readers place in fluency.",
-            "p": "de efekt is amplifáid bái de konfidens ríders pléis in fluensi."
-          },
-          {
-            "t": "Text that is easy to process — clear typography,",
-            "p": "tekst dat is isi tu próuses — klíar typografi,"
-          },
-          {
-            "t": "familiar vocabulary, a rhythm that carries the eye forward — is judged",
-            "p": "familiar vokabulari, a rjysm dat karis de ái foruard — is yuchd"
-          },
-          {
-            "t": "more truthful and better remembered than text that requires effort.",
-            "p": "mor trusful end beter rememberd dan tekst dat rkuáers efort."
-          },
-          {
-            "t": "Researchers have repeatedly shown that making a passage slightly harder",
-            "p": "resíarchers jav repitedli shóun dat méiking a paséig sláitli jarder"
-          },
-          {
-            "t": "to read can improve later recall, a finding that irritates almost",
-            "p": "tu rid can impróuv léiter rekal, a finding dat eritéits ólmoust"
-          },
-          {
-            "t": "everyone who encounters it.",
-            "p": "everióun ju enkonters it."
-          }
-        ],
-        [
-          {
-            "t": "None of this means memory is unreliable in a way that should alarm us.",
-            "p": "nan ov dis mins memori is unreliabol in a uéi dat shud alarm as."
-          },
-          {
-            "t": "A system that stored every text verbatim would be enormously expensive",
-            "p": "a system dat stóerd évri tekst verbatim vud bi enormasli ekspénsiv"
-          },
-          {
-            "t": "and largely useless, since most of what we read matters only in summary.",
-            "p": "end laryeli useles, sins móust ov uót uí rid maters óunli in sumari."
-          },
-          {
-            "t": "Reconstruction is efficient. The difficulty arises when we treat a",
-            "p": "rekonstrukshon is efisint. de difikulti arises uén uí trit a"
-          },
-          {
-            "t": "reconstructed memory as though it were a recording,",
-            "p": "rekonstrukted memori as dóu it uér a rekording,"
-          },
-          {
-            "t": "particularly in disputes about what a document actually said.",
-            "p": "partikularli in dispiúts abáut uót a dokument aktuali sed."
-          }
-        ],
-        [
-          {
-            "t": "The practical remedy is unglamorous. Rereading a text before relying on",
-            "p": "de praktikal remedi is unglamoras. reréiding a tekst bifór relying on"
-          },
-          {
-            "t": "it, noting quotations at the time rather than later,",
-            "p": "it, nóuting kuotashons at de táim ráder dan léiter,"
-          },
-          {
-            "t": "and remaining suspicious of memories that conveniently support one's own",
-            "p": "end remaáining suspishas ov memoris dat konvenintli suport uáns óun"
-          },
-          {
-            "t": "case are all more effective than any technique for improving retention.",
-            "p": "kéis ar ol mor iféktiv dan éni teknikue for impróuving retenshon."
-          },
-          {
-            "t": "The problem is not that we forget too much. It is that we remember with",
-            "p": "de problem is not dat uí foryet tu mach. it is dat uí remember uíd"
-          },
-          {
-            "t": "such confidence.",
-            "p": "sach konfidens."
-          }
-        ]
+      [
+        {
+          "t": "Expertise changes what is remembered but does not eliminate distortion.",
+          "p": "ekspertáis chéinches uót is rememberd bat das not eliminéit distorshon."
+        },
+        {
+          "t": "Specialists reading in their own field retain far more of the substance",
+          "p": "spesialists ríding in déar óun fild retéin far mor ov de substans"
+        },
+        {
+          "t": "of an argument, because they have existing structures into which new",
+          "p": "ov an argument, bicós déi jav eksisting strukchers íntu uích neu"
+        },
+        {
+          "t": "material can be fitted. However, the same structures make them more",
+          "p": "material can bi fited. jauéver, de séim strukchers méik dem mor"
+        },
+        {
+          "t": "likely to remember a text as agreeing with their prior position than it",
+          "p": "likeli tu remember a tekst as agring uíd déar prior posishon dan it"
+        },
+        {
+          "t": "actually did. Reconstruction is not the enemy of expertise;",
+          "p": "aktuali did. rekonstrukshon is not de enemi ov ekspertáis;"
+        },
+        {
+          "t": "it is part of how expertise operates.",
+          "p": "it is part ov jáu ekspertáis óuperéits."
+        }
+      ],
+      [
+        {
+          "t": "The effect is amplified by the confidence readers place in fluency.",
+          "p": "de efekt is amplifáid bái de konfidens ríders pléis in fluensi."
+        },
+        {
+          "t": "Text that is easy to process — clear typography,",
+          "p": "tekst dat is isi tu próuses — klíar typografi,"
+        },
+        {
+          "t": "familiar vocabulary, a rhythm that carries the eye forward — is judged",
+          "p": "familiar vokabulari, a rjysm dat karis de ái foruard — is yuchd"
+        },
+        {
+          "t": "more truthful and better remembered than text that requires effort.",
+          "p": "mor trusful end beter rememberd dan tekst dat rkuáers efort."
+        },
+        {
+          "t": "Researchers have repeatedly shown that making a passage slightly harder",
+          "p": "resíarchers jav repitedli shóun dat méiking a paséig sláitli jarder"
+        },
+        {
+          "t": "to read can improve later recall, a finding that irritates almost",
+          "p": "tu rid can impróuv léiter rekal, a finding dat eritéits ólmoust"
+        },
+        {
+          "t": "everyone who encounters it.",
+          "p": "everióun ju enkonters it."
+        }
+      ],
+      [
+        {
+          "t": "None of this means memory is unreliable in a way that should alarm us.",
+          "p": "nan ov dis mins memori is unreliabol in a uéi dat shud alarm as."
+        },
+        {
+          "t": "A system that stored every text verbatim would be enormously expensive",
+          "p": "a system dat stóerd évri tekst verbatim vud bi enormasli ekspénsiv"
+        },
+        {
+          "t": "and largely useless, since most of what we read matters only in summary.",
+          "p": "end laryeli useles, sins móust ov uót uí rid maters óunli in sumari."
+        },
+        {
+          "t": "Reconstruction is efficient. The difficulty arises when we treat a",
+          "p": "rekonstrukshon is efisint. de difikulti arises uén uí trit a"
+        },
+        {
+          "t": "reconstructed memory as though it were a recording,",
+          "p": "rekonstrukted memori as dóu it uér a rekording,"
+        },
+        {
+          "t": "particularly in disputes about what a document actually said.",
+          "p": "partikularli in dispiúts abáut uót a dokument aktuali sed."
+        }
+      ],
+      [
+        {
+          "t": "The practical remedy is unglamorous. Rereading a text before relying on",
+          "p": "de praktikal remedi is unglamoras. reréiding a tekst bifór relying on"
+        },
+        {
+          "t": "it, noting quotations at the time rather than later,",
+          "p": "it, nóuting kuotashons at de táim ráder dan léiter,"
+        },
+        {
+          "t": "and remaining suspicious of memories that conveniently support one's own",
+          "p": "end remaáining suspishas ov memoris dat konvenintli suport uáns óun"
+        },
+        {
+          "t": "case are all more effective than any technique for improving retention.",
+          "p": "kéis ar ol mor iféktiv dan éni teknikue for impróuving retenshon."
+        },
+        {
+          "t": "The problem is not that we forget too much. It is that we remember with",
+          "p": "de problem is not dat uí foryet tu mach. it is dat uí remember uíd"
+        },
+        {
+          "t": "such confidence.",
+          "p": "sach konfidens."
+        }
       ]
-    },
-    {
-      "title": "The return of the night train",
-      "body": [
-        "For most of the 1990s the sleeper train looked like a museum piece. Budget airlines were undercutting rail fares on almost every European route, and operators were quietly withdrawing overnight services that filled expensive rolling stock with too few paying passengers. By 2010 a traveller wanting to sleep between Paris and Vienna had markedly fewer options than their grandparents had enjoyed.",
-        "The reversal, when it came, was driven less by nostalgia than by arithmetic. Rising awareness of aviation emissions coincided with a generation of travellers for whom a night spent moving was a night not spent paying for a hotel. Austrian operators, who had never fully abandoned the model, began buying up the carriages other companies were discarding and rebuilding routes across the continent.",
-        "The economics remain difficult. A sleeper carriage carries perhaps a third of the passengers of a seated one, requires cleaning staff, bedding and catering, and earns revenue for only part of each day. Track access charges in some countries are calculated in ways that penalise services crossing multiple borders at night. Several new routes have launched to enthusiastic press coverage and closed within two years.",
-        "Passengers, meanwhile, have proved harder to categorise than the operators expected. Early planning assumed a market of environmentally motivated travellers willing to accept discomfort for a lower carbon footprint. The actual demand has come substantially from people who dislike airports, families avoiding the logistics of early flights, and business travellers who value arriving in a city centre at breakfast rather than at an airport at dawn.",
-        "This has changed what is being built. New carriages emphasise privacy over capacity, with single-occupancy pods that would have seemed extravagant a decade ago. Operators have discovered that a passenger who sleeps badly does not return, and that the difference between a tolerable night and a good one is largely a matter of noise, temperature and whether a stranger is sleeping half a metre away.",
-        "Critics point out that the environmental case is less clean-cut than campaigners suggest. A full night train comfortably outperforms a short-haul flight, but a half-empty one on an electrified line powered by fossil fuels does not, and the comparison shifts again where aviation is efficient and the rail route is circuitous. The honest position is that night trains are usually better, sometimes much better, and occasionally no better at all.",
-        "What is not in dispute is that the service has stopped shrinking. Routes are being restored faster than they are being withdrawn for the first time in three decades, and manufacturers have order books for sleeper stock extending into the 2030s. Whether this represents a durable shift or a fashionable interval will not be clear for some years, though the carriages being ordered now will still be running when the answer arrives."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "La mayoría de la gente da por sentado que leer funciona un poco como la fotografía: un texto entra en la mente y se almacena una copia fiel, que se desvanece lentamente con el tiempo. Décadas de trabajo experimental sugieren algo menos halagüeño y bastante más interesante. Lo que retenemos no es el texto, sino una reconstrucción de él, ensamblada a partir de fragmentos, expectativas y la esencia de lo que creemos que el autor quiso decir.",
+      "Una de las primeras demostraciones consistió en pedir a los participantes que leyeran un relato breve de una cultura desconocida y lo volvieran a contar tras intervalos de días, semanas y meses. Las nuevas versiones no se limitaban a perder detalles. Cambiaban activamente, limando los elementos que no tenían sentido para los lectores y reemplazándolos por material que encajaba con sus propias suposiciones sobre cómo funcionan los relatos. Los participantes estaban convencidos de que informaban con exactitud.",
+      "Esta tendencia tiene consecuencias prácticas. Los lectores recuerdan de forma habitual haberse encontrado con información que solo estaba insinuada, y la recuerdan con tanta fuerza como el material que se afirmó de manera explícita. Si un pasaje describe a un conductor frenando bruscamente y a un peatón tendido en la calle, muchos lectores recordarán más tarde haber leído que el coche atropelló al peatón, aunque ninguna frase de ese tipo apareciera.",
+      "La pericia cambia lo que se recuerda, pero no elimina la distorsión. Los especialistas que leen en su propio campo retienen mucho más de la sustancia de un argumento, porque cuentan con estructuras previas en las que encajar el material nuevo. Sin embargo, esas mismas estructuras hacen más probable que recuerden un texto como más acorde con su postura previa de lo que realmente era. La reconstrucción no es enemiga de la pericia; es parte de cómo funciona la pericia.",
+      "El efecto se amplifica por la confianza que los lectores depositan en la fluidez. Un texto fácil de procesar —tipografía clara, vocabulario familiar, un ritmo que arrastra la vista hacia adelante— se juzga más veraz y se recuerda mejor que un texto que exige esfuerzo. Los investigadores han demostrado en repetidas ocasiones que hacer un pasaje algo más difícil de leer puede mejorar su recuerdo posterior, un hallazgo que irrita a casi todos los que se topan con él.",
+      "Nada de esto significa que la memoria sea poco fiable de un modo que deba alarmarnos. Un sistema que almacenara cada texto palabra por palabra sería enormemente costoso y en gran medida inútil, ya que la mayor parte de lo que leemos solo importa como resumen. La reconstrucción es eficiente. La dificultad surge cuando tratamos un recuerdo reconstruido como si fuera una grabación, sobre todo en las disputas acerca de lo que un documento decía en realidad.",
+      "El remedio práctico es poco glamoroso. Releer un texto antes de basarse en él, anotar las citas en el momento y no después, y desconfiar de los recuerdos que convenientemente respaldan la propia postura son todos más eficaces que cualquier técnica para mejorar la retención. El problema no es que olvidemos demasiado. Es que recordamos con muchísima seguridad."
+    ]
+  },
+  {
+    "title": "The return of the night train",
+    "body": [
+      "For most of the 1990s the sleeper train looked like a museum piece. Budget airlines were undercutting rail fares on almost every European route, and operators were quietly withdrawing overnight services that filled expensive rolling stock with too few paying passengers. By 2010 a traveller wanting to sleep between Paris and Vienna had markedly fewer options than their grandparents had enjoyed.",
+      "The reversal, when it came, was driven less by nostalgia than by arithmetic. Rising awareness of aviation emissions coincided with a generation of travellers for whom a night spent moving was a night not spent paying for a hotel. Austrian operators, who had never fully abandoned the model, began buying up the carriages other companies were discarding and rebuilding routes across the continent.",
+      "The economics remain difficult. A sleeper carriage carries perhaps a third of the passengers of a seated one, requires cleaning staff, bedding and catering, and earns revenue for only part of each day. Track access charges in some countries are calculated in ways that penalise services crossing multiple borders at night. Several new routes have launched to enthusiastic press coverage and closed within two years.",
+      "Passengers, meanwhile, have proved harder to categorise than the operators expected. Early planning assumed a market of environmentally motivated travellers willing to accept discomfort for a lower carbon footprint. The actual demand has come substantially from people who dislike airports, families avoiding the logistics of early flights, and business travellers who value arriving in a city centre at breakfast rather than at an airport at dawn.",
+      "This has changed what is being built. New carriages emphasise privacy over capacity, with single-occupancy pods that would have seemed extravagant a decade ago. Operators have discovered that a passenger who sleeps badly does not return, and that the difference between a tolerable night and a good one is largely a matter of noise, temperature and whether a stranger is sleeping half a metre away.",
+      "Critics point out that the environmental case is less clean-cut than campaigners suggest. A full night train comfortably outperforms a short-haul flight, but a half-empty one on an electrified line powered by fossil fuels does not, and the comparison shifts again where aviation is efficient and the rail route is circuitous. The honest position is that night trains are usually better, sometimes much better, and occasionally no better at all.",
+      "What is not in dispute is that the service has stopped shrinking. Routes are being restored faster than they are being withdrawn for the first time in three decades, and manufacturers have order books for sleeper stock extending into the 2030s. Whether this represents a durable shift or a fashionable interval will not be clear for some years, though the carriages being ordered now will still be running when the answer arrives."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Sleeper services declined in the 1990s because of competition from cheap flights.",
+        "a": "True",
+        "why": "Budget airlines were undercutting rail fares and operators withdrew services."
+      },
+      {
+        "q": "The revival was motivated mainly by nostalgia for older travel.",
+        "a": "False",
+        "why": "The passage says it was driven less by nostalgia than by arithmetic."
+      },
+      {
+        "q": "Every new night-train route launched since 2010 has been successful.",
+        "a": "False",
+        "why": "Several routes closed within two years."
+      },
+      {
+        "q": "Night trains are always better for the environment than flying.",
+        "a": "False",
+        "why": "The passage says occasionally they are no better at all."
+      },
+      {
+        "q": "Most sleeper passengers now travel for work rather than leisure.",
+        "a": "Not Given",
+        "why": "The passage lists several groups but never gives their relative proportions."
+      }
+    ],
+    "short": [
+      {
+        "q": "Which country's operators bought carriages that others were discarding?",
+        "a": "Austria"
+      },
+      {
+        "q": "Roughly what fraction of a seated carriage's passengers does a sleeper carry?",
+        "a": "a third"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What does the writer identify as a structural problem for sleeper operators?",
+        "options": [
+          "A shortage of qualified drivers for night services.",
+          "Low passenger density combined with high servicing costs.",
+          "Passenger reluctance to book tickets in advance.",
+          "The unavailability of suitable carriages."
+        ],
+        "a": 1,
+        "why": "The third paragraph cites a third of the passengers, cleaning, bedding, catering and limited daily revenue."
+      },
+      {
+        "q": "How did actual demand differ from what operators had predicted?",
+        "options": [
+          "It was far smaller than forecast.",
+          "It came largely from travellers with practical rather than environmental motives.",
+          "It was concentrated entirely among older passengers.",
+          "It appeared only on routes shorter than expected."
+        ],
+        "a": 1,
+        "why": "Demand came from people who dislike airports, families and business travellers, not mainly the environmentally motivated."
+      },
+      {
+        "q": "Why have new carriages been designed with fewer beds per compartment?",
+        "options": [
+          "Regulations now limit the number of passengers per carriage.",
+          "Poor sleep discourages passengers from travelling again.",
+          "Single pods are cheaper to manufacture.",
+          "Operators want to reduce cleaning requirements."
+        ],
+        "a": 1,
+        "why": "Operators discovered that a passenger who sleeps badly does not return."
+      },
+      {
+        "q": "What is the writer's overall position in the final paragraph?",
+        "options": [
+          "The revival is certain to continue indefinitely.",
+          "The revival is real, but its durability is still unknown.",
+          "The revival has already begun to reverse.",
+          "The revival matters less than improvements to aviation."
+        ],
+        "a": 1,
+        "why": "Routes are being restored, but whether it is durable or fashionable 'will not be clear for some years'."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Sleeper services declined in the 1990s because of competition from cheap flights.",
-          "a": "True",
-          "why": "Budget airlines were undercutting rail fares and operators withdrew services."
+          "t": "For most of the 1990s the sleeper train looked like a museum piece.",
+          "p": "for móust ov de 1990s de sliper tréin loóukt láik a museum piík."
         },
         {
-          "q": "The revival was motivated mainly by nostalgia for older travel.",
-          "a": "False",
-          "why": "The passage says it was driven less by nostalgia than by arithmetic."
+          "t": "Budget airlines were undercutting rail fares on almost every European",
+          "p": "báchet éarláins uér underkuting réil féers on ólmoust évri iropin"
         },
         {
-          "q": "Every new night-train route launched since 2010 has been successful.",
-          "a": "False",
-          "why": "Several routes closed within two years."
+          "t": "route, and operators were quietly withdrawing overnight services that",
+          "p": "roiút, end operators uér kuitli uisdroing overnáit sérvises dat"
         },
         {
-          "q": "Night trains are always better for the environment than flying.",
-          "a": "False",
-          "why": "The passage says occasionally they are no better at all."
+          "t": "filled expensive rolling stock with too few paying passengers.",
+          "p": "fild ekspénsiv roling stok uíd tu fiú péing pasenyers."
         },
         {
-          "q": "Most sleeper passengers now travel for work rather than leisure.",
-          "a": "Not Given",
-          "why": "The passage lists several groups but never gives their relative proportions."
+          "t": "By 2010 a traveller wanting to sleep between Paris and Vienna had",
+          "p": "bái 2010 a traveler uanting tu slip bituín paris end vina jad"
+        },
+        {
+          "t": "markedly fewer options than their grandparents had enjoyed.",
+          "p": "markedli feuer opshons dan déar grandparents jad enyoied."
         }
       ],
-      "short": [
+      [
         {
-          "q": "Which country's operators bought carriages that others were discarding?",
-          "a": "Austria"
+          "t": "The reversal, when it came, was driven less by nostalgia than by",
+          "p": "de reversal, uén it kéim, uós driven les bái nostalyia dan bái"
         },
         {
-          "q": "Roughly what fraction of a seated carriage's passengers does a sleeper carry?",
-          "a": "a third"
+          "t": "arithmetic. Rising awareness of aviation emissions coincided with a",
+          "p": "arismetik. ráising oarenes ov aviashon emishons koinkáided uíd a"
+        },
+        {
+          "t": "generation of travellers for whom a night spent moving was a night not",
+          "p": "yenerashon ov travelers for jum a náit spent múving uós a náit not"
+        },
+        {
+          "t": "spent paying for a hotel. Austrian operators,",
+          "p": "spent péing for a jotel. ostrian operators,"
+        },
+        {
+          "t": "who had never fully abandoned the model, began buying up the carriages",
+          "p": "ju jad néver fuli abandóund de model, began buying ap de kariéigs"
+        },
+        {
+          "t": "other companies were discarding and rebuilding routes across the",
+          "p": "áder kompanis uér diskarding end rebuilding roiúts acrós de"
+        },
+        {
+          "t": "continent.",
+          "p": "kontinent."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What does the writer identify as a structural problem for sleeper operators?",
-          "options": [
-            "A shortage of qualified drivers for night services.",
-            "Low passenger density combined with high servicing costs.",
-            "Passenger reluctance to book tickets in advance.",
-            "The unavailability of suitable carriages."
-          ],
-          "a": 1,
-          "why": "The third paragraph cites a third of the passengers, cleaning, bedding, catering and limited daily revenue."
+          "t": "The economics remain difficult. A sleeper carriage carries perhaps a",
+          "p": "de ekonomiks reméin difikult. a sliper kariéig karis perjáps a"
         },
         {
-          "q": "How did actual demand differ from what operators had predicted?",
-          "options": [
-            "It was far smaller than forecast.",
-            "It came largely from travellers with practical rather than environmental motives.",
-            "It was concentrated entirely among older passengers.",
-            "It appeared only on routes shorter than expected."
-          ],
-          "a": 1,
-          "why": "Demand came from people who dislike airports, families and business travellers, not mainly the environmentally motivated."
+          "t": "third of the passengers of a seated one, requires cleaning staff,",
+          "p": "zerd ov de pasenyers ov a séited uán, rkuáers koléining staf,"
         },
         {
-          "q": "Why have new carriages been designed with fewer beds per compartment?",
-          "options": [
-            "Regulations now limit the number of passengers per carriage.",
-            "Poor sleep discourages passengers from travelling again.",
-            "Single pods are cheaper to manufacture.",
-            "Operators want to reduce cleaning requirements."
-          ],
-          "a": 1,
-          "why": "Operators discovered that a passenger who sleeps badly does not return."
+          "t": "bedding and catering, and earns revenue for only part of each day.",
+          "p": "beding end katering, end irns revenue for óunli part ov ich déi."
         },
         {
-          "q": "What is the writer's overall position in the final paragraph?",
-          "options": [
-            "The revival is certain to continue indefinitely.",
-            "The revival is real, but its durability is still unknown.",
-            "The revival has already begun to reverse.",
-            "The revival matters less than improvements to aviation."
-          ],
-          "a": 1,
-          "why": "Routes are being restored, but whether it is durable or fashionable 'will not be clear for some years'."
+          "t": "Track access charges in some countries are calculated in ways that",
+          "p": "trak akses charchs in sam cántris ar kalkuléited in uéis dat"
+        },
+        {
+          "t": "penalise services crossing multiple borders at night.",
+          "p": "penaláis sérvises krosing multipol borders at náit."
+        },
+        {
+          "t": "Several new routes have launched to enthusiastic press coverage and",
+          "p": "séveral neu roiúts jav lonched tu ensusiastik pres kóuveréig end"
+        },
+        {
+          "t": "closed within two years.",
+          "p": "klóust uidín tu yirs."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "For most of the 1990s the sleeper train looked like a museum piece.",
-            "p": "for móust ov de 1990s de sliper tréin loóukt láik a museum piík."
-          },
-          {
-            "t": "Budget airlines were undercutting rail fares on almost every European",
-            "p": "báchet éarláins uér underkuting réil féers on ólmoust évri iropin"
-          },
-          {
-            "t": "route, and operators were quietly withdrawing overnight services that",
-            "p": "roiút, end operators uér kuitli uisdroing overnáit sérvises dat"
-          },
-          {
-            "t": "filled expensive rolling stock with too few paying passengers.",
-            "p": "fild ekspénsiv roling stok uíd tu fiú péing pasenyers."
-          },
-          {
-            "t": "By 2010 a traveller wanting to sleep between Paris and Vienna had",
-            "p": "bái 2010 a traveler uanting tu slip bituín paris end vina jad"
-          },
-          {
-            "t": "markedly fewer options than their grandparents had enjoyed.",
-            "p": "markedli feuer opshons dan déar grandparents jad enyoied."
-          }
-        ],
-        [
-          {
-            "t": "The reversal, when it came, was driven less by nostalgia than by",
-            "p": "de reversal, uén it kéim, uós driven les bái nostalyia dan bái"
-          },
-          {
-            "t": "arithmetic. Rising awareness of aviation emissions coincided with a",
-            "p": "arismetik. ráising oarenes ov aviashon emishons koinkáided uíd a"
-          },
-          {
-            "t": "generation of travellers for whom a night spent moving was a night not",
-            "p": "yenerashon ov travelers for jum a náit spent múving uós a náit not"
-          },
-          {
-            "t": "spent paying for a hotel. Austrian operators,",
-            "p": "spent péing for a jotel. ostrian operators,"
-          },
-          {
-            "t": "who had never fully abandoned the model, began buying up the carriages",
-            "p": "ju jad néver fuli abandóund de model, began buying ap de kariéigs"
-          },
-          {
-            "t": "other companies were discarding and rebuilding routes across the",
-            "p": "áder kompanis uér diskarding end rebuilding roiúts acrós de"
-          },
-          {
-            "t": "continent.",
-            "p": "kontinent."
-          }
-        ],
-        [
-          {
-            "t": "The economics remain difficult. A sleeper carriage carries perhaps a",
-            "p": "de ekonomiks reméin difikult. a sliper kariéig karis perjáps a"
-          },
-          {
-            "t": "third of the passengers of a seated one, requires cleaning staff,",
-            "p": "zerd ov de pasenyers ov a séited uán, rkuáers koléining staf,"
-          },
-          {
-            "t": "bedding and catering, and earns revenue for only part of each day.",
-            "p": "beding end katering, end irns revenue for óunli part ov ich déi."
-          },
-          {
-            "t": "Track access charges in some countries are calculated in ways that",
-            "p": "trak akses charchs in sam cántris ar kalkuléited in uéis dat"
-          },
-          {
-            "t": "penalise services crossing multiple borders at night.",
-            "p": "penaláis sérvises krosing multipol borders at náit."
-          },
-          {
-            "t": "Several new routes have launched to enthusiastic press coverage and",
-            "p": "séveral neu roiúts jav lonched tu ensusiastik pres kóuveréig end"
-          },
-          {
-            "t": "closed within two years.",
-            "p": "klóust uidín tu yirs."
-          }
-        ],
-        [
-          {
-            "t": "Passengers, meanwhile, have proved harder to categorise than the",
-            "p": "pasenyers, minuáil, jav pruvd jarder tu kategoráis dan de"
-          },
-          {
-            "t": "operators expected. Early planning assumed a market of environmentally",
-            "p": "operators ekspekted. irli planing asumd a market ov enveronmentali"
-          },
-          {
-            "t": "motivated travellers willing to accept discomfort for a lower carbon",
-            "p": "motivéited travelers uiling tu aksept diskomfort for a lóuer karbon"
-          },
-          {
-            "t": "footprint. The actual demand has come substantially from people who",
-            "p": "futprint. de aktual demand jas cam substantiali from pípol ju"
-          },
-          {
-            "t": "dislike airports, families avoiding the logistics of early flights,",
-            "p": "disláik éarports, familis avoáiding de loyistiks ov irli fláits,"
-          },
-          {
-            "t": "and business travellers who value arriving in a city centre at breakfast",
-            "p": "end bísnes travelers ju value aráiving in a siti sentr at brikfast"
-          },
-          {
-            "t": "rather than at an airport at dawn.",
-            "p": "ráder dan at an éarport at don."
-          }
-        ],
-        [
-          {
-            "t": "This has changed what is being built. New carriages emphasise privacy",
-            "p": "dis jas chéinchd uót is bing bilt. neu kariéigs emfasáis privasi"
-          },
-          {
-            "t": "over capacity, with single-occupancy pods that would have seemed",
-            "p": "óuver kapasiti, uíd singol-okkupansi pods dat vud jav simd"
-          },
-          {
-            "t": "extravagant a decade ago. Operators have discovered that a passenger who",
-            "p": "ekstravagant a dékeid ago. operators jav diskoverd dat a pasenyer ju"
-          },
-          {
-            "t": "sleeps badly does not return, and that the difference between a",
-            "p": "slips badli das not retern, end dat de diferens bituín a"
-          },
-          {
-            "t": "tolerable night and a good one is largely a matter of noise,",
-            "p": "tolerabol náit end a gud uán is laryeli a mater ov noáis,"
-          },
-          {
-            "t": "temperature and whether a stranger is sleeping half a metre away.",
-            "p": "temperacher end uéder a stranyer is sliping jaf a metr oéi."
-          }
-        ],
-        [
-          {
-            "t": "Critics point out that the environmental case is less clean-cut than",
-            "p": "kritiks point áut dat de enveronmental kéis is les klin-kut dan"
-          },
-          {
-            "t": "campaigners suggest. A full night train comfortably outperforms a",
-            "p": "kampéigners sagchést. a ful náit tréin komfortabli otperforms a"
-          },
-          {
-            "t": "short-haul flight, but a half-empty one on an electrified line powered",
-            "p": "short-jol fláit, bat a jalf-empti uán on an elektrifáid láin póuerd"
-          },
-          {
-            "t": "by fossil fuels does not, and the comparison shifts again where aviation",
-            "p": "bái fosil fuels das not, end de komparison shifts eguén uér aviashon"
-          },
-          {
-            "t": "is efficient and the rail route is circuitous.",
-            "p": "is efisint end de réil roiút is serkuitas."
-          },
-          {
-            "t": "The honest position is that night trains are usually better,",
-            "p": "de ónest posishon is dat náit tréins ar iúshuali beter,"
-          },
-          {
-            "t": "sometimes much better, and occasionally no better at all.",
-            "p": "sometáims mach beter, end okkashonali nóu beter at ol."
-          }
-        ],
-        [
-          {
-            "t": "What is not in dispute is that the service has stopped shrinking.",
-            "p": "uót is not in dispiút is dat de sérvis jas stopt shrinking."
-          },
-          {
-            "t": "Routes are being restored faster than they are being withdrawn for the",
-            "p": "roiúts ar bing restóerd faster dan déi ar bing uisdron for de"
-          },
-          {
-            "t": "first time in three decades, and manufacturers have order books for",
-            "p": "férst táim in zri dékeids, end manufakterers jav order buks for"
-          },
-          {
-            "t": "sleeper stock extending into the 2030s. Whether this represents a",
-            "p": "sliper stok ekstending íntu de 2030s. uéder dis represents a"
-          },
-          {
-            "t": "durable shift or a fashionable interval will not be clear for some",
-            "p": "derabol shift or a fashionabol interval uíl not bi klíar for sam"
-          },
-          {
-            "t": "years, though the carriages being ordered now will still be running when",
-            "p": "yirs, dóu de kariéigs bing orderd náu uíl stil bi runing uén"
-          },
-          {
-            "t": "the answer arrives.",
-            "p": "de ánser aráivs."
-          }
-        ]
+      [
+        {
+          "t": "Passengers, meanwhile, have proved harder to categorise than the",
+          "p": "pasenyers, minuáil, jav pruvd jarder tu kategoráis dan de"
+        },
+        {
+          "t": "operators expected. Early planning assumed a market of environmentally",
+          "p": "operators ekspekted. irli planing asumd a market ov enveronmentali"
+        },
+        {
+          "t": "motivated travellers willing to accept discomfort for a lower carbon",
+          "p": "motivéited travelers uiling tu aksept diskomfort for a lóuer karbon"
+        },
+        {
+          "t": "footprint. The actual demand has come substantially from people who",
+          "p": "futprint. de aktual demand jas cam substantiali from pípol ju"
+        },
+        {
+          "t": "dislike airports, families avoiding the logistics of early flights,",
+          "p": "disláik éarports, familis avoáiding de loyistiks ov irli fláits,"
+        },
+        {
+          "t": "and business travellers who value arriving in a city centre at breakfast",
+          "p": "end bísnes travelers ju value aráiving in a siti sentr at brikfast"
+        },
+        {
+          "t": "rather than at an airport at dawn.",
+          "p": "ráder dan at an éarport at don."
+        }
+      ],
+      [
+        {
+          "t": "This has changed what is being built. New carriages emphasise privacy",
+          "p": "dis jas chéinchd uót is bing bilt. neu kariéigs emfasáis privasi"
+        },
+        {
+          "t": "over capacity, with single-occupancy pods that would have seemed",
+          "p": "óuver kapasiti, uíd singol-okkupansi pods dat vud jav simd"
+        },
+        {
+          "t": "extravagant a decade ago. Operators have discovered that a passenger who",
+          "p": "ekstravagant a dékeid ago. operators jav diskoverd dat a pasenyer ju"
+        },
+        {
+          "t": "sleeps badly does not return, and that the difference between a",
+          "p": "slips badli das not retern, end dat de diferens bituín a"
+        },
+        {
+          "t": "tolerable night and a good one is largely a matter of noise,",
+          "p": "tolerabol náit end a gud uán is laryeli a mater ov noáis,"
+        },
+        {
+          "t": "temperature and whether a stranger is sleeping half a metre away.",
+          "p": "temperacher end uéder a stranyer is sliping jaf a metr oéi."
+        }
+      ],
+      [
+        {
+          "t": "Critics point out that the environmental case is less clean-cut than",
+          "p": "kritiks point áut dat de enveronmental kéis is les klin-kut dan"
+        },
+        {
+          "t": "campaigners suggest. A full night train comfortably outperforms a",
+          "p": "kampéigners sagchést. a ful náit tréin komfortabli otperforms a"
+        },
+        {
+          "t": "short-haul flight, but a half-empty one on an electrified line powered",
+          "p": "short-jol fláit, bat a jalf-empti uán on an elektrifáid láin póuerd"
+        },
+        {
+          "t": "by fossil fuels does not, and the comparison shifts again where aviation",
+          "p": "bái fosil fuels das not, end de komparison shifts eguén uér aviashon"
+        },
+        {
+          "t": "is efficient and the rail route is circuitous.",
+          "p": "is efisint end de réil roiút is serkuitas."
+        },
+        {
+          "t": "The honest position is that night trains are usually better,",
+          "p": "de ónest posishon is dat náit tréins ar iúshuali beter,"
+        },
+        {
+          "t": "sometimes much better, and occasionally no better at all.",
+          "p": "sometáims mach beter, end okkashonali nóu beter at ol."
+        }
+      ],
+      [
+        {
+          "t": "What is not in dispute is that the service has stopped shrinking.",
+          "p": "uót is not in dispiút is dat de sérvis jas stopt shrinking."
+        },
+        {
+          "t": "Routes are being restored faster than they are being withdrawn for the",
+          "p": "roiúts ar bing restóerd faster dan déi ar bing uisdron for de"
+        },
+        {
+          "t": "first time in three decades, and manufacturers have order books for",
+          "p": "férst táim in zri dékeids, end manufakterers jav order buks for"
+        },
+        {
+          "t": "sleeper stock extending into the 2030s. Whether this represents a",
+          "p": "sliper stok ekstending íntu de 2030s. uéder dis represents a"
+        },
+        {
+          "t": "durable shift or a fashionable interval will not be clear for some",
+          "p": "derabol shift or a fashionabol interval uíl not bi klíar for sam"
+        },
+        {
+          "t": "years, though the carriages being ordered now will still be running when",
+          "p": "yirs, dóu de kariéigs bing orderd náu uíl stil bi runing uén"
+        },
+        {
+          "t": "the answer arrives.",
+          "p": "de ánser aráivs."
+        }
       ]
-    },
-    {
-      "title": "The apprentice and the algorithm",
-      "body": [
-        "Delia Marchetti restores violins in a workshop her grandfather opened in 1948. The work is unhurried and largely unchanged: hide glue, hand planes, varnish mixed in small quantities and applied over weeks. She has taken four apprentices in thirty years and has strong views about how long it takes to learn to hear when a repair is finished.",
-        "Two years ago a graduate student arrived with a proposal. He had trained a model on recordings of instruments before and after restoration, and believed it could predict the acoustic effect of a given repair. Marchetti agreed to the collaboration, she says, mostly out of curiosity and partly because refusing would have made her feel like her own teachers, who had regarded electric lighting in the workshop as a threat to craftsmanship.",
-        "The results were mixed in an instructive way. On narrow questions — whether thinning a particular plate would brighten an instrument, how a soundpost adjustment would shift the response — the model was often right, and occasionally right in ways that surprised her. On broader judgements it was useless, not because its answers were wrong but because it could not identify which question mattered for a given instrument.",
-        "That distinction has become the centre of how she now teaches. An apprentice can be given the model's output as a starting point, but the exercise she sets is to explain why the suggestion is appropriate or inappropriate for the violin on the bench. The tool, she found, is most useful precisely when the student is forced to argue with it.",
-        "There have been costs. The youngest apprentice, comfortable with software, developed a habit of consulting the model before touching the instrument, and Marchetti eventually restricted its use for several months. Her concern was not that the answers were poor but that the sequence had inverted: the tool was replacing the initial act of looking closely rather than following it. She describes the correction as the hardest teaching she has done.",
-        "The graduate student, for his part, has revised his own ambitions. He had imagined building something that would eventually make expertise unnecessary and now describes the goal as building something that makes expertise faster to acquire. Whether that is a genuine change of view or a diplomatic reframing after two years in a workshop, he does not say, and Marchetti does not press him.",
-        "She is due to retire within the decade and is unsentimental about what will survive her. The workshop will probably close, since the economics of the trade no longer support a single-craftsman business in that city. What she hopes to leave is four people who can tell the difference between a suggestion and a judgement, which she regards as the only part of the training that was ever difficult."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Durante la mayor parte de la década de 1990, el tren nocturno parecía una pieza de museo. Las aerolíneas de bajo coste ofrecían precios inferiores a los del ferrocarril en casi todas las rutas europeas, y las operadoras retiraban discretamente los servicios nocturnos que llenaban un material rodante caro con demasiados pocos pasajeros de pago. Para 2010, un viajero que quisiera dormir entre París y Viena tenía notablemente menos opciones de las que habían disfrutado sus abuelos.",
+      "El giro, cuando llegó, estuvo impulsado menos por la nostalgia que por la aritmética. La creciente conciencia sobre las emisiones de la aviación coincidió con una generación de viajeros para quienes una noche pasada en movimiento era una noche que no se pagaba en un hotel. Las operadoras austríacas, que nunca habían abandonado del todo el modelo, empezaron a comprar los vagones que otras compañías descartaban y a reconstruir rutas por todo el continente.",
+      "La economía sigue siendo complicada. Un vagón cama transporta quizá un tercio de los pasajeros de uno de asientos, requiere personal de limpieza, ropa de cama y servicio de comidas, y solo genera ingresos durante parte de cada día. Los cánones de acceso a las vías en algunos países se calculan de maneras que penalizan los servicios que cruzan varias fronteras de noche. Varias rutas nuevas se lanzaron con entusiasta cobertura de prensa y cerraron en menos de dos años.",
+      "Los pasajeros, entretanto, han resultado más difíciles de clasificar de lo que las operadoras esperaban. La planificación inicial suponía un mercado de viajeros motivados por lo ambiental, dispuestos a aceptar incomodidad a cambio de una menor huella de carbono. La demanda real ha venido en buena parte de gente a la que le disgustan los aeropuertos, de familias que evitan la logística de los vuelos madrugadores y de viajeros de negocios que valoran llegar al centro de una ciudad a la hora del desayuno en lugar de a un aeropuerto al amanecer.",
+      "Esto ha cambiado lo que se construye. Los vagones nuevos priorizan la privacidad sobre la capacidad, con cápsulas individuales que hace una década habrían parecido un lujo. Las operadoras han descubierto que un pasajero que duerme mal no vuelve, y que la diferencia entre una noche tolerable y una buena es en gran medida cuestión de ruido, temperatura y de si un desconocido duerme a medio metro de distancia.",
+      "Los críticos señalan que el argumento ambiental es menos nítido de lo que sugieren los activistas. Un tren nocturno lleno supera con holgura a un vuelo de corta distancia, pero uno medio vacío en una línea electrificada alimentada por combustibles fósiles no, y la comparación vuelve a cambiar allí donde la aviación es eficiente y la ruta ferroviaria es enrevesada. La postura honesta es que los trenes nocturnos suelen ser mejores, a veces mucho mejores, y de vez en cuando no mejores en absoluto.",
+      "Lo que no se discute es que el servicio ha dejado de encogerse. Por primera vez en tres décadas, se restauran rutas más rápido de lo que se retiran, y los fabricantes tienen carteras de pedidos de material para coches cama que se extienden hasta la década de 2030. Si esto representa un cambio duradero o un intervalo pasajero no quedará claro hasta dentro de algunos años, aunque los vagones que se encargan ahora seguirán circulando cuando llegue la respuesta."
+    ]
+  },
+  {
+    "title": "The apprentice and the algorithm",
+    "body": [
+      "Delia Marchetti restores violins in a workshop her grandfather opened in 1948. The work is unhurried and largely unchanged: hide glue, hand planes, varnish mixed in small quantities and applied over weeks. She has taken four apprentices in thirty years and has strong views about how long it takes to learn to hear when a repair is finished.",
+      "Two years ago a graduate student arrived with a proposal. He had trained a model on recordings of instruments before and after restoration, and believed it could predict the acoustic effect of a given repair. Marchetti agreed to the collaboration, she says, mostly out of curiosity and partly because refusing would have made her feel like her own teachers, who had regarded electric lighting in the workshop as a threat to craftsmanship.",
+      "The results were mixed in an instructive way. On narrow questions — whether thinning a particular plate would brighten an instrument, how a soundpost adjustment would shift the response — the model was often right, and occasionally right in ways that surprised her. On broader judgements it was useless, not because its answers were wrong but because it could not identify which question mattered for a given instrument.",
+      "That distinction has become the centre of how she now teaches. An apprentice can be given the model's output as a starting point, but the exercise she sets is to explain why the suggestion is appropriate or inappropriate for the violin on the bench. The tool, she found, is most useful precisely when the student is forced to argue with it.",
+      "There have been costs. The youngest apprentice, comfortable with software, developed a habit of consulting the model before touching the instrument, and Marchetti eventually restricted its use for several months. Her concern was not that the answers were poor but that the sequence had inverted: the tool was replacing the initial act of looking closely rather than following it. She describes the correction as the hardest teaching she has done.",
+      "The graduate student, for his part, has revised his own ambitions. He had imagined building something that would eventually make expertise unnecessary and now describes the goal as building something that makes expertise faster to acquire. Whether that is a genuine change of view or a diplomatic reframing after two years in a workshop, he does not say, and Marchetti does not press him.",
+      "She is due to retire within the decade and is unsentimental about what will survive her. The workshop will probably close, since the economics of the trade no longer support a single-craftsman business in that city. What she hopes to leave is four people who can tell the difference between a suggestion and a judgement, which she regards as the only part of the training that was ever difficult."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Marchetti agreed to the collaboration purely for financial reasons.",
+        "a": "False",
+        "why": "She agreed out of curiosity and reluctance to resemble her own teachers."
+      },
+      {
+        "q": "The model performed well on narrowly defined technical questions.",
+        "a": "True",
+        "why": "On narrow questions it was often right and sometimes surprisingly so."
+      },
+      {
+        "q": "She restricted the youngest apprentice's use of the tool.",
+        "a": "True",
+        "why": "She restricted its use for several months."
+      },
+      {
+        "q": "The graduate student now says his aim is to speed up the learning of expertise.",
+        "a": "True",
+        "why": "He describes the goal as making expertise faster to acquire."
+      },
+      {
+        "q": "Marchetti has published a book about violin restoration.",
+        "a": "Not Given",
+        "why": "No publication by her is mentioned in the passage."
+      }
+    ],
+    "short": [
+      {
+        "q": "In what year did Marchetti's grandfather open the workshop?",
+        "a": "1948"
+      },
+      {
+        "q": "What did her own teachers regard as a threat to craftsmanship?",
+        "a": "electric lighting"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What was the model unable to do, according to the third paragraph?",
+        "options": [
+          "Produce answers that were technically accurate.",
+          "Determine which question was relevant for a particular instrument.",
+          "Process recordings made before a restoration.",
+          "Predict the effect of a soundpost adjustment."
+        ],
+        "a": 1,
+        "why": "On broader judgements it could not identify which question mattered for a given instrument."
+      },
+      {
+        "q": "How does Marchetti use the tool in her teaching?",
+        "options": [
+          "She asks apprentices to reproduce its recommendations exactly.",
+          "She requires apprentices to justify or reject its suggestions.",
+          "She uses it to assess apprentices' finished work.",
+          "She reserves it for the most experienced apprentices."
+        ],
+        "a": 1,
+        "why": "The exercise is to explain why the suggestion is appropriate or inappropriate for that violin."
+      },
+      {
+        "q": "What specifically worried Marchetti about the youngest apprentice?",
+        "options": [
+          "That he trusted answers which were frequently wrong.",
+          "That he consulted the tool instead of first examining the instrument.",
+          "That he worked more slowly than the other apprentices.",
+          "That he intended to leave the trade for software."
+        ],
+        "a": 1,
+        "why": "The tool was replacing the initial act of looking closely rather than following it."
+      },
+      {
+        "q": "What does Marchetti most hope to pass on?",
+        "options": [
+          "The continuation of the workshop as a business.",
+          "A documented method for restoring instruments.",
+          "The ability to distinguish a suggestion from a judgement.",
+          "A rejection of computational tools in the trade."
+        ],
+        "a": 2,
+        "why": "She hopes to leave four people who can tell the difference between a suggestion and a judgement."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Marchetti agreed to the collaboration purely for financial reasons.",
-          "a": "False",
-          "why": "She agreed out of curiosity and reluctance to resemble her own teachers."
+          "t": "Delia Marchetti restores violins in a workshop her grandfather opened in",
+          "p": "delia marcheti restóers violins in a uorkshop jer grandfaser opend in"
         },
         {
-          "q": "The model performed well on narrowly defined technical questions.",
-          "a": "True",
-          "why": "On narrow questions it was often right and sometimes surprisingly so."
+          "t": "1948. The work is unhurried and largely unchanged:",
+          "p": "1948. de uérk is unjeráid end laryeli unchanyd:"
         },
         {
-          "q": "She restricted the youngest apprentice's use of the tool.",
-          "a": "True",
-          "why": "She restricted its use for several months."
+          "t": "hide glue, hand planes, varnish mixed in small quantities and applied",
+          "p": "jáid glue, jand pléins, varnish mikst in smal kuantitis end apláid"
         },
         {
-          "q": "The graduate student now says his aim is to speed up the learning of expertise.",
-          "a": "True",
-          "why": "He describes the goal as making expertise faster to acquire."
+          "t": "over weeks. She has taken four apprentices in thirty years and has",
+          "p": "óuver uiks. shi jas taken for aprentises in zérti yirs end jas"
         },
         {
-          "q": "Marchetti has published a book about violin restoration.",
-          "a": "Not Given",
-          "why": "No publication by her is mentioned in the passage."
+          "t": "strong views about how long it takes to learn to hear when a repair is",
+          "p": "strong vius abáut jáu long it téiks tu lirn tu jíar uén a repéar is"
+        },
+        {
+          "t": "finished.",
+          "p": "finished."
         }
       ],
-      "short": [
+      [
         {
-          "q": "In what year did Marchetti's grandfather open the workshop?",
-          "a": "1948"
+          "t": "Two years ago a graduate student arrived with a proposal.",
+          "p": "tu yirs ago a graduat student aráivd uíd a proposal."
         },
         {
-          "q": "What did her own teachers regard as a threat to craftsmanship?",
-          "a": "electric lighting"
+          "t": "He had trained a model on recordings of instruments before and after",
+          "p": "ji jad traáind a model on rekordings ov instruments bifór end áfter"
+        },
+        {
+          "t": "restoration, and believed it could predict the acoustic effect of a",
+          "p": "restorashon, end belivd it cud predikt de akostik efekt ov a"
+        },
+        {
+          "t": "given repair. Marchetti agreed to the collaboration,",
+          "p": "guíven repéar. marcheti agrid tu de kolaborashon,"
+        },
+        {
+          "t": "she says, mostly out of curiosity and partly because refusing would have",
+          "p": "shi ses, mostli áut ov seriositi end partli bicós refusing vud jav"
+        },
+        {
+          "t": "made her feel like her own teachers, who had regarded electric lighting",
+          "p": "méid jer fil láik jer óun tichers, ju jad regarded elektrik láiting"
+        },
+        {
+          "t": "in the workshop as a threat to craftsmanship.",
+          "p": "in de uorkshop as a srit tu kraftsmanship."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What was the model unable to do, according to the third paragraph?",
-          "options": [
-            "Produce answers that were technically accurate.",
-            "Determine which question was relevant for a particular instrument.",
-            "Process recordings made before a restoration.",
-            "Predict the effect of a soundpost adjustment."
-          ],
-          "a": 1,
-          "why": "On broader judgements it could not identify which question mattered for a given instrument."
+          "t": "The results were mixed in an instructive way.",
+          "p": "de results uér mikst in an instruktáiv uéi."
         },
         {
-          "q": "How does Marchetti use the tool in her teaching?",
-          "options": [
-            "She asks apprentices to reproduce its recommendations exactly.",
-            "She requires apprentices to justify or reject its suggestions.",
-            "She uses it to assess apprentices' finished work.",
-            "She reserves it for the most experienced apprentices."
-          ],
-          "a": 1,
-          "why": "The exercise is to explain why the suggestion is appropriate or inappropriate for that violin."
+          "t": "On narrow questions — whether thinning a particular plate would brighten",
+          "p": "on naro kuéschons — uéder sining a partikular pléit vud bráiten"
         },
         {
-          "q": "What specifically worried Marchetti about the youngest apprentice?",
-          "options": [
-            "That he trusted answers which were frequently wrong.",
-            "That he consulted the tool instead of first examining the instrument.",
-            "That he worked more slowly than the other apprentices.",
-            "That he intended to leave the trade for software."
-          ],
-          "a": 1,
-          "why": "The tool was replacing the initial act of looking closely rather than following it."
+          "t": "an instrument, how a soundpost adjustment would shift the response — the",
+          "p": "an instrument, jáu a sondpost adyustment vud shift de respons — de"
         },
         {
-          "q": "What does Marchetti most hope to pass on?",
-          "options": [
-            "The continuation of the workshop as a business.",
-            "A documented method for restoring instruments.",
-            "The ability to distinguish a suggestion from a judgement.",
-            "A rejection of computational tools in the trade."
-          ],
-          "a": 2,
-          "why": "She hopes to leave four people who can tell the difference between a suggestion and a judgement."
+          "t": "model was often right, and occasionally right in ways that surprised",
+          "p": "model uós ófen ráit, end okkashonali ráit in uéis dat serpráist"
+        },
+        {
+          "t": "her. On broader judgements it was useless, not because its answers were",
+          "p": "jer. on broéider yuchments it uós useles, not bicós its ánsers uér"
+        },
+        {
+          "t": "wrong but because it could not identify which question mattered for a",
+          "p": "rong bat bicós it cud not identifi uích kuéschon materd for a"
+        },
+        {
+          "t": "given instrument.",
+          "p": "guíven instrument."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Delia Marchetti restores violins in a workshop her grandfather opened in",
-            "p": "delia marcheti restóers violins in a uorkshop jer grandfaser opend in"
-          },
-          {
-            "t": "1948. The work is unhurried and largely unchanged:",
-            "p": "1948. de uérk is unjeráid end laryeli unchanyd:"
-          },
-          {
-            "t": "hide glue, hand planes, varnish mixed in small quantities and applied",
-            "p": "jáid glue, jand pléins, varnish mikst in smal kuantitis end apláid"
-          },
-          {
-            "t": "over weeks. She has taken four apprentices in thirty years and has",
-            "p": "óuver uiks. shi jas taken for aprentises in zérti yirs end jas"
-          },
-          {
-            "t": "strong views about how long it takes to learn to hear when a repair is",
-            "p": "strong vius abáut jáu long it téiks tu lirn tu jíar uén a repéar is"
-          },
-          {
-            "t": "finished.",
-            "p": "finished."
-          }
-        ],
-        [
-          {
-            "t": "Two years ago a graduate student arrived with a proposal.",
-            "p": "tu yirs ago a graduat student aráivd uíd a proposal."
-          },
-          {
-            "t": "He had trained a model on recordings of instruments before and after",
-            "p": "ji jad traáind a model on rekordings ov instruments bifór end áfter"
-          },
-          {
-            "t": "restoration, and believed it could predict the acoustic effect of a",
-            "p": "restorashon, end belivd it cud predikt de akostik efekt ov a"
-          },
-          {
-            "t": "given repair. Marchetti agreed to the collaboration,",
-            "p": "guíven repéar. marcheti agrid tu de kolaborashon,"
-          },
-          {
-            "t": "she says, mostly out of curiosity and partly because refusing would have",
-            "p": "shi ses, mostli áut ov seriositi end partli bicós refusing vud jav"
-          },
-          {
-            "t": "made her feel like her own teachers, who had regarded electric lighting",
-            "p": "méid jer fil láik jer óun tichers, ju jad regarded elektrik láiting"
-          },
-          {
-            "t": "in the workshop as a threat to craftsmanship.",
-            "p": "in de uorkshop as a srit tu kraftsmanship."
-          }
-        ],
-        [
-          {
-            "t": "The results were mixed in an instructive way.",
-            "p": "de results uér mikst in an instruktáiv uéi."
-          },
-          {
-            "t": "On narrow questions — whether thinning a particular plate would brighten",
-            "p": "on naro kuéschons — uéder sining a partikular pléit vud bráiten"
-          },
-          {
-            "t": "an instrument, how a soundpost adjustment would shift the response — the",
-            "p": "an instrument, jáu a sondpost adyustment vud shift de respons — de"
-          },
-          {
-            "t": "model was often right, and occasionally right in ways that surprised",
-            "p": "model uós ófen ráit, end okkashonali ráit in uéis dat serpráist"
-          },
-          {
-            "t": "her. On broader judgements it was useless, not because its answers were",
-            "p": "jer. on broéider yuchments it uós useles, not bicós its ánsers uér"
-          },
-          {
-            "t": "wrong but because it could not identify which question mattered for a",
-            "p": "rong bat bicós it cud not identifi uích kuéschon materd for a"
-          },
-          {
-            "t": "given instrument.",
-            "p": "guíven instrument."
-          }
-        ],
-        [
-          {
-            "t": "That distinction has become the centre of how she now teaches.",
-            "p": "dat distinkshon jas bicám de sentr ov jáu shi náu tiches."
-          },
-          {
-            "t": "An apprentice can be given the model's output as a starting point,",
-            "p": "an aprentáik can bi guíven de model's otput as a starting point,"
-          },
-          {
-            "t": "but the exercise she sets is to explain why the suggestion is",
-            "p": "bat de ekserkáis shi sets is tu ekspléin uái de sagchéschon is"
-          },
-          {
-            "t": "appropriate or inappropriate for the violin on the bench.",
-            "p": "apropriéit or inapropriéit for de violin on de bench."
-          },
-          {
-            "t": "The tool, she found, is most useful precisely when the student is forced",
-            "p": "de tul, shi fond, is móust useful presiseli uén de student is forst"
-          },
-          {
-            "t": "to argue with it.",
-            "p": "tu argue uíd it."
-          }
-        ],
-        [
-          {
-            "t": "There have been costs. The youngest apprentice,",
-            "p": "déar jav bin kosts. de yonyest aprentáik,"
-          },
-          {
-            "t": "comfortable with software, developed a habit of consulting the model",
-            "p": "komfortabol uíd softuéer, develóupt a jabit ov konsulting de model"
-          },
-          {
-            "t": "before touching the instrument, and Marchetti eventually restricted its",
-            "p": "bifór toching de instrument, end marcheti eventuali restrikted its"
-          },
-          {
-            "t": "use for several months. Her concern was not that the answers were poor",
-            "p": "iús for séveral manzs. jer konsern uós not dat de ánsers uér púar"
-          },
-          {
-            "t": "but that the sequence had inverted: the tool was replacing the initial",
-            "p": "bat dat de skuens jad inverted: de tul uós repléising de inishal"
-          },
-          {
-            "t": "act of looking closely rather than following it.",
-            "p": "akt ov loóuking kloseli ráder dan folóuing it."
-          },
-          {
-            "t": "She describes the correction as the hardest teaching she has done.",
-            "p": "shi deskráibs de korekshon as de jardest tiching shi jas dan."
-          }
-        ],
-        [
-          {
-            "t": "The graduate student, for his part, has revised his own ambitions.",
-            "p": "de graduat student, for jis part, jas reváist jis óun ambishons."
-          },
-          {
-            "t": "He had imagined building something that would eventually make expertise",
-            "p": "ji jad imagáind bílding sámzing dat vud eventuali méik ekspertáis"
-          },
-          {
-            "t": "unnecessary and now describes the goal as building something that makes",
-            "p": "unesesari end náu deskráibs de góul as bílding sámzing dat méiks"
-          },
-          {
-            "t": "expertise faster to acquire. Whether that is a genuine change of view or",
-            "p": "ekspertáis faster tu akkuáer. uéder dat is a yenuáin chéinch ov viu or"
-          },
-          {
-            "t": "a diplomatic reframing after two years in a workshop,",
-            "p": "a diplomatik refréiming áfter tu yirs in a uorkshop,"
-          },
-          {
-            "t": "he does not say, and Marchetti does not press him.",
-            "p": "ji das not séi, end marcheti das not pres jim."
-          }
-        ],
-        [
-          {
-            "t": "She is due to retire within the decade and is unsentimental about what",
-            "p": "shi is due tu retáer uidín de dékeid end is unsentimental abáut uót"
-          },
-          {
-            "t": "will survive her. The workshop will probably close,",
-            "p": "uíl serváiv jer. de uorkshop uíl probabli klóus,"
-          },
-          {
-            "t": "since the economics of the trade no longer support a single-craftsman",
-            "p": "sins de ekonomiks ov de tréid nóu lonyer suport a singol-kraftsman"
-          },
-          {
-            "t": "business in that city. What she hopes to leave is four people who can",
-            "p": "bísnes in dat siti. uót shi jóups tu léiv is for pípol ju can"
-          },
-          {
-            "t": "tell the difference between a suggestion and a judgement,",
-            "p": "tel de diferens bituín a sagchéschon end a yuchment,"
-          },
-          {
-            "t": "which she regards as the only part of the training that was ever",
-            "p": "uích shi regards as de óunli part ov de traáining dat uós ever"
-          },
-          {
-            "t": "difficult.",
-            "p": "difikult."
-          }
-        ]
+      [
+        {
+          "t": "That distinction has become the centre of how she now teaches.",
+          "p": "dat distinkshon jas bicám de sentr ov jáu shi náu tiches."
+        },
+        {
+          "t": "An apprentice can be given the model's output as a starting point,",
+          "p": "an aprentáik can bi guíven de model's otput as a starting point,"
+        },
+        {
+          "t": "but the exercise she sets is to explain why the suggestion is",
+          "p": "bat de ekserkáis shi sets is tu ekspléin uái de sagchéschon is"
+        },
+        {
+          "t": "appropriate or inappropriate for the violin on the bench.",
+          "p": "apropriéit or inapropriéit for de violin on de bench."
+        },
+        {
+          "t": "The tool, she found, is most useful precisely when the student is forced",
+          "p": "de tul, shi fond, is móust useful presiseli uén de student is forst"
+        },
+        {
+          "t": "to argue with it.",
+          "p": "tu argue uíd it."
+        }
+      ],
+      [
+        {
+          "t": "There have been costs. The youngest apprentice,",
+          "p": "déar jav bin kosts. de yonyest aprentáik,"
+        },
+        {
+          "t": "comfortable with software, developed a habit of consulting the model",
+          "p": "komfortabol uíd softuéer, develóupt a jabit ov konsulting de model"
+        },
+        {
+          "t": "before touching the instrument, and Marchetti eventually restricted its",
+          "p": "bifór toching de instrument, end marcheti eventuali restrikted its"
+        },
+        {
+          "t": "use for several months. Her concern was not that the answers were poor",
+          "p": "iús for séveral manzs. jer konsern uós not dat de ánsers uér púar"
+        },
+        {
+          "t": "but that the sequence had inverted: the tool was replacing the initial",
+          "p": "bat dat de skuens jad inverted: de tul uós repléising de inishal"
+        },
+        {
+          "t": "act of looking closely rather than following it.",
+          "p": "akt ov loóuking kloseli ráder dan folóuing it."
+        },
+        {
+          "t": "She describes the correction as the hardest teaching she has done.",
+          "p": "shi deskráibs de korekshon as de jardest tiching shi jas dan."
+        }
+      ],
+      [
+        {
+          "t": "The graduate student, for his part, has revised his own ambitions.",
+          "p": "de graduat student, for jis part, jas reváist jis óun ambishons."
+        },
+        {
+          "t": "He had imagined building something that would eventually make expertise",
+          "p": "ji jad imagáind bílding sámzing dat vud eventuali méik ekspertáis"
+        },
+        {
+          "t": "unnecessary and now describes the goal as building something that makes",
+          "p": "unesesari end náu deskráibs de góul as bílding sámzing dat méiks"
+        },
+        {
+          "t": "expertise faster to acquire. Whether that is a genuine change of view or",
+          "p": "ekspertáis faster tu akkuáer. uéder dat is a yenuáin chéinch ov viu or"
+        },
+        {
+          "t": "a diplomatic reframing after two years in a workshop,",
+          "p": "a diplomatik refréiming áfter tu yirs in a uorkshop,"
+        },
+        {
+          "t": "he does not say, and Marchetti does not press him.",
+          "p": "ji das not séi, end marcheti das not pres jim."
+        }
+      ],
+      [
+        {
+          "t": "She is due to retire within the decade and is unsentimental about what",
+          "p": "shi is due tu retáer uidín de dékeid end is unsentimental abáut uót"
+        },
+        {
+          "t": "will survive her. The workshop will probably close,",
+          "p": "uíl serváiv jer. de uorkshop uíl probabli klóus,"
+        },
+        {
+          "t": "since the economics of the trade no longer support a single-craftsman",
+          "p": "sins de ekonomiks ov de tréid nóu lonyer suport a singol-kraftsman"
+        },
+        {
+          "t": "business in that city. What she hopes to leave is four people who can",
+          "p": "bísnes in dat siti. uót shi jóups tu léiv is for pípol ju can"
+        },
+        {
+          "t": "tell the difference between a suggestion and a judgement,",
+          "p": "tel de diferens bituín a sagchéschon end a yuchment,"
+        },
+        {
+          "t": "which she regards as the only part of the training that was ever",
+          "p": "uích shi regards as de óunli part ov de traáining dat uós ever"
+        },
+        {
+          "t": "difficult.",
+          "p": "difikult."
+        }
       ]
-    },
-    {
-      "title": "What the seed vaults are really for",
-      "body": [
-        "The image is familiar from a hundred news reports: a concrete entrance protruding from a snow-covered slope, lit blue against an Arctic sky, behind which humanity's crops are said to be stored against catastrophe. The framing is dramatic and, in most respects, misleading. Seed vaults are not primarily an insurance policy against the end of the world. They are working infrastructure for a slow, unglamorous and continuous problem.",
-        "That problem is loss. Agricultural varieties disappear constantly and undramatically — a farmer retires, a regional gene bank loses funding, a storage freezer fails over a public holiday. Most of what has been lost in the past century vanished this way rather than through any single disaster. The vaults exist because distributed collections are individually fragile, even when the world is entirely at peace.",
-        "The material stored is also less exotic than the reporting implies. A vault holds duplicates of samples already kept elsewhere, deposited by national and institutional gene banks that retain ownership. Nothing is confiscated, nothing is bought, and the vault itself does not decide what is worth preserving. It functions less like an ark than like an off-site backup, with all the tedium that comparison suggests.",
-        "Withdrawals happen, and they are informative. The first significant withdrawal was made not after a global catastrophe but by a research centre that had been forced to relocate from a war zone and needed to rebuild collections it could no longer reach. The samples were regrown, and duplicates were returned to storage. The system worked exactly as designed, which is why the event received relatively little attention.",
-        "There are real limitations, and specialists discuss them more openly than the public reporting suggests. Many important crops cannot be stored as dried seed at all — bananas, potatoes and cassava among them — and require living collections in fields or laboratories, which are far more vulnerable. Seeds also do not keep indefinitely; samples must be periodically regrown, which is expensive and introduces slow genetic change.",
-        "A deeper criticism concerns what preservation means. A seed stored at minus eighteen degrees retains its genetic material but not the knowledge that accompanied it: which soils it suited, when it was planted, how it was prepared, what it tasted like. Varieties conserved without that context can be revived botanically while remaining, in every practical sense, lost. Some programmes now collect cultivation records alongside samples, though this is far harder to standardise.",
-        "None of this diminishes the case for the vaults, which are inexpensive relative to almost any other agricultural investment and have already proved useful. It does suggest that the popular framing gets the emphasis wrong. The value is not in the dramatic scenario the photographs invite us to imagine, but in the far likelier one in which nothing spectacular happens and things are quietly lost anyway."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Delia Marchetti restaura violines en un taller que su abuelo abrió en 1948. El trabajo es pausado y en gran medida no ha cambiado: cola de conejo, cepillos de mano, barniz mezclado en pequeñas cantidades y aplicado a lo largo de semanas. Ha tomado cuatro aprendices en treinta años y tiene opiniones firmes sobre cuánto se tarda en aprender a oír cuándo una reparación está terminada.",
+      "Hace dos años llegó un estudiante de posgrado con una propuesta. Había entrenado un modelo con grabaciones de instrumentos antes y después de su restauración, y creía que podía predecir el efecto acústico de una reparación determinada. Marchetti aceptó la colaboración, dice, sobre todo por curiosidad y en parte porque negarse la habría hecho sentir como sus propios maestros, que habían visto la luz eléctrica en el taller como una amenaza para el oficio.",
+      "Los resultados fueron dispares de una manera instructiva. En cuestiones concretas —si adelgazar una tabla en particular aclararía el sonido de un instrumento, cómo un ajuste del alma modificaría la respuesta—, el modelo acertaba a menudo, y de vez en cuando acertaba de maneras que la sorprendían. En juicios más amplios era inútil, no porque sus respuestas fueran erróneas, sino porque no podía identificar qué pregunta importaba para un instrumento dado.",
+      "Esa distinción se ha convertido en el centro de cómo enseña ahora. A un aprendiz se le puede dar la respuesta del modelo como punto de partida, pero el ejercicio que ella plantea es explicar por qué la sugerencia es apropiada o inapropiada para el violín que está sobre la mesa. La herramienta, descubrió, resulta más útil precisamente cuando el alumno se ve obligado a discutir con ella.",
+      "Ha habido costos. El aprendiz más joven, cómodo con el software, desarrolló el hábito de consultar el modelo antes de tocar el instrumento, y Marchetti terminó por restringir su uso durante varios meses. Su preocupación no era que las respuestas fueran malas, sino que la secuencia se había invertido: la herramienta estaba reemplazando el acto inicial de observar con atención en lugar de venir después. Describe la corrección como la enseñanza más difícil que ha llevado a cabo.",
+      "El estudiante de posgrado, por su parte, ha revisado sus propias ambiciones. Había imaginado construir algo que con el tiempo hiciera innecesaria la pericia, y ahora describe el objetivo como construir algo que haga más rápida su adquisición. Si eso es un cambio genuino de opinión o una reformulación diplomática tras dos años en un taller, no lo dice, y Marchetti no lo presiona.",
+      "Le queda menos de una década para jubilarse y no es sentimental sobre lo que la sobrevivirá. El taller probablemente cerrará, ya que la economía del oficio ya no sostiene un negocio de un solo artesano en esa ciudad. Lo que espera dejar son cuatro personas capaces de distinguir entre una sugerencia y un juicio, que ella considera la única parte de la formación que alguna vez fue difícil."
+    ]
+  },
+  {
+    "title": "What the seed vaults are really for",
+    "body": [
+      "The image is familiar from a hundred news reports: a concrete entrance protruding from a snow-covered slope, lit blue against an Arctic sky, behind which humanity's crops are said to be stored against catastrophe. The framing is dramatic and, in most respects, misleading. Seed vaults are not primarily an insurance policy against the end of the world. They are working infrastructure for a slow, unglamorous and continuous problem.",
+      "That problem is loss. Agricultural varieties disappear constantly and undramatically — a farmer retires, a regional gene bank loses funding, a storage freezer fails over a public holiday. Most of what has been lost in the past century vanished this way rather than through any single disaster. The vaults exist because distributed collections are individually fragile, even when the world is entirely at peace.",
+      "The material stored is also less exotic than the reporting implies. A vault holds duplicates of samples already kept elsewhere, deposited by national and institutional gene banks that retain ownership. Nothing is confiscated, nothing is bought, and the vault itself does not decide what is worth preserving. It functions less like an ark than like an off-site backup, with all the tedium that comparison suggests.",
+      "Withdrawals happen, and they are informative. The first significant withdrawal was made not after a global catastrophe but by a research centre that had been forced to relocate from a war zone and needed to rebuild collections it could no longer reach. The samples were regrown, and duplicates were returned to storage. The system worked exactly as designed, which is why the event received relatively little attention.",
+      "There are real limitations, and specialists discuss them more openly than the public reporting suggests. Many important crops cannot be stored as dried seed at all — bananas, potatoes and cassava among them — and require living collections in fields or laboratories, which are far more vulnerable. Seeds also do not keep indefinitely; samples must be periodically regrown, which is expensive and introduces slow genetic change.",
+      "A deeper criticism concerns what preservation means. A seed stored at minus eighteen degrees retains its genetic material but not the knowledge that accompanied it: which soils it suited, when it was planted, how it was prepared, what it tasted like. Varieties conserved without that context can be revived botanically while remaining, in every practical sense, lost. Some programmes now collect cultivation records alongside samples, though this is far harder to standardise.",
+      "None of this diminishes the case for the vaults, which are inexpensive relative to almost any other agricultural investment and have already proved useful. It does suggest that the popular framing gets the emphasis wrong. The value is not in the dramatic scenario the photographs invite us to imagine, but in the far likelier one in which nothing spectacular happens and things are quietly lost anyway."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Seed vaults were built mainly to prepare for a global catastrophe.",
+        "a": "False",
+        "why": "The passage says this framing is misleading; they address continuous, undramatic loss."
+      },
+      {
+        "q": "Depositing institutions keep ownership of their samples.",
+        "a": "True",
+        "why": "Gene banks deposit duplicates and retain ownership."
+      },
+      {
+        "q": "The first major withdrawal followed a worldwide disaster.",
+        "a": "False",
+        "why": "It was made by a research centre that had relocated from a war zone."
+      },
+      {
+        "q": "Some important crops cannot be preserved as dried seed.",
+        "a": "True",
+        "why": "Bananas, potatoes and cassava require living collections."
+      },
+      {
+        "q": "The vaults are more expensive than most agricultural investments.",
+        "a": "False",
+        "why": "They are described as inexpensive relative to almost any other agricultural investment."
+      }
+    ],
+    "short": [
+      {
+        "q": "At what temperature are the seeds stored?",
+        "a": "minus eighteen degrees"
+      },
+      {
+        "q": "What comparison does the writer prefer to an ark?",
+        "a": "an off-site backup"
+      }
+    ],
+    "choice": [
+      {
+        "q": "How does most loss of agricultural varieties occur?",
+        "options": [
+          "Through wars and large-scale natural disasters.",
+          "Through gradual, unremarkable failures of funding and equipment.",
+          "Through deliberate decisions by national governments.",
+          "Through the spread of commercial monoculture alone."
+        ],
+        "a": 1,
+        "why": "The second paragraph lists retirement, lost funding and freezer failures as the usual causes."
+      },
+      {
+        "q": "Why did the first major withdrawal attract little attention?",
+        "options": [
+          "The organisation involved requested confidentiality.",
+          "The samples turned out to be unusable.",
+          "The system behaved exactly as it was intended to.",
+          "It happened before the vault was widely known."
+        ],
+        "a": 2,
+        "why": "The passage says the system worked exactly as designed, which is why it received little attention."
+      },
+      {
+        "q": "What is the 'deeper criticism' raised in the sixth paragraph?",
+        "options": [
+          "That storage temperatures are insufficiently low.",
+          "That genetic material is preserved without the knowledge of how to use it.",
+          "That too few varieties are being collected.",
+          "That regrowing samples is prohibitively expensive."
+        ],
+        "a": 1,
+        "why": "Seeds retain genetic material but not the soils, timing, preparation and taste that accompanied them."
+      },
+      {
+        "q": "What does the writer conclude about the popular image of seed vaults?",
+        "options": [
+          "It is accurate but incomplete.",
+          "It places the emphasis on the wrong scenario.",
+          "It has discouraged funding for the vaults.",
+          "It should be replaced with a focus on living collections."
+        ],
+        "a": 1,
+        "why": "The final paragraph says the popular framing gets the emphasis wrong."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Seed vaults were built mainly to prepare for a global catastrophe.",
-          "a": "False",
-          "why": "The passage says this framing is misleading; they address continuous, undramatic loss."
+          "t": "The image is familiar from a hundred news reports:",
+          "p": "de ímich is familiar from a jándred neus reports:"
         },
         {
-          "q": "Depositing institutions keep ownership of their samples.",
-          "a": "True",
-          "why": "Gene banks deposit duplicates and retain ownership."
+          "t": "a concrete entrance protruding from a snow-covered slope,",
+          "p": "a konkrít entrans protruding from a sno-koverd slóup,"
         },
         {
-          "q": "The first major withdrawal followed a worldwide disaster.",
-          "a": "False",
-          "why": "It was made by a research centre that had relocated from a war zone."
+          "t": "lit blue against an Arctic sky, behind which humanity's crops are said",
+          "p": "lit blue eguénst an arktik ski, bijáind uích jumaniti's krops ar sed"
         },
         {
-          "q": "Some important crops cannot be preserved as dried seed.",
-          "a": "True",
-          "why": "Bananas, potatoes and cassava require living collections."
+          "t": "to be stored against catastrophe. The framing is dramatic and,",
+          "p": "tu bi stóerd eguénst katastrof. de fréiming is dramatik end,"
         },
         {
-          "q": "The vaults are more expensive than most agricultural investments.",
-          "a": "False",
-          "why": "They are described as inexpensive relative to almost any other agricultural investment."
+          "t": "in most respects, misleading. Seed vaults are not primarily an insurance",
+          "p": "in móust respekts, misléiding. sid volts ar not primarili an inserans"
+        },
+        {
+          "t": "policy against the end of the world. They are working infrastructure for",
+          "p": "polisi eguénst de end ov de uérld. déi ar uérking infrastrukcher for"
+        },
+        {
+          "t": "a slow, unglamorous and continuous problem.",
+          "p": "a slo, unglamoras end kontinuas problem."
         }
       ],
-      "short": [
+      [
         {
-          "q": "At what temperature are the seeds stored?",
-          "a": "minus eighteen degrees"
+          "t": "That problem is loss. Agricultural varieties disappear constantly and",
+          "p": "dat problem is los. agrikulteral varitis disapíar konstantli end"
         },
         {
-          "q": "What comparison does the writer prefer to an ark?",
-          "a": "an off-site backup"
+          "t": "undramatically — a farmer retires, a regional gene bank loses funding,",
+          "p": "undramatikali — a farmer retáers, a reyional gín bank loses funding,"
+        },
+        {
+          "t": "a storage freezer fails over a public holiday.",
+          "p": "a stórich friser féils óuver a publik jolidéi."
+        },
+        {
+          "t": "Most of what has been lost in the past century vanished this way rather",
+          "p": "móust ov uót jas bin lost in de past séncheri vanished dis uéi ráder"
+        },
+        {
+          "t": "than through any single disaster. The vaults exist because distributed",
+          "p": "dan zru éni singol disaster. de volts eksist bicós distributed"
+        },
+        {
+          "t": "collections are individually fragile, even when the world is entirely at",
+          "p": "kolekshons ar individuali fragáil, íven uén de uérld is entereli at"
+        },
+        {
+          "t": "peace.",
+          "p": "péik."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "How does most loss of agricultural varieties occur?",
-          "options": [
-            "Through wars and large-scale natural disasters.",
-            "Through gradual, unremarkable failures of funding and equipment.",
-            "Through deliberate decisions by national governments.",
-            "Through the spread of commercial monoculture alone."
-          ],
-          "a": 1,
-          "why": "The second paragraph lists retirement, lost funding and freezer failures as the usual causes."
+          "t": "The material stored is also less exotic than the reporting implies.",
+          "p": "de material stóerd is ólsou les eksotik dan de reporting implis."
         },
         {
-          "q": "Why did the first major withdrawal attract little attention?",
-          "options": [
-            "The organisation involved requested confidentiality.",
-            "The samples turned out to be unusable.",
-            "The system behaved exactly as it was intended to.",
-            "It happened before the vault was widely known."
-          ],
-          "a": 2,
-          "why": "The passage says the system worked exactly as designed, which is why it received little attention."
+          "t": "A vault holds duplicates of samples already kept elsewhere,",
+          "p": "a volt jolds duplikéits ov samples alridi kept elseuír,"
         },
         {
-          "q": "What is the 'deeper criticism' raised in the sixth paragraph?",
-          "options": [
-            "That storage temperatures are insufficiently low.",
-            "That genetic material is preserved without the knowledge of how to use it.",
-            "That too few varieties are being collected.",
-            "That regrowing samples is prohibitively expensive."
-          ],
-          "a": 1,
-          "why": "Seeds retain genetic material but not the soils, timing, preparation and taste that accompanied them."
+          "t": "deposited by national and institutional gene banks that retain",
+          "p": "deposáited bái nashonal end institushonal gín banks dat retéin"
         },
         {
-          "q": "What does the writer conclude about the popular image of seed vaults?",
-          "options": [
-            "It is accurate but incomplete.",
-            "It places the emphasis on the wrong scenario.",
-            "It has discouraged funding for the vaults.",
-            "It should be replaced with a focus on living collections."
-          ],
-          "a": 1,
-          "why": "The final paragraph says the popular framing gets the emphasis wrong."
+          "t": "ownership. Nothing is confiscated, nothing is bought,",
+          "p": "óunership. názing is konfiskéited, názing is bot,"
+        },
+        {
+          "t": "and the vault itself does not decide what is worth preserving.",
+          "p": "end de volt itself das not dekáid uót is uérz preserving."
+        },
+        {
+          "t": "It functions less like an ark than like an off-site backup,",
+          "p": "it funkshons les láik an ark dan láik an of-sáit bakup,"
+        },
+        {
+          "t": "with all the tedium that comparison suggests.",
+          "p": "uíd ol de tedium dat komparison sagchésts."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "The image is familiar from a hundred news reports:",
-            "p": "de ímich is familiar from a jándred neus reports:"
-          },
-          {
-            "t": "a concrete entrance protruding from a snow-covered slope,",
-            "p": "a konkrít entrans protruding from a sno-koverd slóup,"
-          },
-          {
-            "t": "lit blue against an Arctic sky, behind which humanity's crops are said",
-            "p": "lit blue eguénst an arktik ski, bijáind uích jumaniti's krops ar sed"
-          },
-          {
-            "t": "to be stored against catastrophe. The framing is dramatic and,",
-            "p": "tu bi stóerd eguénst katastrof. de fréiming is dramatik end,"
-          },
-          {
-            "t": "in most respects, misleading. Seed vaults are not primarily an insurance",
-            "p": "in móust respekts, misléiding. sid volts ar not primarili an inserans"
-          },
-          {
-            "t": "policy against the end of the world. They are working infrastructure for",
-            "p": "polisi eguénst de end ov de uérld. déi ar uérking infrastrukcher for"
-          },
-          {
-            "t": "a slow, unglamorous and continuous problem.",
-            "p": "a slo, unglamoras end kontinuas problem."
-          }
-        ],
-        [
-          {
-            "t": "That problem is loss. Agricultural varieties disappear constantly and",
-            "p": "dat problem is los. agrikulteral varitis disapíar konstantli end"
-          },
-          {
-            "t": "undramatically — a farmer retires, a regional gene bank loses funding,",
-            "p": "undramatikali — a farmer retáers, a reyional gín bank loses funding,"
-          },
-          {
-            "t": "a storage freezer fails over a public holiday.",
-            "p": "a stórich friser féils óuver a publik jolidéi."
-          },
-          {
-            "t": "Most of what has been lost in the past century vanished this way rather",
-            "p": "móust ov uót jas bin lost in de past séncheri vanished dis uéi ráder"
-          },
-          {
-            "t": "than through any single disaster. The vaults exist because distributed",
-            "p": "dan zru éni singol disaster. de volts eksist bicós distributed"
-          },
-          {
-            "t": "collections are individually fragile, even when the world is entirely at",
-            "p": "kolekshons ar individuali fragáil, íven uén de uérld is entereli at"
-          },
-          {
-            "t": "peace.",
-            "p": "péik."
-          }
-        ],
-        [
-          {
-            "t": "The material stored is also less exotic than the reporting implies.",
-            "p": "de material stóerd is ólsou les eksotik dan de reporting implis."
-          },
-          {
-            "t": "A vault holds duplicates of samples already kept elsewhere,",
-            "p": "a volt jolds duplikéits ov samples alridi kept elseuír,"
-          },
-          {
-            "t": "deposited by national and institutional gene banks that retain",
-            "p": "deposáited bái nashonal end institushonal gín banks dat retéin"
-          },
-          {
-            "t": "ownership. Nothing is confiscated, nothing is bought,",
-            "p": "óunership. názing is konfiskéited, názing is bot,"
-          },
-          {
-            "t": "and the vault itself does not decide what is worth preserving.",
-            "p": "end de volt itself das not dekáid uót is uérz preserving."
-          },
-          {
-            "t": "It functions less like an ark than like an off-site backup,",
-            "p": "it funkshons les láik an ark dan láik an of-sáit bakup,"
-          },
-          {
-            "t": "with all the tedium that comparison suggests.",
-            "p": "uíd ol de tedium dat komparison sagchésts."
-          }
-        ],
-        [
-          {
-            "t": "Withdrawals happen, and they are informative.",
-            "p": "uisdroals japen, end déi ar informatáiv."
-          },
-          {
-            "t": "The first significant withdrawal was made not after a global catastrophe",
-            "p": "de férst signifikant uisdroal uós méid not áfter a global katastrof"
-          },
-          {
-            "t": "but by a research centre that had been forced to relocate from a war",
-            "p": "bat bái a resíarch sentr dat jad bin forst tu relokéit from a uór"
-          },
-          {
-            "t": "zone and needed to rebuild collections it could no longer reach.",
-            "p": "sóun end nided tu rebuáild kolekshons it cud nóu lonyer rich."
-          },
-          {
-            "t": "The samples were regrown, and duplicates were returned to storage.",
-            "p": "de samples uér regróun, end duplikéits uér reternd tu stórich."
-          },
-          {
-            "t": "The system worked exactly as designed, which is why the event received",
-            "p": "de system uérkt eksaktli as disáind, uích is uái de event resáivd"
-          },
-          {
-            "t": "relatively little attention.",
-            "p": "relativeli litol atenshon."
-          }
-        ],
-        [
-          {
-            "t": "There are real limitations, and specialists discuss them more openly",
-            "p": "déar ar rial limitashons, end spesialists diskus dem mor openli"
-          },
-          {
-            "t": "than the public reporting suggests. Many important crops cannot be",
-            "p": "dan de publik reporting sagchésts. méni important krops kanot bi"
-          },
-          {
-            "t": "stored as dried seed at all — bananas, potatoes and cassava among them —",
-            "p": "stóerd as dráid sid at ol — bananas, potatóus end kasava amáng dem —"
-          },
-          {
-            "t": "and require living collections in fields or laboratories,",
-            "p": "end rkuáer líving kolekshons in filds or laboratoris,"
-          },
-          {
-            "t": "which are far more vulnerable. Seeds also do not keep indefinitely;",
-            "p": "uích ar far mor vulnerabol. sids ólsou du not kip indefiniteli;"
-          },
-          {
-            "t": "samples must be periodically regrown, which is expensive and introduces",
-            "p": "samples mast bi periodikali regróun, uích is ekspénsiv end introduses"
-          },
-          {
-            "t": "slow genetic change.",
-            "p": "slo yenetik chéinch."
-          }
-        ],
-        [
-          {
-            "t": "A deeper criticism concerns what preservation means.",
-            "p": "a diper kritisism konserns uót preservashon mins."
-          },
-          {
-            "t": "A seed stored at minus eighteen degrees retains its genetic material but",
-            "p": "a sid stóerd at minus eáitin degris retéins its yenetik material bat"
-          },
-          {
-            "t": "not the knowledge that accompanied it: which soils it suited,",
-            "p": "not de nólich dat akkompanáid it: uích soils it suáited,"
-          },
-          {
-            "t": "when it was planted, how it was prepared, what it tasted like.",
-            "p": "uén it uós planted, jáu it uós prepéerd, uót it tasted láik."
-          },
-          {
-            "t": "Varieties conserved without that context can be revived botanically",
-            "p": "varitis konservd uidáut dat kontekst can bi reváivd botanikali"
-          },
-          {
-            "t": "while remaining, in every practical sense, lost.",
-            "p": "uáil remaáining, in évri praktikal sens, lost."
-          },
-          {
-            "t": "Some programmes now collect cultivation records alongside samples,",
-            "p": "sam programes náu kolekt kultivashon rekords alongsáid samples,"
-          },
-          {
-            "t": "though this is far harder to standardise.",
-            "p": "dóu dis is far jarder tu standardáis."
-          }
-        ],
-        [
-          {
-            "t": "None of this diminishes the case for the vaults,",
-            "p": "nan ov dis diminishes de kéis for de volts,"
-          },
-          {
-            "t": "which are inexpensive relative to almost any other agricultural",
-            "p": "uích ar inekspensáiv rélativ tu ólmoust éni áder agrikulteral"
-          },
-          {
-            "t": "investment and have already proved useful. It does suggest that the",
-            "p": "investment end jav alridi pruvd useful. it das sagchést dat de"
-          },
-          {
-            "t": "popular framing gets the emphasis wrong. The value is not in the",
-            "p": "popular fréiming yets de emfasis rong. de value is not in de"
-          },
-          {
-            "t": "dramatic scenario the photographs invite us to imagine,",
-            "p": "dramatik senario de fóutografs inváit as tu imáyin,"
-          },
-          {
-            "t": "but in the far likelier one in which nothing spectacular happens and",
-            "p": "bat in de far likelir uán in uích názing spektakular japens end"
-          },
-          {
-            "t": "things are quietly lost anyway.",
-            "p": "sings ar kuitli lost anyuéi."
-          }
-        ]
+      [
+        {
+          "t": "Withdrawals happen, and they are informative.",
+          "p": "uisdroals japen, end déi ar informatáiv."
+        },
+        {
+          "t": "The first significant withdrawal was made not after a global catastrophe",
+          "p": "de férst signifikant uisdroal uós méid not áfter a global katastrof"
+        },
+        {
+          "t": "but by a research centre that had been forced to relocate from a war",
+          "p": "bat bái a resíarch sentr dat jad bin forst tu relokéit from a uór"
+        },
+        {
+          "t": "zone and needed to rebuild collections it could no longer reach.",
+          "p": "sóun end nided tu rebuáild kolekshons it cud nóu lonyer rich."
+        },
+        {
+          "t": "The samples were regrown, and duplicates were returned to storage.",
+          "p": "de samples uér regróun, end duplikéits uér reternd tu stórich."
+        },
+        {
+          "t": "The system worked exactly as designed, which is why the event received",
+          "p": "de system uérkt eksaktli as disáind, uích is uái de event resáivd"
+        },
+        {
+          "t": "relatively little attention.",
+          "p": "relativeli litol atenshon."
+        }
+      ],
+      [
+        {
+          "t": "There are real limitations, and specialists discuss them more openly",
+          "p": "déar ar rial limitashons, end spesialists diskus dem mor openli"
+        },
+        {
+          "t": "than the public reporting suggests. Many important crops cannot be",
+          "p": "dan de publik reporting sagchésts. méni important krops kanot bi"
+        },
+        {
+          "t": "stored as dried seed at all — bananas, potatoes and cassava among them —",
+          "p": "stóerd as dráid sid at ol — bananas, potatóus end kasava amáng dem —"
+        },
+        {
+          "t": "and require living collections in fields or laboratories,",
+          "p": "end rkuáer líving kolekshons in filds or laboratoris,"
+        },
+        {
+          "t": "which are far more vulnerable. Seeds also do not keep indefinitely;",
+          "p": "uích ar far mor vulnerabol. sids ólsou du not kip indefiniteli;"
+        },
+        {
+          "t": "samples must be periodically regrown, which is expensive and introduces",
+          "p": "samples mast bi periodikali regróun, uích is ekspénsiv end introduses"
+        },
+        {
+          "t": "slow genetic change.",
+          "p": "slo yenetik chéinch."
+        }
+      ],
+      [
+        {
+          "t": "A deeper criticism concerns what preservation means.",
+          "p": "a diper kritisism konserns uót preservashon mins."
+        },
+        {
+          "t": "A seed stored at minus eighteen degrees retains its genetic material but",
+          "p": "a sid stóerd at minus eáitin degris retéins its yenetik material bat"
+        },
+        {
+          "t": "not the knowledge that accompanied it: which soils it suited,",
+          "p": "not de nólich dat akkompanáid it: uích soils it suáited,"
+        },
+        {
+          "t": "when it was planted, how it was prepared, what it tasted like.",
+          "p": "uén it uós planted, jáu it uós prepéerd, uót it tasted láik."
+        },
+        {
+          "t": "Varieties conserved without that context can be revived botanically",
+          "p": "varitis konservd uidáut dat kontekst can bi reváivd botanikali"
+        },
+        {
+          "t": "while remaining, in every practical sense, lost.",
+          "p": "uáil remaáining, in évri praktikal sens, lost."
+        },
+        {
+          "t": "Some programmes now collect cultivation records alongside samples,",
+          "p": "sam programes náu kolekt kultivashon rekords alongsáid samples,"
+        },
+        {
+          "t": "though this is far harder to standardise.",
+          "p": "dóu dis is far jarder tu standardáis."
+        }
+      ],
+      [
+        {
+          "t": "None of this diminishes the case for the vaults,",
+          "p": "nan ov dis diminishes de kéis for de volts,"
+        },
+        {
+          "t": "which are inexpensive relative to almost any other agricultural",
+          "p": "uích ar inekspensáiv rélativ tu ólmoust éni áder agrikulteral"
+        },
+        {
+          "t": "investment and have already proved useful. It does suggest that the",
+          "p": "investment end jav alridi pruvd useful. it das sagchést dat de"
+        },
+        {
+          "t": "popular framing gets the emphasis wrong. The value is not in the",
+          "p": "popular fréiming yets de emfasis rong. de value is not in de"
+        },
+        {
+          "t": "dramatic scenario the photographs invite us to imagine,",
+          "p": "dramatik senario de fóutografs inváit as tu imáyin,"
+        },
+        {
+          "t": "but in the far likelier one in which nothing spectacular happens and",
+          "p": "bat in de far likelir uán in uích názing spektakular japens end"
+        },
+        {
+          "t": "things are quietly lost anyway.",
+          "p": "sings ar kuitli lost anyuéi."
+        }
       ]
-    },
-    {
-      "title": "The bakery that refused to grow",
-      "body": [
-        "Every weekday at ten past four, a light goes on above a narrow shopfront on Calle Herrera, and Pilar Ossorio starts her day. She has done this for twenty-six years. The bakery produces roughly two hundred loaves before noon and then closes, regardless of how many customers are still queueing outside.",
-        "Investors have approached her four times. The pitch is always similar: a second branch, then a third, a central production unit, perhaps eventually a supermarket contract. Ossorio listens politely and declines. Her reasoning is not sentimental, and she becomes impatient when interviewers try to make it so.",
-        "The argument she gives is technical. Her dough ferments for eighteen hours at a temperature she adjusts by feel, according to the weather and the flour of that particular week. Scaling the operation would require standardising those variables, and standardising them would produce a different loaf. She is uninterested in producing a different loaf.",
-        "Economists who study small firms describe this position as unusual but not irrational. A business that maximises quality within a fixed output can be more profitable per unit than one that expands and dilutes what made it valuable. The complication is that such firms are fragile: they depend on one person, and they cannot absorb a bad year.",
-        "Ossorio is aware of this. She has trained two bakers who now run their own operations elsewhere in the city, deliberately choosing candidates who wanted their own businesses rather than employees who might stay. Her succession plan, if it can be called one, is that the method survives in several places without her name attached.",
-        "Her customers include people who queue for forty minutes and people who find the whole arrangement absurd. She has been accused of manufactured scarcity, a charge she rejects on the grounds that she would need to sell more, not less, to make the accusation profitable. The bakery earns a comfortable living and nothing beyond that.",
-        "What she will not discuss is retirement. She turns sixty-four next year and has said only that she will stop when the loaves stop being right, which she believes she will notice before her customers do. Whether that is confidence or a way of avoiding the question is not clear, possibly not even to her."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "La imagen resulta familiar por un centenar de reportajes: una entrada de hormigón que sobresale de una ladera cubierta de nieve, iluminada de azul contra un cielo ártico, tras la cual se dice que se almacenan los cultivos de la humanidad ante una catástrofe. El encuadre es dramático y, en la mayoría de los aspectos, engañoso. Las bóvedas de semillas no son ante todo una póliza de seguro contra el fin del mundo. Son infraestructura en funcionamiento para un problema lento, poco vistoso y continuo.",
+      "Ese problema es la pérdida. Las variedades agrícolas desaparecen de forma constante y poco dramática: un agricultor se jubila, un banco de genes regional se queda sin financiación, un congelador de almacenamiento falla durante un fin de semana festivo. La mayor parte de lo que se ha perdido en el último siglo se esfumó así, y no a través de un único desastre. Las bóvedas existen porque las colecciones distribuidas son frágiles por separado, incluso cuando el mundo está enteramente en paz.",
+      "El material almacenado es también menos exótico de lo que insinúan los reportajes. Una bóveda guarda duplicados de muestras que ya se conservan en otros sitios, depositadas por bancos de genes nacionales e institucionales que mantienen la propiedad. Nada se confisca, nada se compra, y la bóveda misma no decide qué vale la pena preservar. Funciona menos como un arca que como una copia de seguridad externa, con todo el tedio que esa comparación sugiere.",
+      "Se producen retiros, y son reveladores. El primer retiro significativo no se hizo tras una catástrofe global, sino que lo realizó un centro de investigación que se había visto obligado a trasladarse desde una zona de guerra y necesitaba reconstruir colecciones que ya no podía alcanzar. Las muestras se volvieron a cultivar y se devolvieron duplicados al almacenamiento. El sistema funcionó exactamente como estaba diseñado, razón por la cual el hecho recibió relativamente poca atención.",
+      "Existen limitaciones reales, y los especialistas las discuten con más franqueza de lo que sugieren los reportajes públicos. Muchos cultivos importantes no pueden almacenarse como semilla seca en absoluto —entre ellos el plátano, la papa y la mandioca— y requieren colecciones vivas en campos o laboratorios, que son mucho más vulnerables. Las semillas tampoco se conservan indefinidamente; las muestras deben volver a cultivarse periódicamente, lo cual es costoso e introduce un lento cambio genético.",
+      "Una crítica más profunda tiene que ver con lo que significa la preservación. Una semilla almacenada a dieciocho grados bajo cero conserva su material genético, pero no el conocimiento que la acompañaba: a qué suelos se adaptaba, cuándo se sembraba, cómo se preparaba, a qué sabía. Las variedades conservadas sin ese contexto pueden revivirse botánicamente sin dejar de estar, en todo sentido práctico, perdidas. Algunos programas recopilan ahora registros de cultivo junto con las muestras, aunque esto es mucho más difícil de estandarizar.",
+      "Nada de esto resta valor a las bóvedas, que son baratas en comparación con casi cualquier otra inversión agrícola y ya han demostrado ser útiles. Sí sugiere que el enfoque popular pone el énfasis en el lugar equivocado. El valor no está en el escenario dramático que las fotografías nos invitan a imaginar, sino en el mucho más probable en el que no ocurre nada espectacular y, aun así, las cosas se pierden en silencio."
+    ]
+  },
+  {
+    "title": "The bakery that refused to grow",
+    "body": [
+      "Every weekday at ten past four, a light goes on above a narrow shopfront on Calle Herrera, and Pilar Ossorio starts her day. She has done this for twenty-six years. The bakery produces roughly two hundred loaves before noon and then closes, regardless of how many customers are still queueing outside.",
+      "Investors have approached her four times. The pitch is always similar: a second branch, then a third, a central production unit, perhaps eventually a supermarket contract. Ossorio listens politely and declines. Her reasoning is not sentimental, and she becomes impatient when interviewers try to make it so.",
+      "The argument she gives is technical. Her dough ferments for eighteen hours at a temperature she adjusts by feel, according to the weather and the flour of that particular week. Scaling the operation would require standardising those variables, and standardising them would produce a different loaf. She is uninterested in producing a different loaf.",
+      "Economists who study small firms describe this position as unusual but not irrational. A business that maximises quality within a fixed output can be more profitable per unit than one that expands and dilutes what made it valuable. The complication is that such firms are fragile: they depend on one person, and they cannot absorb a bad year.",
+      "Ossorio is aware of this. She has trained two bakers who now run their own operations elsewhere in the city, deliberately choosing candidates who wanted their own businesses rather than employees who might stay. Her succession plan, if it can be called one, is that the method survives in several places without her name attached.",
+      "Her customers include people who queue for forty minutes and people who find the whole arrangement absurd. She has been accused of manufactured scarcity, a charge she rejects on the grounds that she would need to sell more, not less, to make the accusation profitable. The bakery earns a comfortable living and nothing beyond that.",
+      "What she will not discuss is retirement. She turns sixty-four next year and has said only that she will stop when the loaves stop being right, which she believes she will notice before her customers do. Whether that is confidence or a way of avoiding the question is not clear, possibly not even to her."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Ossorio has turned down offers to expand her business.",
+        "a": "True",
+        "why": "Investors have approached her four times and she declines each time."
+      },
+      {
+        "q": "She explains her refusal in emotional rather than practical terms.",
+        "a": "False",
+        "why": "Her reasoning is described as technical, not sentimental, and she resents being made sentimental."
+      },
+      {
+        "q": "Economists consider her position completely irrational.",
+        "a": "False",
+        "why": "They describe it as unusual but not irrational."
+      },
+      {
+        "q": "She trained bakers who went on to open their own businesses.",
+        "a": "True",
+        "why": "She trained two bakers who now run their own operations elsewhere."
+      },
+      {
+        "q": "The bakery has been featured in national television programmes.",
+        "a": "Not Given",
+        "why": "Interviewers are mentioned but no television coverage is described."
+      }
+    ],
+    "short": [
+      {
+        "q": "For how many hours does the dough ferment?",
+        "a": "eighteen hours"
+      },
+      {
+        "q": "Approximately how many loaves does the bakery make each morning?",
+        "a": "two hundred"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Which of these best summarises Ossorio's technical objection to expanding?",
+        "options": [
+          "Consistent mass production would alter the product itself.",
+          "Larger premises would be too costly to maintain.",
+          "She would be unable to find reliable staff.",
+          "Supermarket contracts pay less than direct sales."
+        ],
+        "a": 0,
+        "why": "Scaling would require standardising variables she adjusts by feel, producing a different loaf."
+      },
+      {
+        "q": "What weakness do economists identify in firms like hers?",
+        "options": [
+          "They cannot charge premium prices.",
+          "They rely on one individual and cannot survive setbacks easily.",
+          "They generate less profit for each item sold.",
+          "They lose customers to larger competitors over time."
+        ],
+        "a": 1,
+        "why": "Such firms are fragile: they depend on one person and cannot absorb a bad year."
+      },
+      {
+        "q": "Why does Ossorio dismiss the accusation of creating artificial scarcity?",
+        "options": [
+          "Because her prices have never increased.",
+          "Because her customers have never complained.",
+          "Because profiting from scarcity would require selling greater quantities.",
+          "Because other bakeries in the city use the same method."
+        ],
+        "a": 2,
+        "why": "She notes she would need to sell more, not less, to make the accusation profitable."
+      },
+      {
+        "q": "How does the writer present Ossorio's attitude to retirement?",
+        "options": [
+          "As a decision she has delegated to her former trainees.",
+          "As something she has already scheduled for next year.",
+          "As carefully planned in consultation with her successors.",
+          "As a subject she treats with unresolved vagueness."
+        ],
+        "a": 3,
+        "why": "She will not discuss it and gives an answer that may be confidence or avoidance, unclear even to her."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Ossorio has turned down offers to expand her business.",
-          "a": "True",
-          "why": "Investors have approached her four times and she declines each time."
+          "t": "Every weekday at ten past four, a light goes on above a narrow shopfront",
+          "p": "évri uíkdei at ten past for, a láit góus on abáv a naro shopfront"
         },
         {
-          "q": "She explains her refusal in emotional rather than practical terms.",
-          "a": "False",
-          "why": "Her reasoning is described as technical, not sentimental, and she resents being made sentimental."
+          "t": "on Calle Herrera, and Pilar Ossorio starts her day.",
+          "p": "on kal jerera, end pilar osorio starts jer déi."
         },
         {
-          "q": "Economists consider her position completely irrational.",
-          "a": "False",
-          "why": "They describe it as unusual but not irrational."
+          "t": "She has done this for twenty-six years. The bakery produces roughly two",
+          "p": "shi jas dan dis for tuenti-siks yirs. de béikeri prodiúses ráfli tu"
         },
         {
-          "q": "She trained bakers who went on to open their own businesses.",
-          "a": "True",
-          "why": "She trained two bakers who now run their own operations elsewhere."
+          "t": "hundred loaves before noon and then closes, regardless of how many",
+          "p": "jándred lóuvs bifór nun end den klóuses, regardles ov jáu méni"
         },
         {
-          "q": "The bakery has been featured in national television programmes.",
-          "a": "Not Given",
-          "why": "Interviewers are mentioned but no television coverage is described."
+          "t": "customers are still queueing outside.",
+          "p": "cástomers ar stil kueuing otsáid."
         }
       ],
-      "short": [
+      [
         {
-          "q": "For how many hours does the dough ferment?",
-          "a": "eighteen hours"
+          "t": "Investors have approached her four times. The pitch is always similar:",
+          "p": "investors jav apróuched jer for táims. de pich is aluéis similar:"
         },
         {
-          "q": "Approximately how many loaves does the bakery make each morning?",
-          "a": "two hundred"
+          "t": "a second branch, then a third, a central production unit,",
+          "p": "a sécond branch, den a zerd, a sentral produkshon unit,"
+        },
+        {
+          "t": "perhaps eventually a supermarket contract. Ossorio listens politely and",
+          "p": "perjáps eventuali a supermarket kontrakt. osorio listens politeli end"
+        },
+        {
+          "t": "declines. Her reasoning is not sentimental, and she becomes impatient",
+          "p": "dekláins. jer risóuning is not sentimental, end shi bicáms impatint"
+        },
+        {
+          "t": "when interviewers try to make it so.",
+          "p": "uén interviuers tri tu méik it sóu."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Which of these best summarises Ossorio's technical objection to expanding?",
-          "options": [
-            "Consistent mass production would alter the product itself.",
-            "Larger premises would be too costly to maintain.",
-            "She would be unable to find reliable staff.",
-            "Supermarket contracts pay less than direct sales."
-          ],
-          "a": 0,
-          "why": "Scaling would require standardising variables she adjusts by feel, producing a different loaf."
+          "t": "The argument she gives is technical. Her dough ferments for eighteen",
+          "p": "de argument shi gáivs is teknikal. jer dóu ferments for eáitin"
         },
         {
-          "q": "What weakness do economists identify in firms like hers?",
-          "options": [
-            "They cannot charge premium prices.",
-            "They rely on one individual and cannot survive setbacks easily.",
-            "They generate less profit for each item sold.",
-            "They lose customers to larger competitors over time."
-          ],
-          "a": 1,
-          "why": "Such firms are fragile: they depend on one person and cannot absorb a bad year."
+          "t": "hours at a temperature she adjusts by feel, according to the weather and",
+          "p": "áuars at a temperacher shi adyusts bái fil, akkording tu de uéder end"
         },
         {
-          "q": "Why does Ossorio dismiss the accusation of creating artificial scarcity?",
-          "options": [
-            "Because her prices have never increased.",
-            "Because her customers have never complained.",
-            "Because profiting from scarcity would require selling greater quantities.",
-            "Because other bakeries in the city use the same method."
-          ],
-          "a": 2,
-          "why": "She notes she would need to sell more, not less, to make the accusation profitable."
+          "t": "the flour of that particular week. Scaling the operation would require",
+          "p": "de fláuar ov dat partikular uik. skéiling de operashon vud rkuáer"
         },
         {
-          "q": "How does the writer present Ossorio's attitude to retirement?",
-          "options": [
-            "As a decision she has delegated to her former trainees.",
-            "As something she has already scheduled for next year.",
-            "As carefully planned in consultation with her successors.",
-            "As a subject she treats with unresolved vagueness."
-          ],
-          "a": 3,
-          "why": "She will not discuss it and gives an answer that may be confidence or avoidance, unclear even to her."
+          "t": "standardising those variables, and standardising them would produce a",
+          "p": "standardáising dóus variables, end standardáising dem vud prodiús a"
+        },
+        {
+          "t": "different loaf. She is uninterested in producing a different loaf.",
+          "p": "dífrent lóuf. shi is uninterested in produsing a dífrent lóuf."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Every weekday at ten past four, a light goes on above a narrow shopfront",
-            "p": "évri uíkdei at ten past for, a láit góus on abáv a naro shopfront"
-          },
-          {
-            "t": "on Calle Herrera, and Pilar Ossorio starts her day.",
-            "p": "on kal jerera, end pilar osorio starts jer déi."
-          },
-          {
-            "t": "She has done this for twenty-six years. The bakery produces roughly two",
-            "p": "shi jas dan dis for tuenti-siks yirs. de béikeri prodiúses ráfli tu"
-          },
-          {
-            "t": "hundred loaves before noon and then closes, regardless of how many",
-            "p": "jándred lóuvs bifór nun end den klóuses, regardles ov jáu méni"
-          },
-          {
-            "t": "customers are still queueing outside.",
-            "p": "cástomers ar stil kueuing otsáid."
-          }
-        ],
-        [
-          {
-            "t": "Investors have approached her four times. The pitch is always similar:",
-            "p": "investors jav apróuched jer for táims. de pich is aluéis similar:"
-          },
-          {
-            "t": "a second branch, then a third, a central production unit,",
-            "p": "a sécond branch, den a zerd, a sentral produkshon unit,"
-          },
-          {
-            "t": "perhaps eventually a supermarket contract. Ossorio listens politely and",
-            "p": "perjáps eventuali a supermarket kontrakt. osorio listens politeli end"
-          },
-          {
-            "t": "declines. Her reasoning is not sentimental, and she becomes impatient",
-            "p": "dekláins. jer risóuning is not sentimental, end shi bicáms impatint"
-          },
-          {
-            "t": "when interviewers try to make it so.",
-            "p": "uén interviuers tri tu méik it sóu."
-          }
-        ],
-        [
-          {
-            "t": "The argument she gives is technical. Her dough ferments for eighteen",
-            "p": "de argument shi gáivs is teknikal. jer dóu ferments for eáitin"
-          },
-          {
-            "t": "hours at a temperature she adjusts by feel, according to the weather and",
-            "p": "áuars at a temperacher shi adyusts bái fil, akkording tu de uéder end"
-          },
-          {
-            "t": "the flour of that particular week. Scaling the operation would require",
-            "p": "de fláuar ov dat partikular uik. skéiling de operashon vud rkuáer"
-          },
-          {
-            "t": "standardising those variables, and standardising them would produce a",
-            "p": "standardáising dóus variables, end standardáising dem vud prodiús a"
-          },
-          {
-            "t": "different loaf. She is uninterested in producing a different loaf.",
-            "p": "dífrent lóuf. shi is uninterested in produsing a dífrent lóuf."
-          }
-        ],
-        [
-          {
-            "t": "Economists who study small firms describe this position as unusual but",
-            "p": "ekonomists ju studi smal ferms deskráib dis posishon as unusual bat"
-          },
-          {
-            "t": "not irrational. A business that maximises quality within a fixed output",
-            "p": "not erashonal. a bísnes dat maksimises kualiti uidín a fikst otput"
-          },
-          {
-            "t": "can be more profitable per unit than one that expands and dilutes what",
-            "p": "can bi mor prófitabol per unit dan uán dat ekspands end diliúts uót"
-          },
-          {
-            "t": "made it valuable. The complication is that such firms are fragile:",
-            "p": "méid it valuabol. de komplikashon is dat sach ferms ar fragáil:"
-          },
-          {
-            "t": "they depend on one person, and they cannot absorb a bad year.",
-            "p": "déi depend on uán person, end déi kanot absórb a bad íar."
-          }
-        ],
-        [
-          {
-            "t": "Ossorio is aware of this. She has trained two bakers who now run their",
-            "p": "osorio is oéer ov dis. shi jas traáind tu béikers ju náu run déar"
-          },
-          {
-            "t": "own operations elsewhere in the city, deliberately choosing candidates",
-            "p": "óun operashons elseuír in de siti, deliberateli choóusing kandidéits"
-          },
-          {
-            "t": "who wanted their own businesses rather than employees who might stay.",
-            "p": "ju uanted déar óun bísneses ráder dan emplois ju máit stéi."
-          },
-          {
-            "t": "Her succession plan, if it can be called one,",
-            "p": "jer sakséshon plan, if it can bi kald uán,"
-          },
-          {
-            "t": "is that the method survives in several places without her name attached.",
-            "p": "is dat de mézod serváivs in séveral pléises uidáut jer néim atached."
-          }
-        ],
-        [
-          {
-            "t": "Her customers include people who queue for forty minutes and people who",
-            "p": "jer cástomers inkliúd pípol ju kiú for forti miniúts end pípol ju"
-          },
-          {
-            "t": "find the whole arrangement absurd. She has been accused of manufactured",
-            "p": "fáind de uóul aranyement abserd. shi jas bin akkust ov manufakterd"
-          },
-          {
-            "t": "scarcity, a charge she rejects on the grounds that she would need to",
-            "p": "skérsiti, a chary shi reyekts on de gronds dat shi vud nid tu"
-          },
-          {
-            "t": "sell more, not less, to make the accusation profitable.",
-            "p": "sel mor, not les, tu méik de akkusashon prófitabol."
-          },
-          {
-            "t": "The bakery earns a comfortable living and nothing beyond that.",
-            "p": "de béikeri irns a komfortabol líving end názing beyond dat."
-          }
-        ],
-        [
-          {
-            "t": "What she will not discuss is retirement. She turns sixty-four next year",
-            "p": "uót shi uíl not diskus is ritáiarment. shi terns siksti-fáuar nekst íar"
-          },
-          {
-            "t": "and has said only that she will stop when the loaves stop being right,",
-            "p": "end jas sed óunli dat shi uíl stop uén de lóuvs stop bing ráit,"
-          },
-          {
-            "t": "which she believes she will notice before her customers do.",
-            "p": "uích shi beliívs shi uíl nóutis bifór jer cástomers du."
-          },
-          {
-            "t": "Whether that is confidence or a way of avoiding the question is not",
-            "p": "uéder dat is konfidens or a uéi ov avoáiding de kuéschon is not"
-          },
-          {
-            "t": "clear, possibly not even to her.",
-            "p": "klíar, posibli not íven tu jer."
-          }
-        ]
+      [
+        {
+          "t": "Economists who study small firms describe this position as unusual but",
+          "p": "ekonomists ju studi smal ferms deskráib dis posishon as unusual bat"
+        },
+        {
+          "t": "not irrational. A business that maximises quality within a fixed output",
+          "p": "not erashonal. a bísnes dat maksimises kualiti uidín a fikst otput"
+        },
+        {
+          "t": "can be more profitable per unit than one that expands and dilutes what",
+          "p": "can bi mor prófitabol per unit dan uán dat ekspands end diliúts uót"
+        },
+        {
+          "t": "made it valuable. The complication is that such firms are fragile:",
+          "p": "méid it valuabol. de komplikashon is dat sach ferms ar fragáil:"
+        },
+        {
+          "t": "they depend on one person, and they cannot absorb a bad year.",
+          "p": "déi depend on uán person, end déi kanot absórb a bad íar."
+        }
+      ],
+      [
+        {
+          "t": "Ossorio is aware of this. She has trained two bakers who now run their",
+          "p": "osorio is oéer ov dis. shi jas traáind tu béikers ju náu run déar"
+        },
+        {
+          "t": "own operations elsewhere in the city, deliberately choosing candidates",
+          "p": "óun operashons elseuír in de siti, deliberateli choóusing kandidéits"
+        },
+        {
+          "t": "who wanted their own businesses rather than employees who might stay.",
+          "p": "ju uanted déar óun bísneses ráder dan emplois ju máit stéi."
+        },
+        {
+          "t": "Her succession plan, if it can be called one,",
+          "p": "jer sakséshon plan, if it can bi kald uán,"
+        },
+        {
+          "t": "is that the method survives in several places without her name attached.",
+          "p": "is dat de mézod serváivs in séveral pléises uidáut jer néim atached."
+        }
+      ],
+      [
+        {
+          "t": "Her customers include people who queue for forty minutes and people who",
+          "p": "jer cástomers inkliúd pípol ju kiú for forti miniúts end pípol ju"
+        },
+        {
+          "t": "find the whole arrangement absurd. She has been accused of manufactured",
+          "p": "fáind de uóul aranyement abserd. shi jas bin akkust ov manufakterd"
+        },
+        {
+          "t": "scarcity, a charge she rejects on the grounds that she would need to",
+          "p": "skérsiti, a chary shi reyekts on de gronds dat shi vud nid tu"
+        },
+        {
+          "t": "sell more, not less, to make the accusation profitable.",
+          "p": "sel mor, not les, tu méik de akkusashon prófitabol."
+        },
+        {
+          "t": "The bakery earns a comfortable living and nothing beyond that.",
+          "p": "de béikeri irns a komfortabol líving end názing beyond dat."
+        }
+      ],
+      [
+        {
+          "t": "What she will not discuss is retirement. She turns sixty-four next year",
+          "p": "uót shi uíl not diskus is ritáiarment. shi terns siksti-fáuar nekst íar"
+        },
+        {
+          "t": "and has said only that she will stop when the loaves stop being right,",
+          "p": "end jas sed óunli dat shi uíl stop uén de lóuvs stop bing ráit,"
+        },
+        {
+          "t": "which she believes she will notice before her customers do.",
+          "p": "uích shi beliívs shi uíl nóutis bifór jer cástomers du."
+        },
+        {
+          "t": "Whether that is confidence or a way of avoiding the question is not",
+          "p": "uéder dat is konfidens or a uéi ov avoáiding de kuéschon is not"
+        },
+        {
+          "t": "clear, possibly not even to her.",
+          "p": "klíar, posibli not íven tu jer."
+        }
       ]
-    },
-    {
-      "title": "Rivers that were given legal personhood",
-      "body": [
-        "In 2017 a river in New Zealand was granted the legal status of a person. The Whanganui was not made human, and the law did not pretend otherwise. What it acquired was standing: the capacity to hold rights, to own property in its own name, and crucially to be represented in court by appointed guardians when harmed.",
-        "The idea sounds novel and is not. Corporations have held legal personhood for centuries, as have ships, temples and estates in various jurisdictions. Legal systems have never restricted personhood to human beings; they have simply chosen which non-humans deserved it. Extending the category to a watercourse changed the membership list, not the underlying mechanism.",
-        "The practical motivation was procedural. Under conventional environmental law, someone wishing to defend a river must demonstrate personal injury: that pollution damaged their health, their property or their livelihood. If nobody can show such harm, the damage goes unchallenged. Granting the river standing removes that requirement, because the injured party is the river itself.",
-        "Similar arrangements have since appeared in Ecuador, Colombia, Bangladesh and parts of the United States, with markedly different outcomes. Where courts already functioned well and guardians were adequately funded, cases have been brought and occasionally won. Where enforcement was weak beforehand, personhood has changed very little, which suggests the mechanism amplifies existing institutional capacity rather than substituting for it.",
-        "Critics raise a problem that supporters find harder to dismiss than they admit: who speaks for the river, and what happens when guardians disagree with the communities living along it? A river has no preferences. Its interests must be inferred, and inference is a form of authorship. The guardian's judgement inevitably becomes the river's voice.",
-        "There is also a question of scope. A river is relatively easy to delimit, though even its boundaries are contested where tributaries and aquifers are concerned. An ecosystem is harder. A climate system is harder still. Lawyers who welcome the Whanganui precedent tend to become cautious when asked where the principle ends.",
-        "None of these objections has slowed the trend. Roughly forty jurisdictions have now adopted some version of rights-of-nature legislation, and the number of filed cases is growing faster than the number of successful ones. Whether the trend amounts to a lasting legal innovation or a symbolic gesture with limited practical force is still unsettled, and candid advocates admit as much."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Cada día laborable, a las cuatro y diez, se enciende una luz sobre un estrecho local en la calle Herrera, y Pilar Ossorio empieza su jornada. Lo hace desde hace veintiséis años. La panadería produce unos doscientos panes antes del mediodía y luego cierra, sin importar cuánta gente siga haciendo cola afuera.",
+      "Los inversores se le han acercado cuatro veces. La propuesta siempre es parecida: una segunda sucursal, luego una tercera, una unidad central de producción, quizá con el tiempo un contrato con un supermercado. Ossorio escucha con cortesía y declina. Su razonamiento no es sentimental, y se impacienta cuando los entrevistadores intentan hacerlo pasar por tal.",
+      "El argumento que da es técnico. Su masa fermenta durante dieciocho horas a una temperatura que ajusta a ojo, según el clima y la harina de esa semana en particular. Ampliar la operación exigiría estandarizar esas variables, y estandarizarlas produciría un pan distinto. No le interesa producir un pan distinto.",
+      "Los economistas que estudian las pequeñas empresas describen esta postura como inusual, pero no irracional. Un negocio que maximiza la calidad dentro de una producción fija puede ser más rentable por unidad que uno que se expande y diluye lo que lo hacía valioso. La complicación es que esas empresas son frágiles: dependen de una sola persona y no pueden absorber un mal año.",
+      "Ossorio lo sabe. Ha formado a dos panaderos que ahora llevan sus propios negocios en otras partes de la ciudad, eligiendo deliberadamente a candidatos que querían su propio emprendimiento antes que a empleados que pudieran quedarse. Su plan de sucesión, si puede llamarse así, es que el método sobreviva en varios lugares sin su nombre asociado.",
+      "Entre sus clientes hay quienes hacen cola durante cuarenta minutos y quienes encuentran absurdo todo el asunto. La han acusado de escasez fabricada, un cargo que rechaza con el argumento de que tendría que vender más, no menos, para que la acusación fuera rentable. La panadería da para vivir con holgura y nada más allá de eso.",
+      "De lo que no habla es de la jubilación. El año que viene cumple sesenta y cuatro y solo ha dicho que dejará cuando los panes dejen de salir bien, algo que cree que notará antes que sus clientes. Si eso es confianza o una manera de esquivar la pregunta no está claro, posiblemente ni siquiera para ella."
+    ]
+  },
+  {
+    "title": "Rivers that were given legal personhood",
+    "body": [
+      "In 2017 a river in New Zealand was granted the legal status of a person. The Whanganui was not made human, and the law did not pretend otherwise. What it acquired was standing: the capacity to hold rights, to own property in its own name, and crucially to be represented in court by appointed guardians when harmed.",
+      "The idea sounds novel and is not. Corporations have held legal personhood for centuries, as have ships, temples and estates in various jurisdictions. Legal systems have never restricted personhood to human beings; they have simply chosen which non-humans deserved it. Extending the category to a watercourse changed the membership list, not the underlying mechanism.",
+      "The practical motivation was procedural. Under conventional environmental law, someone wishing to defend a river must demonstrate personal injury: that pollution damaged their health, their property or their livelihood. If nobody can show such harm, the damage goes unchallenged. Granting the river standing removes that requirement, because the injured party is the river itself.",
+      "Similar arrangements have since appeared in Ecuador, Colombia, Bangladesh and parts of the United States, with markedly different outcomes. Where courts already functioned well and guardians were adequately funded, cases have been brought and occasionally won. Where enforcement was weak beforehand, personhood has changed very little, which suggests the mechanism amplifies existing institutional capacity rather than substituting for it.",
+      "Critics raise a problem that supporters find harder to dismiss than they admit: who speaks for the river, and what happens when guardians disagree with the communities living along it? A river has no preferences. Its interests must be inferred, and inference is a form of authorship. The guardian's judgement inevitably becomes the river's voice.",
+      "There is also a question of scope. A river is relatively easy to delimit, though even its boundaries are contested where tributaries and aquifers are concerned. An ecosystem is harder. A climate system is harder still. Lawyers who welcome the Whanganui precedent tend to become cautious when asked where the principle ends.",
+      "None of these objections has slowed the trend. Roughly forty jurisdictions have now adopted some version of rights-of-nature legislation, and the number of filed cases is growing faster than the number of successful ones. Whether the trend amounts to a lasting legal innovation or a symbolic gesture with limited practical force is still unsettled, and candid advocates admit as much."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "The Whanganui law treats the river as a human being.",
+        "a": "False",
+        "why": "The river was not made human; it acquired legal standing, and the law did not pretend otherwise."
+      },
+      {
+        "q": "Legal personhood for non-humans existed long before 2017.",
+        "a": "True",
+        "why": "Corporations, ships, temples and estates have held it for centuries."
+      },
+      {
+        "q": "Rights-of-nature laws have produced identical results in every country.",
+        "a": "False",
+        "why": "Outcomes have been markedly different depending on institutional strength."
+      },
+      {
+        "q": "Supporters find the question of representation easy to answer.",
+        "a": "False",
+        "why": "Critics raise a problem supporters find harder to dismiss than they admit."
+      },
+      {
+        "q": "The Whanganui guardians are elected by public vote.",
+        "a": "Not Given",
+        "why": "Guardians are mentioned but how they are chosen is never stated."
+      }
+    ],
+    "short": [
+      {
+        "q": "Under conventional environmental law, what must a claimant demonstrate?",
+        "a": "personal injury"
+      },
+      {
+        "q": "Approximately how many jurisdictions have adopted rights-of-nature legislation?",
+        "a": "forty"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What procedural difficulty does granting a river personhood solve?",
+        "options": [
+          "It removes the need for a claimant to prove harm to themselves.",
+          "It reduces the cost of bringing environmental cases.",
+          "It allows international courts to hear domestic disputes.",
+          "It prevents companies from operating near watercourses."
+        ],
+        "a": 0,
+        "why": "Standing removes the requirement to demonstrate personal injury, because the river is the injured party."
+      },
+      {
+        "q": "What does the variation between countries suggest to the writer?",
+        "options": [
+          "That the legislation is usually drafted carelessly.",
+          "That personhood strengthens existing institutions rather than replacing them.",
+          "That courts resist applying the principle to rivers.",
+          "That the approach works only in wealthy nations."
+        ],
+        "a": 1,
+        "why": "The mechanism amplifies existing institutional capacity rather than substituting for it."
+      },
+      {
+        "q": "What does the writer mean by saying that inference is 'a form of authorship'?",
+        "options": [
+          "Communities should record their own histories of the river.",
+          "Court judgements are published for public scrutiny.",
+          "Guardians unavoidably shape what the river is said to want.",
+          "Legal documents must be written by specialists."
+        ],
+        "a": 2,
+        "why": "A river has no preferences; interests must be inferred, so the guardian's judgement becomes its voice."
+      },
+      {
+        "q": "Why do supportive lawyers become cautious about the scope of the principle?",
+        "options": [
+          "Because governments have threatened to repeal the laws.",
+          "Because rivers are the only ecosystems worth protecting.",
+          "Because the costs of guardianship rise sharply.",
+          "Because larger systems are far more difficult to define legally."
+        ],
+        "a": 3,
+        "why": "Ecosystems and climate systems are progressively harder to delimit than a river."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "The Whanganui law treats the river as a human being.",
-          "a": "False",
-          "why": "The river was not made human; it acquired legal standing, and the law did not pretend otherwise."
+          "t": "In 2017 a river in New Zealand was granted the legal status of a person.",
+          "p": "in 2017 a ríver in neu siland uós granted de lígal status ov a person."
         },
         {
-          "q": "Legal personhood for non-humans existed long before 2017.",
-          "a": "True",
-          "why": "Corporations, ships, temples and estates have held it for centuries."
+          "t": "The Whanganui was not made human, and the law did not pretend otherwise.",
+          "p": "de uanganui uós not méid juman, end de lo did not pretend oseruáis."
         },
         {
-          "q": "Rights-of-nature laws have produced identical results in every country.",
-          "a": "False",
-          "why": "Outcomes have been markedly different depending on institutional strength."
+          "t": "What it acquired was standing: the capacity to hold rights,",
+          "p": "uót it akkuáerd uós stánding: de kapasiti tu jóuld ráits,"
         },
         {
-          "q": "Supporters find the question of representation easy to answer.",
-          "a": "False",
-          "why": "Critics raise a problem supporters find harder to dismiss than they admit."
+          "t": "to own property in its own name, and crucially to be represented in",
+          "p": "tu óun properti in its óun néim, end krusiali tu bi represented in"
         },
         {
-          "q": "The Whanganui guardians are elected by public vote.",
-          "a": "Not Given",
-          "why": "Guardians are mentioned but how they are chosen is never stated."
+          "t": "court by appointed guardians when harmed.",
+          "p": "cort bái apointed gárdians uén jarmd."
         }
       ],
-      "short": [
+      [
         {
-          "q": "Under conventional environmental law, what must a claimant demonstrate?",
-          "a": "personal injury"
+          "t": "The idea sounds novel and is not. Corporations have held legal",
+          "p": "de idi sonds novel end is not. corporéishons jav jeld lígal"
         },
         {
-          "q": "Approximately how many jurisdictions have adopted rights-of-nature legislation?",
-          "a": "forty"
+          "t": "personhood for centuries, as have ships, temples and estates in various",
+          "p": "personjud for séncheris, as jav ships, temples end estéits in varias"
+        },
+        {
+          "t": "jurisdictions. Legal systems have never restricted personhood to human",
+          "p": "yurisdíkshons. lígal systems jav néver restrikted personjud tu juman"
+        },
+        {
+          "t": "beings; they have simply chosen which non-humans deserved it.",
+          "p": "bings; déi jav símpli chosen uích non-jumans deservd it."
+        },
+        {
+          "t": "Extending the category to a watercourse changed the membership list,",
+          "p": "ekstending de kategori tu a uaterkóurs chéinchd de membership list,"
+        },
+        {
+          "t": "not the underlying mechanism.",
+          "p": "not de underlying mchanism."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What procedural difficulty does granting a river personhood solve?",
-          "options": [
-            "It removes the need for a claimant to prove harm to themselves.",
-            "It reduces the cost of bringing environmental cases.",
-            "It allows international courts to hear domestic disputes.",
-            "It prevents companies from operating near watercourses."
-          ],
-          "a": 0,
-          "why": "Standing removes the requirement to demonstrate personal injury, because the river is the injured party."
+          "t": "The practical motivation was procedural. Under conventional",
+          "p": "de praktikal motivashon uós prosederal. ánder convénshonal"
         },
         {
-          "q": "What does the variation between countries suggest to the writer?",
-          "options": [
-            "That the legislation is usually drafted carelessly.",
-            "That personhood strengthens existing institutions rather than replacing them.",
-            "That courts resist applying the principle to rivers.",
-            "That the approach works only in wealthy nations."
-          ],
-          "a": 1,
-          "why": "The mechanism amplifies existing institutional capacity rather than substituting for it."
+          "t": "environmental law, someone wishing to defend a river must demonstrate",
+          "p": "enveronmental lo, somóun uishing tu defend a ríver mast demonstréit"
         },
         {
-          "q": "What does the writer mean by saying that inference is 'a form of authorship'?",
-          "options": [
-            "Communities should record their own histories of the river.",
-            "Court judgements are published for public scrutiny.",
-            "Guardians unavoidably shape what the river is said to want.",
-            "Legal documents must be written by specialists."
-          ],
-          "a": 2,
-          "why": "A river has no preferences; interests must be inferred, so the guardian's judgement becomes its voice."
+          "t": "personal injury: that pollution damaged their health,",
+          "p": "personal inyeri: dat polushon daméiyd déar jils,"
         },
         {
-          "q": "Why do supportive lawyers become cautious about the scope of the principle?",
-          "options": [
-            "Because governments have threatened to repeal the laws.",
-            "Because rivers are the only ecosystems worth protecting.",
-            "Because the costs of guardianship rise sharply.",
-            "Because larger systems are far more difficult to define legally."
-          ],
-          "a": 3,
-          "why": "Ecosystems and climate systems are progressively harder to delimit than a river."
+          "t": "their property or their livelihood. If nobody can show such harm,",
+          "p": "déar properti or déar livelijud. if nobodi can shóu sach jarm,"
+        },
+        {
+          "t": "the damage goes unchallenged. Granting the river standing removes that",
+          "p": "de daméig góus unchalenyd. granting de ríver stánding remóuvs dat"
+        },
+        {
+          "t": "requirement, because the injured party is the river itself.",
+          "p": "rkuáerement, bicós de inyerd parti is de ríver itself."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "In 2017 a river in New Zealand was granted the legal status of a person.",
-            "p": "in 2017 a ríver in neu siland uós granted de lígal status ov a person."
-          },
-          {
-            "t": "The Whanganui was not made human, and the law did not pretend otherwise.",
-            "p": "de uanganui uós not méid juman, end de lo did not pretend oseruáis."
-          },
-          {
-            "t": "What it acquired was standing: the capacity to hold rights,",
-            "p": "uót it akkuáerd uós stánding: de kapasiti tu jóuld ráits,"
-          },
-          {
-            "t": "to own property in its own name, and crucially to be represented in",
-            "p": "tu óun properti in its óun néim, end krusiali tu bi represented in"
-          },
-          {
-            "t": "court by appointed guardians when harmed.",
-            "p": "cort bái apointed gárdians uén jarmd."
-          }
-        ],
-        [
-          {
-            "t": "The idea sounds novel and is not. Corporations have held legal",
-            "p": "de idi sonds novel end is not. corporéishons jav jeld lígal"
-          },
-          {
-            "t": "personhood for centuries, as have ships, temples and estates in various",
-            "p": "personjud for séncheris, as jav ships, temples end estéits in varias"
-          },
-          {
-            "t": "jurisdictions. Legal systems have never restricted personhood to human",
-            "p": "yurisdíkshons. lígal systems jav néver restrikted personjud tu juman"
-          },
-          {
-            "t": "beings; they have simply chosen which non-humans deserved it.",
-            "p": "bings; déi jav símpli chosen uích non-jumans deservd it."
-          },
-          {
-            "t": "Extending the category to a watercourse changed the membership list,",
-            "p": "ekstending de kategori tu a uaterkóurs chéinchd de membership list,"
-          },
-          {
-            "t": "not the underlying mechanism.",
-            "p": "not de underlying mchanism."
-          }
-        ],
-        [
-          {
-            "t": "The practical motivation was procedural. Under conventional",
-            "p": "de praktikal motivashon uós prosederal. ánder convénshonal"
-          },
-          {
-            "t": "environmental law, someone wishing to defend a river must demonstrate",
-            "p": "enveronmental lo, somóun uishing tu defend a ríver mast demonstréit"
-          },
-          {
-            "t": "personal injury: that pollution damaged their health,",
-            "p": "personal inyeri: dat polushon daméiyd déar jils,"
-          },
-          {
-            "t": "their property or their livelihood. If nobody can show such harm,",
-            "p": "déar properti or déar livelijud. if nobodi can shóu sach jarm,"
-          },
-          {
-            "t": "the damage goes unchallenged. Granting the river standing removes that",
-            "p": "de daméig góus unchalenyd. granting de ríver stánding remóuvs dat"
-          },
-          {
-            "t": "requirement, because the injured party is the river itself.",
-            "p": "rkuáerement, bicós de inyerd parti is de ríver itself."
-          }
-        ],
-        [
-          {
-            "t": "Similar arrangements have since appeared in Ecuador,",
-            "p": "similar aranyements jav sins apéerd in ekuador,"
-          },
-          {
-            "t": "Colombia, Bangladesh and parts of the United States,",
-            "p": "kolombia, bangladsh end parts ov de unáited stéits,"
-          },
-          {
-            "t": "with markedly different outcomes. Where courts already functioned well",
-            "p": "uíd markedli dífrent otkóums. uér corts alridi funktióund uel"
-          },
-          {
-            "t": "and guardians were adequately funded, cases have been brought and",
-            "p": "end gárdians uér adkuateli funded, kéises jav bin brot end"
-          },
-          {
-            "t": "occasionally won. Where enforcement was weak beforehand,",
-            "p": "okkashonali uon. uér enfórsment uós uik beforejand,"
-          },
-          {
-            "t": "personhood has changed very little, which suggests the mechanism",
-            "p": "personjud jas chéinchd véri litol, uích sagchésts de mchanism"
-          },
-          {
-            "t": "amplifies existing institutional capacity rather than substituting for",
-            "p": "amplifis eksisting institushonal kapasiti ráder dan substituting for"
-          },
-          {
-            "t": "it.",
-            "p": "it."
-          }
-        ],
-        [
-          {
-            "t": "Critics raise a problem that supporters find harder to dismiss than they",
-            "p": "kritiks raáis a problem dat suporters fáind jarder tu dismis dan déi"
-          },
-          {
-            "t": "admit: who speaks for the river, and what happens when guardians",
-            "p": "admit: ju spiks for de ríver, end uót japens uén gárdians"
-          },
-          {
-            "t": "disagree with the communities living along it?",
-            "p": "disagri uíd de komunitis líving alóng it?"
-          },
-          {
-            "t": "A river has no preferences. Its interests must be inferred,",
-            "p": "a ríver jas nóu preferenses. its interests mast bi inferd,"
-          },
-          {
-            "t": "and inference is a form of authorship. The guardian's judgement",
-            "p": "end inferens is a form ov osorship. de gárdians yuchment"
-          },
-          {
-            "t": "inevitably becomes the river's voice.",
-            "p": "inevitabli bicáms de rívers voáik."
-          }
-        ],
-        [
-          {
-            "t": "There is also a question of scope. A river is relatively easy to",
-            "p": "déar is ólsou a kuéschon ov skóup. a ríver is relativeli isi tu"
-          },
-          {
-            "t": "delimit, though even its boundaries are contested where tributaries and",
-            "p": "delimit, dóu íven its bondaris ar kontested uér tributaris end"
-          },
-          {
-            "t": "aquifers are concerned. An ecosystem is harder.",
-            "p": "akuáifers ar consérnd. an ícousistem is jarder."
-          },
-          {
-            "t": "A climate system is harder still. Lawyers who welcome the Whanganui",
-            "p": "a cláimet system is jarder stil. loyers ju uelkóum de uanganui"
-          },
-          {
-            "t": "precedent tend to become cautious when asked where the principle ends.",
-            "p": "presedent tend tu bicám koshas uén askt uér de prinsipol ends."
-          }
-        ],
-        [
-          {
-            "t": "None of these objections has slowed the trend.",
-            "p": "nan ov dís obyekshons jas slóued de trend."
-          },
-          {
-            "t": "Roughly forty jurisdictions have now adopted some version of",
-            "p": "ráfli forti yurisdíkshons jav náu adopted sam vershon ov"
-          },
-          {
-            "t": "rights-of-nature legislation, and the number of filed cases is growing",
-            "p": "ráits-of-nacher leyislashon, end de number ov fáild kéises is gróuing"
-          },
-          {
-            "t": "faster than the number of successful ones. Whether the trend amounts to",
-            "p": "faster dan de number ov suksesful uáns. uéder de trend amonts tu"
-          },
-          {
-            "t": "a lasting legal innovation or a symbolic gesture with limited practical",
-            "p": "a lasting lígal inovashon or a symbolik yescher uíd limáited praktikal"
-          },
-          {
-            "t": "force is still unsettled, and candid advocates admit as much.",
-            "p": "fors is stil unsetld, end kandid advokéits admit as mach."
-          }
-        ]
+      [
+        {
+          "t": "Similar arrangements have since appeared in Ecuador,",
+          "p": "similar aranyements jav sins apéerd in ekuador,"
+        },
+        {
+          "t": "Colombia, Bangladesh and parts of the United States,",
+          "p": "kolombia, bangladsh end parts ov de unáited stéits,"
+        },
+        {
+          "t": "with markedly different outcomes. Where courts already functioned well",
+          "p": "uíd markedli dífrent otkóums. uér corts alridi funktióund uel"
+        },
+        {
+          "t": "and guardians were adequately funded, cases have been brought and",
+          "p": "end gárdians uér adkuateli funded, kéises jav bin brot end"
+        },
+        {
+          "t": "occasionally won. Where enforcement was weak beforehand,",
+          "p": "okkashonali uon. uér enfórsment uós uik beforejand,"
+        },
+        {
+          "t": "personhood has changed very little, which suggests the mechanism",
+          "p": "personjud jas chéinchd véri litol, uích sagchésts de mchanism"
+        },
+        {
+          "t": "amplifies existing institutional capacity rather than substituting for",
+          "p": "amplifis eksisting institushonal kapasiti ráder dan substituting for"
+        },
+        {
+          "t": "it.",
+          "p": "it."
+        }
+      ],
+      [
+        {
+          "t": "Critics raise a problem that supporters find harder to dismiss than they",
+          "p": "kritiks raáis a problem dat suporters fáind jarder tu dismis dan déi"
+        },
+        {
+          "t": "admit: who speaks for the river, and what happens when guardians",
+          "p": "admit: ju spiks for de ríver, end uót japens uén gárdians"
+        },
+        {
+          "t": "disagree with the communities living along it?",
+          "p": "disagri uíd de komunitis líving alóng it?"
+        },
+        {
+          "t": "A river has no preferences. Its interests must be inferred,",
+          "p": "a ríver jas nóu preferenses. its interests mast bi inferd,"
+        },
+        {
+          "t": "and inference is a form of authorship. The guardian's judgement",
+          "p": "end inferens is a form ov osorship. de gárdians yuchment"
+        },
+        {
+          "t": "inevitably becomes the river's voice.",
+          "p": "inevitabli bicáms de rívers voáik."
+        }
+      ],
+      [
+        {
+          "t": "There is also a question of scope. A river is relatively easy to",
+          "p": "déar is ólsou a kuéschon ov skóup. a ríver is relativeli isi tu"
+        },
+        {
+          "t": "delimit, though even its boundaries are contested where tributaries and",
+          "p": "delimit, dóu íven its bondaris ar kontested uér tributaris end"
+        },
+        {
+          "t": "aquifers are concerned. An ecosystem is harder.",
+          "p": "akuáifers ar consérnd. an ícousistem is jarder."
+        },
+        {
+          "t": "A climate system is harder still. Lawyers who welcome the Whanganui",
+          "p": "a cláimet system is jarder stil. loyers ju uelkóum de uanganui"
+        },
+        {
+          "t": "precedent tend to become cautious when asked where the principle ends.",
+          "p": "presedent tend tu bicám koshas uén askt uér de prinsipol ends."
+        }
+      ],
+      [
+        {
+          "t": "None of these objections has slowed the trend.",
+          "p": "nan ov dís obyekshons jas slóued de trend."
+        },
+        {
+          "t": "Roughly forty jurisdictions have now adopted some version of",
+          "p": "ráfli forti yurisdíkshons jav náu adopted sam vershon ov"
+        },
+        {
+          "t": "rights-of-nature legislation, and the number of filed cases is growing",
+          "p": "ráits-of-nacher leyislashon, end de number ov fáild kéises is gróuing"
+        },
+        {
+          "t": "faster than the number of successful ones. Whether the trend amounts to",
+          "p": "faster dan de number ov suksesful uáns. uéder de trend amonts tu"
+        },
+        {
+          "t": "a lasting legal innovation or a symbolic gesture with limited practical",
+          "p": "a lasting lígal inovashon or a symbolik yescher uíd limáited praktikal"
+        },
+        {
+          "t": "force is still unsettled, and candid advocates admit as much.",
+          "p": "fors is stil unsetld, end kandid advokéits admit as mach."
+        }
       ]
-    },
-    {
-      "title": "An unpopular decision about school timetables",
-      "body": [
-        "The proposal arrived at Fenner Academy in the form of a two-page memo: move the start of the school day from eight to nine-fifteen for pupils aged fourteen and above. The evidence cited was familiar to anyone who follows adolescent sleep research, which is to say it was substantial, replicated and largely ignored by schools for two decades.",
-        "Adolescent circadian rhythms shift later during puberty. Teenagers do not merely prefer to sleep late; the hormonal signals that produce sleepiness arrive around two hours later than in adults, and no amount of earlier bedtimes reliably overrides this. A fourteen-year-old told to sleep at nine will frequently lie awake, not out of defiance but because the biology is not cooperating.",
-        "Fenner's headteacher expected resistance from pupils and received almost none. The resistance came from parents whose working hours depended on the school run, from bus companies operating shared routes with primary schools, and from sports coaches whose fixtures were scheduled against institutions keeping conventional hours. None of these objections concerned the evidence, and none was trivial.",
-        "The compromise that emerged pleased nobody entirely. Older pupils start at nine, younger ones at eight-fifteen, and the school runs a supervised study room from seven-forty for families who cannot adjust their schedules. Roughly a fifth of eligible pupils use it, arriving at the original time and reading quietly until lessons begin.",
-        "Two years of internal data show modest gains: attendance in first-period lessons improved, recorded lateness fell substantially, and teachers report fewer disciplinary incidents before break. Examination results have not moved measurably, a finding the school publishes alongside the positive figures rather than burying, on the grounds that overstating the case would invite a backlash later.",
-        "Other schools have visited and mostly left unconvinced, though rarely because they dispute the science. The obstacle is almost always logistical entanglement: a timetable is connected to transport contracts, staff arrangements, examination boards and the schedules of neighbouring institutions, and a single school changing its hours creates friction across all of them.",
-        "The headteacher's own summary is deflationary. She describes the change as a small improvement purchased at a disproportionate administrative cost, worth doing but not the transformation the research coverage implied. Asked whether she would do it again, she said yes, and then added that she would want to know what the answer was in ten years rather than two."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "En 2017, un río de Nueva Zelanda recibió el estatus legal de persona. El Whanganui no se convirtió en humano, y la ley no fingió lo contrario. Lo que adquirió fue capacidad jurídica: la de poseer derechos, la de tener bienes a su propio nombre y, sobre todo, la de ser representado ante los tribunales por guardianes designados cuando se le causa un daño.",
+      "La idea suena novedosa y no lo es. Las sociedades mercantiles han tenido personalidad jurídica durante siglos, al igual que los barcos, los templos y las herencias en diversas jurisdicciones. Los sistemas legales nunca han restringido la personalidad a los seres humanos; simplemente han elegido qué entidades no humanas la merecían. Extender la categoría a un curso de agua cambió la lista de miembros, no el mecanismo subyacente.",
+      "La motivación práctica era de procedimiento. Bajo el derecho ambiental convencional, quien desee defender un río debe demostrar un perjuicio personal: que la contaminación dañó su salud, sus bienes o su medio de vida. Si nadie puede demostrar tal daño, el perjuicio queda sin impugnar. Otorgarle capacidad jurídica al río elimina ese requisito, porque la parte perjudicada es el río mismo.",
+      "Desde entonces han aparecido acuerdos similares en Ecuador, Colombia, Bangladés y partes de Estados Unidos, con resultados notablemente distintos. Donde los tribunales ya funcionaban bien y los guardianes contaban con financiación adecuada, se han presentado causas y de vez en cuando se han ganado. Donde la aplicación de la ley ya era débil de antemano, la personalidad jurídica ha cambiado muy poco, lo que sugiere que el mecanismo amplifica la capacidad institucional existente en lugar de sustituirla.",
+      "Los críticos plantean un problema que a los partidarios les cuesta desestimar más de lo que admiten: ¿quién habla por el río, y qué ocurre cuando los guardianes discrepan con las comunidades que viven a lo largo de él? Un río no tiene preferencias. Sus intereses deben inferirse, y la inferencia es una forma de autoría. El criterio del guardián se convierte inevitablemente en la voz del río.",
+      "Hay también una cuestión de alcance. Un río es relativamente fácil de delimitar, aunque incluso sus límites se discuten cuando entran en juego afluentes y acuíferos. Un ecosistema es más difícil. Un sistema climático lo es todavía más. Los juristas que celebran el precedente del Whanganui tienden a volverse cautelosos cuando se les pregunta dónde termina el principio.",
+      "Ninguna de estas objeciones ha frenado la tendencia. Alrededor de cuarenta jurisdicciones han adoptado ya alguna versión de legislación sobre los derechos de la naturaleza, y el número de causas presentadas crece más rápido que el de las que prosperan. Si la tendencia equivale a una innovación jurídica duradera o a un gesto simbólico de fuerza práctica limitada sigue sin resolverse, y los defensores sinceros así lo reconocen."
+    ]
+  },
+  {
+    "title": "An unpopular decision about school timetables",
+    "body": [
+      "The proposal arrived at Fenner Academy in the form of a two-page memo: move the start of the school day from eight to nine-fifteen for pupils aged fourteen and above. The evidence cited was familiar to anyone who follows adolescent sleep research, which is to say it was substantial, replicated and largely ignored by schools for two decades.",
+      "Adolescent circadian rhythms shift later during puberty. Teenagers do not merely prefer to sleep late; the hormonal signals that produce sleepiness arrive around two hours later than in adults, and no amount of earlier bedtimes reliably overrides this. A fourteen-year-old told to sleep at nine will frequently lie awake, not out of defiance but because the biology is not cooperating.",
+      "Fenner's headteacher expected resistance from pupils and received almost none. The resistance came from parents whose working hours depended on the school run, from bus companies operating shared routes with primary schools, and from sports coaches whose fixtures were scheduled against institutions keeping conventional hours. None of these objections concerned the evidence, and none was trivial.",
+      "The compromise that emerged pleased nobody entirely. Older pupils start at nine, younger ones at eight-fifteen, and the school runs a supervised study room from seven-forty for families who cannot adjust their schedules. Roughly a fifth of eligible pupils use it, arriving at the original time and reading quietly until lessons begin.",
+      "Two years of internal data show modest gains: attendance in first-period lessons improved, recorded lateness fell substantially, and teachers report fewer disciplinary incidents before break. Examination results have not moved measurably, a finding the school publishes alongside the positive figures rather than burying, on the grounds that overstating the case would invite a backlash later.",
+      "Other schools have visited and mostly left unconvinced, though rarely because they dispute the science. The obstacle is almost always logistical entanglement: a timetable is connected to transport contracts, staff arrangements, examination boards and the schedules of neighbouring institutions, and a single school changing its hours creates friction across all of them.",
+      "The headteacher's own summary is deflationary. She describes the change as a small improvement purchased at a disproportionate administrative cost, worth doing but not the transformation the research coverage implied. Asked whether she would do it again, she said yes, and then added that she would want to know what the answer was in ten years rather than two."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "The research on adolescent sleep was new when the proposal was made.",
+        "a": "False",
+        "why": "The evidence was familiar, substantial and replicated, though ignored for two decades."
+      },
+      {
+        "q": "Pupils objected strongly to the later start.",
+        "a": "False",
+        "why": "The headteacher expected resistance from pupils and received almost none."
+      },
+      {
+        "q": "The school offers early supervision for families who need it.",
+        "a": "True",
+        "why": "A supervised study room runs from seven-forty."
+      },
+      {
+        "q": "Examination results improved significantly after the change.",
+        "a": "False",
+        "why": "Examination results have not moved measurably."
+      },
+      {
+        "q": "The local council provided funding for the new timetable.",
+        "a": "Not Given",
+        "why": "No funding arrangements are mentioned anywhere."
+      }
+    ],
+    "short": [
+      {
+        "q": "What proportion of eligible pupils use the early study room?",
+        "a": "a fifth"
+      },
+      {
+        "q": "How much later do sleepiness signals arrive in teenagers than in adults?",
+        "a": "two hours"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why does the writer say a teenager may lie awake at nine o'clock?",
+        "options": [
+          "Because their biological signals for sleep have not yet arrived.",
+          "Because they are deliberately disobeying instructions.",
+          "Because they have consumed too much caffeine.",
+          "Because screen use has disrupted their routine."
+        ],
+        "a": 0,
+        "why": "The hormonal signals producing sleepiness arrive later; it is not defiance but biology."
+      },
+      {
+        "q": "What characterised the objections the school actually received?",
+        "options": [
+          "They challenged the reliability of the sleep research.",
+          "They were practical concerns unrelated to the evidence.",
+          "They were dismissed as unreasonable by the headteacher.",
+          "They came mainly from teaching staff."
+        ],
+        "a": 1,
+        "why": "The objections concerned school runs, buses and fixtures; none concerned the evidence and none was trivial."
+      },
+      {
+        "q": "Why does the school publish its disappointing exam data?",
+        "options": [
+          "Because examination boards require full disclosure.",
+          "Because parents demanded access to the figures.",
+          "To avoid a later reaction against an overstated claim.",
+          "To encourage other schools to adopt the timetable."
+        ],
+        "a": 2,
+        "why": "Overstating the case would invite a backlash later."
+      },
+      {
+        "q": "What mainly prevents other schools from copying the change?",
+        "options": [
+          "Opposition from their own pupils.",
+          "Disagreement about the underlying science.",
+          "The cost of running supervised study rooms.",
+          "The interlocking commitments a timetable involves."
+        ],
+        "a": 3,
+        "why": "The obstacle is logistical entanglement across transport, staffing, boards and neighbouring schools."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "The research on adolescent sleep was new when the proposal was made.",
-          "a": "False",
-          "why": "The evidence was familiar, substantial and replicated, though ignored for two decades."
+          "t": "The proposal arrived at Fenner Academy in the form of a two-page memo:",
+          "p": "de proposal aráivd at fener akademi in de form ov a tuo-péig memo:"
         },
         {
-          "q": "Pupils objected strongly to the later start.",
-          "a": "False",
-          "why": "The headteacher expected resistance from pupils and received almost none."
+          "t": "move the start of the school day from eight to nine-fifteen for pupils",
+          "p": "móuv de start ov de skul déi from eáit tu náin-fiftin for piúpils"
         },
         {
-          "q": "The school offers early supervision for families who need it.",
-          "a": "True",
-          "why": "A supervised study room runs from seven-forty."
+          "t": "aged fourteen and above. The evidence cited was familiar to anyone who",
+          "p": "éiyd fortín end abáv. de évidens káited uós familiar tu anióun ju"
         },
         {
-          "q": "Examination results improved significantly after the change.",
-          "a": "False",
-          "why": "Examination results have not moved measurably."
+          "t": "follows adolescent sleep research, which is to say it was substantial,",
+          "p": "folóus adolesent slip resíarch, uích is tu séi it uós substanshal,"
         },
         {
-          "q": "The local council provided funding for the new timetable.",
-          "a": "Not Given",
-          "why": "No funding arrangements are mentioned anywhere."
+          "t": "replicated and largely ignored by schools for two decades.",
+          "p": "replikéited end laryeli áinóerd bái skuls for tu dékeids."
         }
       ],
-      "short": [
+      [
         {
-          "q": "What proportion of eligible pupils use the early study room?",
-          "a": "a fifth"
+          "t": "Adolescent circadian rhythms shift later during puberty.",
+          "p": "adolesent serkadian rjysms shift léiter dering puberti."
         },
         {
-          "q": "How much later do sleepiness signals arrive in teenagers than in adults?",
-          "a": "two hours"
+          "t": "Teenagers do not merely prefer to sleep late;",
+          "p": "tíneiyers du not mereli prefer tu slip léit;"
+        },
+        {
+          "t": "the hormonal signals that produce sleepiness arrive around two hours",
+          "p": "de jormonal signals dat prodiús slipines aráiv aráund tu áuars"
+        },
+        {
+          "t": "later than in adults, and no amount of earlier bedtimes reliably",
+          "p": "léiter dan in adults, end nóu amont ov irlir bédtaims reliabli"
+        },
+        {
+          "t": "overrides this. A fourteen-year-old told to sleep at nine will",
+          "p": "overáids dis. a fóurtin-yíar-óuld tóuld tu slip at náin uíl"
+        },
+        {
+          "t": "frequently lie awake, not out of defiance but because the biology is not",
+          "p": "fríkuentli li oéik, not áut ov defians bat bicós de baióloyi is not"
+        },
+        {
+          "t": "cooperating.",
+          "p": "koóuperéiting."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why does the writer say a teenager may lie awake at nine o'clock?",
-          "options": [
-            "Because their biological signals for sleep have not yet arrived.",
-            "Because they are deliberately disobeying instructions.",
-            "Because they have consumed too much caffeine.",
-            "Because screen use has disrupted their routine."
-          ],
-          "a": 0,
-          "why": "The hormonal signals producing sleepiness arrive later; it is not defiance but biology."
+          "t": "Fenner's headteacher expected resistance from pupils and received almost",
+          "p": "fener's jidticher ekspekted resistans from piúpils end resáivd ólmoust"
         },
         {
-          "q": "What characterised the objections the school actually received?",
-          "options": [
-            "They challenged the reliability of the sleep research.",
-            "They were practical concerns unrelated to the evidence.",
-            "They were dismissed as unreasonable by the headteacher.",
-            "They came mainly from teaching staff."
-          ],
-          "a": 1,
-          "why": "The objections concerned school runs, buses and fixtures; none concerned the evidence and none was trivial."
+          "t": "none. The resistance came from parents whose working hours depended on",
+          "p": "nan. de resistans kéim from parents uóus uérking áuars depended on"
         },
         {
-          "q": "Why does the school publish its disappointing exam data?",
-          "options": [
-            "Because examination boards require full disclosure.",
-            "Because parents demanded access to the figures.",
-            "To avoid a later reaction against an overstated claim.",
-            "To encourage other schools to adopt the timetable."
-          ],
-          "a": 2,
-          "why": "Overstating the case would invite a backlash later."
+          "t": "the school run, from bus companies operating shared routes with primary",
+          "p": "de skul run, from bus kompanis óuperéiting shéerd roiúts uíd primari"
         },
         {
-          "q": "What mainly prevents other schools from copying the change?",
-          "options": [
-            "Opposition from their own pupils.",
-            "Disagreement about the underlying science.",
-            "The cost of running supervised study rooms.",
-            "The interlocking commitments a timetable involves."
-          ],
-          "a": 3,
-          "why": "The obstacle is logistical entanglement across transport, staffing, boards and neighbouring schools."
+          "t": "schools, and from sports coaches whose fixtures were scheduled against",
+          "p": "skuls, end from sports cóuches uóus fikschers uér skeduld eguénst"
+        },
+        {
+          "t": "institutions keeping conventional hours. None of these objections",
+          "p": "institushons kiping convénshonal áuars. nan ov dís obyekshons"
+        },
+        {
+          "t": "concerned the evidence, and none was trivial.",
+          "p": "consérnd de évidens, end nan uós trivial."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "The proposal arrived at Fenner Academy in the form of a two-page memo:",
-            "p": "de proposal aráivd at fener akademi in de form ov a tuo-péig memo:"
-          },
-          {
-            "t": "move the start of the school day from eight to nine-fifteen for pupils",
-            "p": "móuv de start ov de skul déi from eáit tu náin-fiftin for piúpils"
-          },
-          {
-            "t": "aged fourteen and above. The evidence cited was familiar to anyone who",
-            "p": "éiyd fortín end abáv. de évidens káited uós familiar tu anióun ju"
-          },
-          {
-            "t": "follows adolescent sleep research, which is to say it was substantial,",
-            "p": "folóus adolesent slip resíarch, uích is tu séi it uós substanshal,"
-          },
-          {
-            "t": "replicated and largely ignored by schools for two decades.",
-            "p": "replikéited end laryeli áinóerd bái skuls for tu dékeids."
-          }
-        ],
-        [
-          {
-            "t": "Adolescent circadian rhythms shift later during puberty.",
-            "p": "adolesent serkadian rjysms shift léiter dering puberti."
-          },
-          {
-            "t": "Teenagers do not merely prefer to sleep late;",
-            "p": "tíneiyers du not mereli prefer tu slip léit;"
-          },
-          {
-            "t": "the hormonal signals that produce sleepiness arrive around two hours",
-            "p": "de jormonal signals dat prodiús slipines aráiv aráund tu áuars"
-          },
-          {
-            "t": "later than in adults, and no amount of earlier bedtimes reliably",
-            "p": "léiter dan in adults, end nóu amont ov irlir bédtaims reliabli"
-          },
-          {
-            "t": "overrides this. A fourteen-year-old told to sleep at nine will",
-            "p": "overáids dis. a fóurtin-yíar-óuld tóuld tu slip at náin uíl"
-          },
-          {
-            "t": "frequently lie awake, not out of defiance but because the biology is not",
-            "p": "fríkuentli li oéik, not áut ov defians bat bicós de baióloyi is not"
-          },
-          {
-            "t": "cooperating.",
-            "p": "koóuperéiting."
-          }
-        ],
-        [
-          {
-            "t": "Fenner's headteacher expected resistance from pupils and received almost",
-            "p": "fener's jidticher ekspekted resistans from piúpils end resáivd ólmoust"
-          },
-          {
-            "t": "none. The resistance came from parents whose working hours depended on",
-            "p": "nan. de resistans kéim from parents uóus uérking áuars depended on"
-          },
-          {
-            "t": "the school run, from bus companies operating shared routes with primary",
-            "p": "de skul run, from bus kompanis óuperéiting shéerd roiúts uíd primari"
-          },
-          {
-            "t": "schools, and from sports coaches whose fixtures were scheduled against",
-            "p": "skuls, end from sports cóuches uóus fikschers uér skeduld eguénst"
-          },
-          {
-            "t": "institutions keeping conventional hours. None of these objections",
-            "p": "institushons kiping convénshonal áuars. nan ov dís obyekshons"
-          },
-          {
-            "t": "concerned the evidence, and none was trivial.",
-            "p": "consérnd de évidens, end nan uós trivial."
-          }
-        ],
-        [
-          {
-            "t": "The compromise that emerged pleased nobody entirely.",
-            "p": "de kompromáis dat emeryd poléist nobodi entereli."
-          },
-          {
-            "t": "Older pupils start at nine, younger ones at eight-fifteen,",
-            "p": "older piúpils start at náin, yonyer uáns at eáit-fiftin,"
-          },
-          {
-            "t": "and the school runs a supervised study room from seven-forty for",
-            "p": "end de skul runs a superváist studi rum from seven-forti for"
-          },
-          {
-            "t": "families who cannot adjust their schedules. Roughly a fifth of eligible",
-            "p": "familis ju kanot adyust déar skediúls. ráfli a fifs ov eliyibol"
-          },
-          {
-            "t": "pupils use it, arriving at the original time and reading quietly until",
-            "p": "piúpils iús it, aráiving at de oriyinal táim end ríding kuitli antíl"
-          },
-          {
-            "t": "lessons begin.",
-            "p": "lesons beyin."
-          }
-        ],
-        [
-          {
-            "t": "Two years of internal data show modest gains:",
-            "p": "tu yirs ov internal déita shóu modest géins:"
-          },
-          {
-            "t": "attendance in first-period lessons improved,",
-            "p": "aténdans in ferst-period lesons impróuvd,"
-          },
-          {
-            "t": "recorded lateness fell substantially, and teachers report fewer",
-            "p": "rekorded léitnes fel substantiali, end tichers report feuer"
-          },
-          {
-            "t": "disciplinary incidents before break. Examination results have not moved",
-            "p": "disiplinari insidents bifór brik. eksaminashon results jav not muvd"
-          },
-          {
-            "t": "measurably, a finding the school publishes alongside the positive",
-            "p": "miserabli, a finding de skul publishes alongsáid de positáiv"
-          },
-          {
-            "t": "figures rather than burying, on the grounds that overstating the case",
-            "p": "fíguers ráder dan berying, on de gronds dat overstéiting de kéis"
-          },
-          {
-            "t": "would invite a backlash later.",
-            "p": "vud inváit a baklash léiter."
-          }
-        ],
-        [
-          {
-            "t": "Other schools have visited and mostly left unconvinced,",
-            "p": "áder skuls jav visáited end mostli left unkonvinst,"
-          },
-          {
-            "t": "though rarely because they dispute the science.",
-            "p": "dóu rareli bicós déi dispiút de sins."
-          },
-          {
-            "t": "The obstacle is almost always logistical entanglement:",
-            "p": "de obstakol is ólmoust aluéis loyistikal entanglement:"
-          },
-          {
-            "t": "a timetable is connected to transport contracts,",
-            "p": "a táimteibol is konekted tu tránsport kontrakts,"
-          },
-          {
-            "t": "staff arrangements, examination boards and the schedules of neighbouring",
-            "p": "staf aranyements, eksaminashon bóurds end de skediúls ov náibóuring"
-          },
-          {
-            "t": "institutions, and a single school changing its hours creates friction",
-            "p": "institushons, end a singol skul chanying its áuars kréits frikshon"
-          },
-          {
-            "t": "across all of them.",
-            "p": "acrós ol ov dem."
-          }
-        ],
-        [
-          {
-            "t": "The headteacher's own summary is deflationary.",
-            "p": "de jidticher's óun sumari is deflationari."
-          },
-          {
-            "t": "She describes the change as a small improvement purchased at a",
-            "p": "shi deskráibs de chéinch as a smal impróuvement perchéist at a"
-          },
-          {
-            "t": "disproportionate administrative cost, worth doing but not the",
-            "p": "disproportionéit administratáiv cost, uérz doing bat not de"
-          },
-          {
-            "t": "transformation the research coverage implied.",
-            "p": "transformashon de resíarch kóuveréig impláid."
-          },
-          {
-            "t": "Asked whether she would do it again, she said yes,",
-            "p": "askt uéder shi vud du it eguén, shi sed yes,"
-          },
-          {
-            "t": "and then added that she would want to know what the answer was in ten",
-            "p": "end den aded dat shi vud uónt tu no uót de ánser uós in ten"
-          },
-          {
-            "t": "years rather than two.",
-            "p": "yirs ráder dan tu."
-          }
-        ]
+      [
+        {
+          "t": "The compromise that emerged pleased nobody entirely.",
+          "p": "de kompromáis dat emeryd poléist nobodi entereli."
+        },
+        {
+          "t": "Older pupils start at nine, younger ones at eight-fifteen,",
+          "p": "older piúpils start at náin, yonyer uáns at eáit-fiftin,"
+        },
+        {
+          "t": "and the school runs a supervised study room from seven-forty for",
+          "p": "end de skul runs a superváist studi rum from seven-forti for"
+        },
+        {
+          "t": "families who cannot adjust their schedules. Roughly a fifth of eligible",
+          "p": "familis ju kanot adyust déar skediúls. ráfli a fifs ov eliyibol"
+        },
+        {
+          "t": "pupils use it, arriving at the original time and reading quietly until",
+          "p": "piúpils iús it, aráiving at de oriyinal táim end ríding kuitli antíl"
+        },
+        {
+          "t": "lessons begin.",
+          "p": "lesons beyin."
+        }
+      ],
+      [
+        {
+          "t": "Two years of internal data show modest gains:",
+          "p": "tu yirs ov internal déita shóu modest géins:"
+        },
+        {
+          "t": "attendance in first-period lessons improved,",
+          "p": "aténdans in ferst-period lesons impróuvd,"
+        },
+        {
+          "t": "recorded lateness fell substantially, and teachers report fewer",
+          "p": "rekorded léitnes fel substantiali, end tichers report feuer"
+        },
+        {
+          "t": "disciplinary incidents before break. Examination results have not moved",
+          "p": "disiplinari insidents bifór brik. eksaminashon results jav not muvd"
+        },
+        {
+          "t": "measurably, a finding the school publishes alongside the positive",
+          "p": "miserabli, a finding de skul publishes alongsáid de positáiv"
+        },
+        {
+          "t": "figures rather than burying, on the grounds that overstating the case",
+          "p": "fíguers ráder dan berying, on de gronds dat overstéiting de kéis"
+        },
+        {
+          "t": "would invite a backlash later.",
+          "p": "vud inváit a baklash léiter."
+        }
+      ],
+      [
+        {
+          "t": "Other schools have visited and mostly left unconvinced,",
+          "p": "áder skuls jav visáited end mostli left unkonvinst,"
+        },
+        {
+          "t": "though rarely because they dispute the science.",
+          "p": "dóu rareli bicós déi dispiút de sins."
+        },
+        {
+          "t": "The obstacle is almost always logistical entanglement:",
+          "p": "de obstakol is ólmoust aluéis loyistikal entanglement:"
+        },
+        {
+          "t": "a timetable is connected to transport contracts,",
+          "p": "a táimteibol is konekted tu tránsport kontrakts,"
+        },
+        {
+          "t": "staff arrangements, examination boards and the schedules of neighbouring",
+          "p": "staf aranyements, eksaminashon bóurds end de skediúls ov náibóuring"
+        },
+        {
+          "t": "institutions, and a single school changing its hours creates friction",
+          "p": "institushons, end a singol skul chanying its áuars kréits frikshon"
+        },
+        {
+          "t": "across all of them.",
+          "p": "acrós ol ov dem."
+        }
+      ],
+      [
+        {
+          "t": "The headteacher's own summary is deflationary.",
+          "p": "de jidticher's óun sumari is deflationari."
+        },
+        {
+          "t": "She describes the change as a small improvement purchased at a",
+          "p": "shi deskráibs de chéinch as a smal impróuvement perchéist at a"
+        },
+        {
+          "t": "disproportionate administrative cost, worth doing but not the",
+          "p": "disproportionéit administratáiv cost, uérz doing bat not de"
+        },
+        {
+          "t": "transformation the research coverage implied.",
+          "p": "transformashon de resíarch kóuveréig impláid."
+        },
+        {
+          "t": "Asked whether she would do it again, she said yes,",
+          "p": "askt uéder shi vud du it eguén, shi sed yes,"
+        },
+        {
+          "t": "and then added that she would want to know what the answer was in ten",
+          "p": "end den aded dat shi vud uónt tu no uót de ánser uós in ten"
+        },
+        {
+          "t": "years rather than two.",
+          "p": "yirs ráder dan tu."
+        }
       ]
-    },
-    {
-      "title": "The volunteers who map forgotten graves",
-      "body": [
-        "On the second Saturday of each month, a group of between six and thirty people gathers at the gate of a municipal cemetery on the city's northern edge, carrying trowels, clipboards and a shared spreadsheet on a tablet. They are looking for graves that exist on no register, and they have found more than four thousand.",
-        "The problem they address is administrative rather than mysterious. Burial records in many European cities were kept by parishes, then by municipalities, then by private companies, with each transfer producing losses. Fires, wars, floods and simple carelessness account for the rest. A grave with no record is not hidden; it is merely unindexed, and therefore invisible to anyone searching from a distance.",
-        "The method is unglamorous. Volunteers photograph a headstone, transcribe whatever remains legible, record its position by satellite coordinate, and cross-check the name against surviving registers. Where the stone has weathered past reading, they note the location and move on. Around a third of entries end as coordinates with no name, which the group regards as useful data rather than failure.",
-        "Requests arrive from three main sources. Genealogists form the largest group and are the easiest to help. Legal enquiries, usually connected to inheritance or land title, arrive occasionally and require far more care. The third category consists of families searching for a relative who died abroad, and these cases produce both the longest searches and the strongest reactions when they succeed.",
-        "The group is careful about what it promises. Its published guidance states plainly that most searches fail, that a missing record usually means the information no longer exists anywhere, and that the volunteers cannot investigate causes of death or family circumstances. This restraint has occasionally disappointed enquirers who expected an investigative service rather than an indexing one.",
-        "Municipal authorities have been cooperative but slow. The data the group produces is offered freely, yet incorporating it into official registers requires verification procedures that no department has been funded to carry out. Two cities have absorbed the records; eleven have thanked the volunteers and filed the material without acting on it.",
-        "The founder is dismissive of suggestions that the work is morbid. She points out that a cemetery is a public archive that happens to be outdoors, that the people buried there were indexed once, and that restoring an index is closer to library work than to anything sombre. The monthly gatherings, she adds, are noticeably cheerful."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "La propuesta llegó a la Academia Fenner en forma de un memorándum de dos páginas: trasladar el comienzo de la jornada escolar de las ocho a las nueve y cuarto para los alumnos de catorce años en adelante. La evidencia citada resultaba familiar para cualquiera que siga la investigación sobre el sueño de los adolescentes, es decir, era sólida, replicada y en gran medida ignorada por las escuelas durante dos décadas.",
+      "Los ritmos circadianos de los adolescentes se desplazan hacia más tarde durante la pubertad. Los jóvenes no solo prefieren dormir hasta tarde; las señales hormonales que producen somnolencia llegan unas dos horas más tarde que en los adultos, y ninguna cantidad de horarios de acostarse más tempranos consigue anular esto de forma fiable. A un chico de catorce años al que se le dice que se acueste a las nueve a menudo le costará conciliar el sueño, no por rebeldía, sino porque la biología no coopera.",
+      "El director de Fenner esperaba resistencia por parte de los alumnos y casi no la recibió. La resistencia vino de los padres cuyos horarios de trabajo dependían del traslado escolar, de las empresas de autobuses que operaban rutas compartidas con escuelas primarias, y de los entrenadores deportivos cuyos partidos estaban programados frente a instituciones con horarios convencionales. Ninguna de estas objeciones tenía que ver con la evidencia, y ninguna era trivial.",
+      "El acuerdo que surgió no dejó del todo contento a nadie. Los alumnos mayores empiezan a las nueve, los más jóvenes a las ocho y cuarto, y la escuela abre una sala de estudio supervisada desde las siete y cuarenta para las familias que no pueden ajustar sus horarios. Alrededor de una quinta parte de los alumnos habilitados la usa, llegando a la hora original y leyendo en silencio hasta que empiezan las clases.",
+      "Dos años de datos internos muestran mejoras modestas: la asistencia a las primeras clases mejoró, los retrasos registrados cayeron de forma considerable y los docentes informan menos incidentes disciplinarios antes del recreo. Los resultados de los exámenes no se han movido de forma medible, un hallazgo que la escuela publica junto con las cifras positivas en lugar de ocultarlo, con el argumento de que exagerar el caso invitaría a una reacción en contra más adelante.",
+      "Otras escuelas la han visitado y en su mayoría se han ido poco convencidas, aunque rara vez porque cuestionen la ciencia. El obstáculo es casi siempre el enredo logístico: un horario está conectado con contratos de transporte, disposiciones del personal, comisiones de exámenes y los horarios de las instituciones vecinas, y que una sola escuela cambie sus horas genera fricción en todos ellos.",
+      "El propio resumen de la directora es poco entusiasta. Describe el cambio como una pequeña mejora comprada a un costo administrativo desproporcionado, que vale la pena hacer pero que no es la transformación que insinuaba la cobertura de la investigación. Cuando le preguntaron si lo volvería a hacer, dijo que sí, y luego añadió que querría saber cuál sería la respuesta dentro de diez años y no de dos."
+    ]
+  },
+  {
+    "title": "The volunteers who map forgotten graves",
+    "body": [
+      "On the second Saturday of each month, a group of between six and thirty people gathers at the gate of a municipal cemetery on the city's northern edge, carrying trowels, clipboards and a shared spreadsheet on a tablet. They are looking for graves that exist on no register, and they have found more than four thousand.",
+      "The problem they address is administrative rather than mysterious. Burial records in many European cities were kept by parishes, then by municipalities, then by private companies, with each transfer producing losses. Fires, wars, floods and simple carelessness account for the rest. A grave with no record is not hidden; it is merely unindexed, and therefore invisible to anyone searching from a distance.",
+      "The method is unglamorous. Volunteers photograph a headstone, transcribe whatever remains legible, record its position by satellite coordinate, and cross-check the name against surviving registers. Where the stone has weathered past reading, they note the location and move on. Around a third of entries end as coordinates with no name, which the group regards as useful data rather than failure.",
+      "Requests arrive from three main sources. Genealogists form the largest group and are the easiest to help. Legal enquiries, usually connected to inheritance or land title, arrive occasionally and require far more care. The third category consists of families searching for a relative who died abroad, and these cases produce both the longest searches and the strongest reactions when they succeed.",
+      "The group is careful about what it promises. Its published guidance states plainly that most searches fail, that a missing record usually means the information no longer exists anywhere, and that the volunteers cannot investigate causes of death or family circumstances. This restraint has occasionally disappointed enquirers who expected an investigative service rather than an indexing one.",
+      "Municipal authorities have been cooperative but slow. The data the group produces is offered freely, yet incorporating it into official registers requires verification procedures that no department has been funded to carry out. Two cities have absorbed the records; eleven have thanked the volunteers and filed the material without acting on it.",
+      "The founder is dismissive of suggestions that the work is morbid. She points out that a cemetery is a public archive that happens to be outdoors, that the people buried there were indexed once, and that restoring an index is closer to library work than to anything sombre. The monthly gatherings, she adds, are noticeably cheerful."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Missing burial records are mainly the result of administrative changes and accidents.",
+        "a": "True",
+        "why": "Transfers between parishes, municipalities and companies caused losses, along with fires, wars and carelessness."
+      },
+      {
+        "q": "The volunteers abandon a grave entirely if the stone cannot be read.",
+        "a": "False",
+        "why": "They record the location and move on; unnamed coordinates count as useful data."
+      },
+      {
+        "q": "The group promises to investigate how people died.",
+        "a": "False",
+        "why": "Its guidance states the volunteers cannot investigate causes of death."
+      },
+      {
+        "q": "Most cities have formally adopted the volunteers' records.",
+        "a": "False",
+        "why": "Two cities absorbed the records; eleven filed them without acting."
+      },
+      {
+        "q": "The group receives government funding for its equipment.",
+        "a": "Not Given",
+        "why": "No funding for the volunteers is mentioned."
+      }
+    ],
+    "short": [
+      {
+        "q": "How many unregistered graves has the group found?",
+        "a": "more than four thousand"
+      },
+      {
+        "q": "What fraction of entries end without a name?",
+        "a": "a third"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What does the writer mean by describing an unrecorded grave as 'unindexed'?",
+        "options": [
+          "It is physically present but cannot be located through records.",
+          "It lies outside the boundaries of the cemetery.",
+          "It has been deliberately concealed by the authorities.",
+          "It contains no identifiable remains."
+        ],
+        "a": 0,
+        "why": "A grave with no record is not hidden, merely unindexed and therefore invisible to distant searchers."
+      },
+      {
+        "q": "Which category of request is described as most demanding?",
+        "options": [
+          "Requests connected to inheritance and land title.",
+          "Searches for relatives who died in another country.",
+          "Enquiries from genealogists.",
+          "Applications from municipal archivists."
+        ],
+        "a": 1,
+        "why": "Cases involving relatives who died abroad produce the longest searches and strongest reactions."
+      },
+      {
+        "q": "Why has official adoption of the data been limited?",
+        "options": [
+          "Privacy legislation forbids publishing burial data.",
+          "The volunteers charge municipalities for access.",
+          "Departments lack the resources to verify the records.",
+          "The records have been found to contain frequent errors."
+        ],
+        "a": 2,
+        "why": "Incorporating the data requires verification procedures no department has been funded to perform."
+      },
+      {
+        "q": "How does the founder characterise the nature of the work?",
+        "options": [
+          "As a solemn duty owed to the dead.",
+          "As a campaign to pressure local government.",
+          "As a hobby with no wider purpose.",
+          "As essentially a form of archival cataloguing."
+        ],
+        "a": 3,
+        "why": "She calls it closer to library work: restoring an index in an outdoor public archive."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Missing burial records are mainly the result of administrative changes and accidents.",
-          "a": "True",
-          "why": "Transfers between parishes, municipalities and companies caused losses, along with fires, wars and carelessness."
+          "t": "On the second Saturday of each month, a group of between six and thirty",
+          "p": "on de sécond saterdéi ov ich manz, a grup ov bituín siks end zérti"
         },
         {
-          "q": "The volunteers abandon a grave entirely if the stone cannot be read.",
-          "a": "False",
-          "why": "They record the location and move on; unnamed coordinates count as useful data."
+          "t": "people gathers at the gate of a municipal cemetery on the city's",
+          "p": "pípol gasers at de géit ov a munisipal sémeteri on de sitis"
         },
         {
-          "q": "The group promises to investigate how people died.",
-          "a": "False",
-          "why": "Its guidance states the volunteers cannot investigate causes of death."
+          "t": "northern edge, carrying trowels, clipboards and a shared spreadsheet on",
+          "p": "norsern ech, karying tróuels, klipbóurds end a shéerd spridshit on"
         },
         {
-          "q": "Most cities have formally adopted the volunteers' records.",
-          "a": "False",
-          "why": "Two cities absorbed the records; eleven filed them without acting."
+          "t": "a tablet. They are looking for graves that exist on no register,",
+          "p": "a tablet. déi ar loóuking for gréivs dat eksist on nóu réyister,"
         },
         {
-          "q": "The group receives government funding for its equipment.",
-          "a": "Not Given",
-          "why": "No funding for the volunteers is mentioned."
+          "t": "and they have found more than four thousand.",
+          "p": "end déi jav fond mor dan for záusand."
         }
       ],
-      "short": [
+      [
         {
-          "q": "How many unregistered graves has the group found?",
-          "a": "more than four thousand"
+          "t": "The problem they address is administrative rather than mysterious.",
+          "p": "de problem déi adres is administratáiv ráder dan mysterias."
         },
         {
-          "q": "What fraction of entries end without a name?",
-          "a": "a third"
+          "t": "Burial records in many European cities were kept by parishes,",
+          "p": "berial rekords in méni iropin sitis uér kept bái parishes,"
+        },
+        {
+          "t": "then by municipalities, then by private companies,",
+          "p": "den bái munisipalitis, den bái privéit kompanis,"
+        },
+        {
+          "t": "with each transfer producing losses. Fires, wars,",
+          "p": "uíd ich transfer produsing loses. fáers, uórs,"
+        },
+        {
+          "t": "floods and simple carelessness account for the rest.",
+          "p": "fluds end simpol karelesnes akkont for de rest."
+        },
+        {
+          "t": "A grave with no record is not hidden; it is merely unindexed,",
+          "p": "a gréiv uíd nóu récord is not jiden; it is mereli unindekst,"
+        },
+        {
+          "t": "and therefore invisible to anyone searching from a distance.",
+          "p": "end serefóer invísibol tu anióun síarching from a distans."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What does the writer mean by describing an unrecorded grave as 'unindexed'?",
-          "options": [
-            "It is physically present but cannot be located through records.",
-            "It lies outside the boundaries of the cemetery.",
-            "It has been deliberately concealed by the authorities.",
-            "It contains no identifiable remains."
-          ],
-          "a": 0,
-          "why": "A grave with no record is not hidden, merely unindexed and therefore invisible to distant searchers."
+          "t": "The method is unglamorous. Volunteers photograph a headstone,",
+          "p": "de mézod is unglamoras. volantíars fotograf a jédstoun,"
         },
         {
-          "q": "Which category of request is described as most demanding?",
-          "options": [
-            "Requests connected to inheritance and land title.",
-            "Searches for relatives who died in another country.",
-            "Enquiries from genealogists.",
-            "Applications from municipal archivists."
-          ],
-          "a": 1,
-          "why": "Cases involving relatives who died abroad produce the longest searches and strongest reactions."
+          "t": "transcribe whatever remains legible, record its position by satellite",
+          "p": "transkráib uatever reméins leyibol, récord its posishon bái sátelait"
         },
         {
-          "q": "Why has official adoption of the data been limited?",
-          "options": [
-            "Privacy legislation forbids publishing burial data.",
-            "The volunteers charge municipalities for access.",
-            "Departments lack the resources to verify the records.",
-            "The records have been found to contain frequent errors."
-          ],
-          "a": 2,
-          "why": "Incorporating the data requires verification procedures no department has been funded to perform."
+          "t": "coordinate, and cross-check the name against surviving registers.",
+          "p": "coórdinet, end kros-chek de néim eguénst serváiving réyisters."
         },
         {
-          "q": "How does the founder characterise the nature of the work?",
-          "options": [
-            "As a solemn duty owed to the dead.",
-            "As a campaign to pressure local government.",
-            "As a hobby with no wider purpose.",
-            "As essentially a form of archival cataloguing."
-          ],
-          "a": 3,
-          "why": "She calls it closer to library work: restoring an index in an outdoor public archive."
+          "t": "Where the stone has weathered past reading, they note the location and",
+          "p": "uér de stóun jas uiserd past ríding, déi nóut de lokashon end"
+        },
+        {
+          "t": "move on. Around a third of entries end as coordinates with no name,",
+          "p": "móuv on. aráund a zerd ov entris end as coórdinets uíd nóu néim,"
+        },
+        {
+          "t": "which the group regards as useful data rather than failure.",
+          "p": "uích de grup regards as useful déita ráder dan féiliúr."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "On the second Saturday of each month, a group of between six and thirty",
-            "p": "on de sécond saterdéi ov ich manz, a grup ov bituín siks end zérti"
-          },
-          {
-            "t": "people gathers at the gate of a municipal cemetery on the city's",
-            "p": "pípol gasers at de géit ov a munisipal sémeteri on de sitis"
-          },
-          {
-            "t": "northern edge, carrying trowels, clipboards and a shared spreadsheet on",
-            "p": "norsern ech, karying tróuels, klipbóurds end a shéerd spridshit on"
-          },
-          {
-            "t": "a tablet. They are looking for graves that exist on no register,",
-            "p": "a tablet. déi ar loóuking for gréivs dat eksist on nóu réyister,"
-          },
-          {
-            "t": "and they have found more than four thousand.",
-            "p": "end déi jav fond mor dan for záusand."
-          }
-        ],
-        [
-          {
-            "t": "The problem they address is administrative rather than mysterious.",
-            "p": "de problem déi adres is administratáiv ráder dan mysterias."
-          },
-          {
-            "t": "Burial records in many European cities were kept by parishes,",
-            "p": "berial rekords in méni iropin sitis uér kept bái parishes,"
-          },
-          {
-            "t": "then by municipalities, then by private companies,",
-            "p": "den bái munisipalitis, den bái privéit kompanis,"
-          },
-          {
-            "t": "with each transfer producing losses. Fires, wars,",
-            "p": "uíd ich transfer produsing loses. fáers, uórs,"
-          },
-          {
-            "t": "floods and simple carelessness account for the rest.",
-            "p": "fluds end simpol karelesnes akkont for de rest."
-          },
-          {
-            "t": "A grave with no record is not hidden; it is merely unindexed,",
-            "p": "a gréiv uíd nóu récord is not jiden; it is mereli unindekst,"
-          },
-          {
-            "t": "and therefore invisible to anyone searching from a distance.",
-            "p": "end serefóer invísibol tu anióun síarching from a distans."
-          }
-        ],
-        [
-          {
-            "t": "The method is unglamorous. Volunteers photograph a headstone,",
-            "p": "de mézod is unglamoras. volantíars fotograf a jédstoun,"
-          },
-          {
-            "t": "transcribe whatever remains legible, record its position by satellite",
-            "p": "transkráib uatever reméins leyibol, récord its posishon bái sátelait"
-          },
-          {
-            "t": "coordinate, and cross-check the name against surviving registers.",
-            "p": "coórdinet, end kros-chek de néim eguénst serváiving réyisters."
-          },
-          {
-            "t": "Where the stone has weathered past reading, they note the location and",
-            "p": "uér de stóun jas uiserd past ríding, déi nóut de lokashon end"
-          },
-          {
-            "t": "move on. Around a third of entries end as coordinates with no name,",
-            "p": "móuv on. aráund a zerd ov entris end as coórdinets uíd nóu néim,"
-          },
-          {
-            "t": "which the group regards as useful data rather than failure.",
-            "p": "uích de grup regards as useful déita ráder dan féiliúr."
-          }
-        ],
-        [
-          {
-            "t": "Requests arrive from three main sources. Genealogists form the largest",
-            "p": "rkuests aráiv from zri méin sóurses. yiniáloyists form de laryest"
-          },
-          {
-            "t": "group and are the easiest to help. Legal enquiries,",
-            "p": "grup end ar de isist tu jelp. lígal enkueris,"
-          },
-          {
-            "t": "usually connected to inheritance or land title,",
-            "p": "iúshuali konekted tu injéritans or land titol,"
-          },
-          {
-            "t": "arrive occasionally and require far more care.",
-            "p": "aráiv okkashonali end rkuáer far mor kéer."
-          },
-          {
-            "t": "The third category consists of families searching for a relative who",
-            "p": "de zerd kategori konsists ov familis síarching for a rélativ ju"
-          },
-          {
-            "t": "died abroad, and these cases produce both the longest searches and the",
-            "p": "dáid abróud, end dís kéises prodiús bóuz de lonyest síarches end de"
-          },
-          {
-            "t": "strongest reactions when they succeed.",
-            "p": "stronyest rikshons uén déi suksid."
-          }
-        ],
-        [
-          {
-            "t": "The group is careful about what it promises.",
-            "p": "de grup is kareful abáut uót it promises."
-          },
-          {
-            "t": "Its published guidance states plainly that most searches fail,",
-            "p": "its published guidans stéits pléinli dat móust síarches féil,"
-          },
-          {
-            "t": "that a missing record usually means the information no longer exists",
-            "p": "dat a mising récord iúshuali mins de informashon nóu lonyer eksists"
-          },
-          {
-            "t": "anywhere, and that the volunteers cannot investigate causes of death or",
-            "p": "anyuír, end dat de volantíars kanot investigéit koses ov dis or"
-          },
-          {
-            "t": "family circumstances. This restraint has occasionally disappointed",
-            "p": "famili serkumstanses. dis restréint jas okkashonali disapointed"
-          },
-          {
-            "t": "enquirers who expected an investigative service rather than an indexing",
-            "p": "enkuáerers ju ekspekted an investigatáiv sérvis ráder dan an indeksing"
-          },
-          {
-            "t": "one.",
-            "p": "uán."
-          }
-        ],
-        [
-          {
-            "t": "Municipal authorities have been cooperative but slow.",
-            "p": "munisipal osoritis jav bin kuperatáiv bat slo."
-          },
-          {
-            "t": "The data the group produces is offered freely,",
-            "p": "de déita de grup prodiúses is oferd frili,"
-          },
-          {
-            "t": "yet incorporating it into official registers requires verification",
-            "p": "yet inkorporéiting it íntu ofishal réyisters rkuáers verifikashon"
-          },
-          {
-            "t": "procedures that no department has been funded to carry out.",
-            "p": "prosediúrs dat nóu department jas bin funded tu kari áut."
-          },
-          {
-            "t": "Two cities have absorbed the records; eleven have thanked the volunteers",
-            "p": "tu sitis jav absorbd de rekords; iléven jav sankt de volantíars"
-          },
-          {
-            "t": "and filed the material without acting on it.",
-            "p": "end fáild de material uidáut akting on it."
-          }
-        ],
-        [
-          {
-            "t": "The founder is dismissive of suggestions that the work is morbid.",
-            "p": "de fonder is dismisáiv ov sagchéschons dat de uérk is morbid."
-          },
-          {
-            "t": "She points out that a cemetery is a public archive that happens to be",
-            "p": "shi points áut dat a sémeteri is a publik árkaiv dat japens tu bi"
-          },
-          {
-            "t": "outdoors, that the people buried there were indexed once,",
-            "p": "otdurs, dat de pípol beráid déar uér indekst uáns,"
-          },
-          {
-            "t": "and that restoring an index is closer to library work than to anything",
-            "p": "end dat restóering an indeks is klóuser tu librari uérk dan tu énizing"
-          },
-          {
-            "t": "sombre. The monthly gatherings, she adds, are noticeably cheerful.",
-            "p": "sombr. de monsli gaserings, shi ads, ar notisibli chirful."
-          }
-        ]
+      [
+        {
+          "t": "Requests arrive from three main sources. Genealogists form the largest",
+          "p": "rkuests aráiv from zri méin sóurses. yiniáloyists form de laryest"
+        },
+        {
+          "t": "group and are the easiest to help. Legal enquiries,",
+          "p": "grup end ar de isist tu jelp. lígal enkueris,"
+        },
+        {
+          "t": "usually connected to inheritance or land title,",
+          "p": "iúshuali konekted tu injéritans or land titol,"
+        },
+        {
+          "t": "arrive occasionally and require far more care.",
+          "p": "aráiv okkashonali end rkuáer far mor kéer."
+        },
+        {
+          "t": "The third category consists of families searching for a relative who",
+          "p": "de zerd kategori konsists ov familis síarching for a rélativ ju"
+        },
+        {
+          "t": "died abroad, and these cases produce both the longest searches and the",
+          "p": "dáid abróud, end dís kéises prodiús bóuz de lonyest síarches end de"
+        },
+        {
+          "t": "strongest reactions when they succeed.",
+          "p": "stronyest rikshons uén déi suksid."
+        }
+      ],
+      [
+        {
+          "t": "The group is careful about what it promises.",
+          "p": "de grup is kareful abáut uót it promises."
+        },
+        {
+          "t": "Its published guidance states plainly that most searches fail,",
+          "p": "its published guidans stéits pléinli dat móust síarches féil,"
+        },
+        {
+          "t": "that a missing record usually means the information no longer exists",
+          "p": "dat a mising récord iúshuali mins de informashon nóu lonyer eksists"
+        },
+        {
+          "t": "anywhere, and that the volunteers cannot investigate causes of death or",
+          "p": "anyuír, end dat de volantíars kanot investigéit koses ov dis or"
+        },
+        {
+          "t": "family circumstances. This restraint has occasionally disappointed",
+          "p": "famili serkumstanses. dis restréint jas okkashonali disapointed"
+        },
+        {
+          "t": "enquirers who expected an investigative service rather than an indexing",
+          "p": "enkuáerers ju ekspekted an investigatáiv sérvis ráder dan an indeksing"
+        },
+        {
+          "t": "one.",
+          "p": "uán."
+        }
+      ],
+      [
+        {
+          "t": "Municipal authorities have been cooperative but slow.",
+          "p": "munisipal osoritis jav bin kuperatáiv bat slo."
+        },
+        {
+          "t": "The data the group produces is offered freely,",
+          "p": "de déita de grup prodiúses is oferd frili,"
+        },
+        {
+          "t": "yet incorporating it into official registers requires verification",
+          "p": "yet inkorporéiting it íntu ofishal réyisters rkuáers verifikashon"
+        },
+        {
+          "t": "procedures that no department has been funded to carry out.",
+          "p": "prosediúrs dat nóu department jas bin funded tu kari áut."
+        },
+        {
+          "t": "Two cities have absorbed the records; eleven have thanked the volunteers",
+          "p": "tu sitis jav absorbd de rekords; iléven jav sankt de volantíars"
+        },
+        {
+          "t": "and filed the material without acting on it.",
+          "p": "end fáild de material uidáut akting on it."
+        }
+      ],
+      [
+        {
+          "t": "The founder is dismissive of suggestions that the work is morbid.",
+          "p": "de fonder is dismisáiv ov sagchéschons dat de uérk is morbid."
+        },
+        {
+          "t": "She points out that a cemetery is a public archive that happens to be",
+          "p": "shi points áut dat a sémeteri is a publik árkaiv dat japens tu bi"
+        },
+        {
+          "t": "outdoors, that the people buried there were indexed once,",
+          "p": "otdurs, dat de pípol beráid déar uér indekst uáns,"
+        },
+        {
+          "t": "and that restoring an index is closer to library work than to anything",
+          "p": "end dat restóering an indeks is klóuser tu librari uérk dan tu énizing"
+        },
+        {
+          "t": "sombre. The monthly gatherings, she adds, are noticeably cheerful.",
+          "p": "sombr. de monsli gaserings, shi ads, ar notisibli chirful."
+        }
       ]
-    },
-    {
-      "title": "Why translated fiction sells better than it used to",
-      "body": [
-        "Throughout much of the last century, publishers in English-speaking markets treated translated fiction as a category with a ceiling. The assumption was not entirely unfounded: translation costs money, foreign names complicate marketing, and readers were believed to prefer settings they recognised. Roughly three per cent of published fiction was translated, a figure so stable that it acquired a nickname.",
-        "That figure has been rising, unevenly and from a low base. The reasons offered are numerous and mostly unproven, which has not prevented them from being repeated confidently at industry conferences. Streaming subtitles, international crime series, prize shortlists and the collapse of certain gatekeeping structures all appear on the list.",
-        "One explanation with better evidence behind it concerns the translators themselves. Naming translators on covers, once uncommon, became a public campaign around 2021 and is now standard at several major houses. Books credited this way have sold measurably better, though whether the credit causes the sales or simply marks the houses already investing in promotion is not settled.",
-        "Another factor is structural. Small independent presses, several of them run by former translators, began acquiring rights that larger firms considered uncommercial. Their overheads are lower, their print runs shorter, and they can make a title profitable at sales figures that would embarrass a large publisher. Several of the decade's translated bestsellers began at presses employing fewer than five people.",
-        "The pattern is not uniform across languages. Fiction translated from Japanese, Korean and Spanish has grown sharply. Translation from Arabic, Bengali and most African languages has barely moved, which suggests that the shift reflects the reach of particular cultural exports rather than a general appetite for the unfamiliar. Readers appear to be following films, music and television rather than seeking novelty for its own sake.",
-        "Translators themselves are divided about the change. Some regard the increased visibility as overdue recognition of authorship, since a translated novel is in a meaningful sense written twice. Others worry that celebrity translation encourages publishers to commission by reputation rather than fit, and that a name on a cover is no guarantee of a good match between translator and text.",
-        "What almost everyone agrees on is that the finances stay punishing. Most translators are paid by the word, most rates have not risen with the sales figures, and a translator whose book wins a major prize may still earn less from it than the publicity would suggest. The visibility arrived considerably faster than the money."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "El segundo sábado de cada mes, un grupo de entre seis y treinta personas se reúne en la entrada de un cementerio municipal en el borde norte de la ciudad, con paletas, portapapeles y una hoja de cálculo compartida en una tableta. Buscan tumbas que no figuran en ningún registro, y han encontrado más de cuatro mil.",
+      "El problema que abordan es administrativo, no misterioso. Los registros de sepulturas en muchas ciudades europeas eran llevados por las parroquias, luego por los municipios y después por empresas privadas, y cada traspaso produjo pérdidas. Los incendios, las guerras, las inundaciones y el simple descuido explican el resto. Una tumba sin registro no está oculta; simplemente no está indexada y, por lo tanto, es invisible para cualquiera que la busque desde lejos.",
+      "El método es poco vistoso. Los voluntarios fotografían una lápida, transcriben lo que quede legible, registran su posición por coordenada satelital y cotejan el nombre con los registros que sobreviven. Cuando la piedra está tan desgastada que no puede leerse, anotan la ubicación y siguen adelante. Alrededor de un tercio de las entradas terminan como coordenadas sin nombre, algo que el grupo considera un dato útil y no un fracaso.",
+      "Las solicitudes llegan de tres fuentes principales. Los genealogistas forman el grupo más numeroso y son los más fáciles de ayudar. Las consultas legales, por lo general vinculadas a una herencia o a un título de propiedad, llegan de vez en cuando y requieren mucho más cuidado. La tercera categoría la componen las familias que buscan a un pariente que murió en el extranjero, y estos casos producen tanto las búsquedas más largas como las reacciones más intensas cuando tienen éxito.",
+      "El grupo es cuidadoso con lo que promete. Su guía publicada afirma con claridad que la mayoría de las búsquedas fracasan, que un registro faltante suele significar que la información ya no existe en ninguna parte, y que los voluntarios no pueden investigar causas de muerte ni circunstancias familiares. Esta cautela ha decepcionado en ocasiones a quienes esperaban un servicio de investigación en lugar de uno de catalogación.",
+      "Las autoridades municipales han sido cooperativas pero lentas. Los datos que el grupo produce se ofrecen de forma gratuita, pero incorporarlos a los registros oficiales requiere procedimientos de verificación que ningún departamento ha recibido fondos para llevar a cabo. Dos ciudades han absorbido los registros; once han agradecido a los voluntarios y archivado el material sin actuar sobre él.",
+      "La fundadora desestima las sugerencias de que el trabajo es morboso. Señala que un cementerio es un archivo público que da la casualidad de estar al aire libre, que las personas allí enterradas fueron indexadas alguna vez, y que restaurar un índice se parece más al trabajo de una biblioteca que a algo sombrío. Los encuentros mensuales, añade, son notablemente alegres."
+    ]
+  },
+  {
+    "title": "Why translated fiction sells better than it used to",
+    "body": [
+      "Throughout much of the last century, publishers in English-speaking markets treated translated fiction as a category with a ceiling. The assumption was not entirely unfounded: translation costs money, foreign names complicate marketing, and readers were believed to prefer settings they recognised. Roughly three per cent of published fiction was translated, a figure so stable that it acquired a nickname.",
+      "That figure has been rising, unevenly and from a low base. The reasons offered are numerous and mostly unproven, which has not prevented them from being repeated confidently at industry conferences. Streaming subtitles, international crime series, prize shortlists and the collapse of certain gatekeeping structures all appear on the list.",
+      "One explanation with better evidence behind it concerns the translators themselves. Naming translators on covers, once uncommon, became a public campaign around 2021 and is now standard at several major houses. Books credited this way have sold measurably better, though whether the credit causes the sales or simply marks the houses already investing in promotion is not settled.",
+      "Another factor is structural. Small independent presses, several of them run by former translators, began acquiring rights that larger firms considered uncommercial. Their overheads are lower, their print runs shorter, and they can make a title profitable at sales figures that would embarrass a large publisher. Several of the decade's translated bestsellers began at presses employing fewer than five people.",
+      "The pattern is not uniform across languages. Fiction translated from Japanese, Korean and Spanish has grown sharply. Translation from Arabic, Bengali and most African languages has barely moved, which suggests that the shift reflects the reach of particular cultural exports rather than a general appetite for the unfamiliar. Readers appear to be following films, music and television rather than seeking novelty for its own sake.",
+      "Translators themselves are divided about the change. Some regard the increased visibility as overdue recognition of authorship, since a translated novel is in a meaningful sense written twice. Others worry that celebrity translation encourages publishers to commission by reputation rather than fit, and that a name on a cover is no guarantee of a good match between translator and text.",
+      "What almost everyone agrees on is that the finances stay punishing. Most translators are paid by the word, most rates have not risen with the sales figures, and a translator whose book wins a major prize may still earn less from it than the publicity would suggest. The visibility arrived considerably faster than the money."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Translated fiction once made up a small and stable share of publishing.",
+        "a": "True",
+        "why": "Roughly three per cent, so stable it acquired a nickname."
+      },
+      {
+        "q": "The reasons given for the increase are all well supported by evidence.",
+        "a": "False",
+        "why": "They are numerous and mostly unproven, though confidently repeated."
+      },
+      {
+        "q": "Naming translators on covers has always been standard practice.",
+        "a": "False",
+        "why": "It was once uncommon and became a campaign around 2021."
+      },
+      {
+        "q": "Growth in translated fiction has been similar across all source languages.",
+        "a": "False",
+        "why": "Japanese, Korean and Spanish grew sharply while Arabic and Bengali barely moved."
+      },
+      {
+        "q": "Most translated bestsellers are now published by small presses.",
+        "a": "Not Given",
+        "why": "Several began at small presses, but no overall proportion is given."
+      }
+    ],
+    "short": [
+      {
+        "q": "In roughly which year did the campaign to credit translators begin?",
+        "a": "2021"
+      },
+      {
+        "q": "How are most translators paid?",
+        "a": "by the word"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What uncertainty does the writer note about crediting translators?",
+        "options": [
+          "Whether the credit drives sales or merely identifies well-promoted books.",
+          "Whether the practice will continue after 2021.",
+          "Whether translators want their names published.",
+          "Whether readers actually notice the translator's name."
+        ],
+        "a": 0,
+        "why": "It is unsettled whether credit causes sales or marks houses already investing in promotion."
+      },
+      {
+        "q": "What advantage do small independent presses have?",
+        "options": [
+          "They avoid the cost of acquiring translation rights.",
+          "They can profit from sales too modest for a large publisher.",
+          "They receive subsidies unavailable to larger firms.",
+          "They pay translators substantially higher rates."
+        ],
+        "a": 1,
+        "why": "Lower overheads and shorter runs let them profit at figures that would embarrass a large publisher."
+      },
+      {
+        "q": "What does the uneven growth across languages suggest to the writer?",
+        "options": [
+          "That some languages are inherently harder to translate.",
+          "That prize juries favour European fiction.",
+          "That readers are drawn by wider cultural exports rather than unfamiliarity itself.",
+          "That publishers discriminate against certain regions deliberately."
+        ],
+        "a": 2,
+        "why": "Readers appear to follow films, music and television rather than seeking novelty for its own sake."
+      },
+      {
+        "q": "What concern do some translators raise about increased visibility?",
+        "options": [
+          "That it reduces the author's standing.",
+          "That it exposes them to public criticism.",
+          "That it slows down the translation process.",
+          "That reputation may replace suitability when work is assigned."
+        ],
+        "a": 3,
+        "why": "Celebrity translation may encourage commissioning by reputation rather than fit."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Translated fiction once made up a small and stable share of publishing.",
-          "a": "True",
-          "why": "Roughly three per cent, so stable it acquired a nickname."
+          "t": "Throughout much of the last century, publishers in English-speaking",
+          "p": "srot mach ov de last séncheri, páblishers in english-spéiking"
         },
         {
-          "q": "The reasons given for the increase are all well supported by evidence.",
-          "a": "False",
-          "why": "They are numerous and mostly unproven, though confidently repeated."
+          "t": "markets treated translated fiction as a category with a ceiling.",
+          "p": "markets tréited transléited fíkshon as a kategori uíd a síling."
         },
         {
-          "q": "Naming translators on covers has always been standard practice.",
-          "a": "False",
-          "why": "It was once uncommon and became a campaign around 2021."
+          "t": "The assumption was not entirely unfounded: translation costs money,",
+          "p": "de asumpshon uós not entereli unfonded: translashon kosts máni,"
         },
         {
-          "q": "Growth in translated fiction has been similar across all source languages.",
-          "a": "False",
-          "why": "Japanese, Korean and Spanish grew sharply while Arabic and Bengali barely moved."
+          "t": "foreign names complicate marketing, and readers were believed to prefer",
+          "p": "foráin néims komplikéit marketing, end ríders uér belivd tu prefer"
         },
         {
-          "q": "Most translated bestsellers are now published by small presses.",
-          "a": "Not Given",
-          "why": "Several began at small presses, but no overall proportion is given."
+          "t": "settings they recognised. Roughly three per cent of published fiction",
+          "p": "setings déi rekonáist. ráfli zri per sent ov published fíkshon"
+        },
+        {
+          "t": "was translated, a figure so stable that it acquired a nickname.",
+          "p": "uós transléited, a fíguer sóu stabol dat it akkuáerd a niknéim."
         }
       ],
-      "short": [
+      [
         {
-          "q": "In roughly which year did the campaign to credit translators begin?",
-          "a": "2021"
+          "t": "That figure has been rising, unevenly and from a low base.",
+          "p": "dat fíguer jas bin ráising, unevenli end from a lo béis."
         },
         {
-          "q": "How are most translators paid?",
-          "a": "by the word"
+          "t": "The reasons offered are numerous and mostly unproven,",
+          "p": "de risons oferd ar numeras end mostli unproven,"
+        },
+        {
+          "t": "which has not prevented them from being repeated confidently at industry",
+          "p": "uích jas not prevented dem from bing rípéited konfidentli at industri"
+        },
+        {
+          "t": "conferences. Streaming subtitles, international crime series,",
+          "p": "konferenses. stréiming subtitles, internashonal kráim seris,"
+        },
+        {
+          "t": "prize shortlists and the collapse of certain gatekeeping structures all",
+          "p": "práis shortlists end de kolaps ov sertéin gatekiping strukchers ol"
+        },
+        {
+          "t": "appear on the list.",
+          "p": "apíar on de list."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What uncertainty does the writer note about crediting translators?",
-          "options": [
-            "Whether the credit drives sales or merely identifies well-promoted books.",
-            "Whether the practice will continue after 2021.",
-            "Whether translators want their names published.",
-            "Whether readers actually notice the translator's name."
-          ],
-          "a": 0,
-          "why": "It is unsettled whether credit causes sales or marks houses already investing in promotion."
+          "t": "One explanation with better evidence behind it concerns the translators",
+          "p": "uán eksplanashon uíd beter évidens bijáind it konserns de transléitors"
         },
         {
-          "q": "What advantage do small independent presses have?",
-          "options": [
-            "They avoid the cost of acquiring translation rights.",
-            "They can profit from sales too modest for a large publisher.",
-            "They receive subsidies unavailable to larger firms.",
-            "They pay translators substantially higher rates."
-          ],
-          "a": 1,
-          "why": "Lower overheads and shorter runs let them profit at figures that would embarrass a large publisher."
+          "t": "themselves. Naming translators on covers, once uncommon,",
+          "p": "demsélvs. néiming transléitors on cávers, uáns unkomon,"
         },
         {
-          "q": "What does the uneven growth across languages suggest to the writer?",
-          "options": [
-            "That some languages are inherently harder to translate.",
-            "That prize juries favour European fiction.",
-            "That readers are drawn by wider cultural exports rather than unfamiliarity itself.",
-            "That publishers discriminate against certain regions deliberately."
-          ],
-          "a": 2,
-          "why": "Readers appear to follow films, music and television rather than seeking novelty for its own sake."
+          "t": "became a public campaign around 2021 and is now standard at several",
+          "p": "bikéim a publik campéin aráund 2021 end is náu standard at séveral"
         },
         {
-          "q": "What concern do some translators raise about increased visibility?",
-          "options": [
-            "That it reduces the author's standing.",
-            "That it exposes them to public criticism.",
-            "That it slows down the translation process.",
-            "That reputation may replace suitability when work is assigned."
-          ],
-          "a": 3,
-          "why": "Celebrity translation may encourage commissioning by reputation rather than fit."
+          "t": "major houses. Books credited this way have sold measurably better,",
+          "p": "mayor joses. buks krdáited dis uéi jav sóuld miserabli beter,"
+        },
+        {
+          "t": "though whether the credit causes the sales or simply marks the houses",
+          "p": "dóu uéder de kredit koses de séils or símpli marks de joses"
+        },
+        {
+          "t": "already investing in promotion is not settled.",
+          "p": "alridi investing in promoshon is not setld."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Throughout much of the last century, publishers in English-speaking",
-            "p": "srot mach ov de last séncheri, páblishers in english-spéiking"
-          },
-          {
-            "t": "markets treated translated fiction as a category with a ceiling.",
-            "p": "markets tréited transléited fíkshon as a kategori uíd a síling."
-          },
-          {
-            "t": "The assumption was not entirely unfounded: translation costs money,",
-            "p": "de asumpshon uós not entereli unfonded: translashon kosts máni,"
-          },
-          {
-            "t": "foreign names complicate marketing, and readers were believed to prefer",
-            "p": "foráin néims komplikéit marketing, end ríders uér belivd tu prefer"
-          },
-          {
-            "t": "settings they recognised. Roughly three per cent of published fiction",
-            "p": "setings déi rekonáist. ráfli zri per sent ov published fíkshon"
-          },
-          {
-            "t": "was translated, a figure so stable that it acquired a nickname.",
-            "p": "uós transléited, a fíguer sóu stabol dat it akkuáerd a niknéim."
-          }
-        ],
-        [
-          {
-            "t": "That figure has been rising, unevenly and from a low base.",
-            "p": "dat fíguer jas bin ráising, unevenli end from a lo béis."
-          },
-          {
-            "t": "The reasons offered are numerous and mostly unproven,",
-            "p": "de risons oferd ar numeras end mostli unproven,"
-          },
-          {
-            "t": "which has not prevented them from being repeated confidently at industry",
-            "p": "uích jas not prevented dem from bing rípéited konfidentli at industri"
-          },
-          {
-            "t": "conferences. Streaming subtitles, international crime series,",
-            "p": "konferenses. stréiming subtitles, internashonal kráim seris,"
-          },
-          {
-            "t": "prize shortlists and the collapse of certain gatekeeping structures all",
-            "p": "práis shortlists end de kolaps ov sertéin gatekiping strukchers ol"
-          },
-          {
-            "t": "appear on the list.",
-            "p": "apíar on de list."
-          }
-        ],
-        [
-          {
-            "t": "One explanation with better evidence behind it concerns the translators",
-            "p": "uán eksplanashon uíd beter évidens bijáind it konserns de transléitors"
-          },
-          {
-            "t": "themselves. Naming translators on covers, once uncommon,",
-            "p": "demsélvs. néiming transléitors on cávers, uáns unkomon,"
-          },
-          {
-            "t": "became a public campaign around 2021 and is now standard at several",
-            "p": "bikéim a publik campéin aráund 2021 end is náu standard at séveral"
-          },
-          {
-            "t": "major houses. Books credited this way have sold measurably better,",
-            "p": "mayor joses. buks krdáited dis uéi jav sóuld miserabli beter,"
-          },
-          {
-            "t": "though whether the credit causes the sales or simply marks the houses",
-            "p": "dóu uéder de kredit koses de séils or símpli marks de joses"
-          },
-          {
-            "t": "already investing in promotion is not settled.",
-            "p": "alridi investing in promoshon is not setld."
-          }
-        ],
-        [
-          {
-            "t": "Another factor is structural. Small independent presses,",
-            "p": "anoser faktor is strákchural. smal independent préses,"
-          },
-          {
-            "t": "several of them run by former translators, began acquiring rights that",
-            "p": "séveral ov dem run bái former transléitors, began akkuáering ráits dat"
-          },
-          {
-            "t": "larger firms considered uncommercial. Their overheads are lower,",
-            "p": "laryer ferms konsiderd unkomershal. déar overjids ar lóuer,"
-          },
-          {
-            "t": "their print runs shorter, and they can make a title profitable at sales",
-            "p": "déar print runs shorter, end déi can méik a titol prófitabol at séils"
-          },
-          {
-            "t": "figures that would embarrass a large publisher.",
-            "p": "fíguers dat vud embaras a lary páblisher."
-          },
-          {
-            "t": "Several of the decade's translated bestsellers began at presses",
-            "p": "séveral ov de dékeids transléited béstselars began at préses"
-          },
-          {
-            "t": "employing fewer than five people.",
-            "p": "emploing feuer dan fáiv pípol."
-          }
-        ],
-        [
-          {
-            "t": "The pattern is not uniform across languages.",
-            "p": "de pátern is not uniform acrós lánguiches."
-          },
-          {
-            "t": "Fiction translated from Japanese, Korean and Spanish has grown sharply.",
-            "p": "fíkshon transléited from yapanís, corían end spánish jas gróun sharpli."
-          },
-          {
-            "t": "Translation from Arabic, Bengali and most African languages has barely",
-            "p": "translashon from arabik, bengáli end móust áfrican lánguiches jas bareli"
-          },
-          {
-            "t": "moved, which suggests that the shift reflects the reach of particular",
-            "p": "muvd, uích sagchésts dat de shift reflekts de rich ov partikular"
-          },
-          {
-            "t": "cultural exports rather than a general appetite for the unfamiliar.",
-            "p": "kulteral eksports ráder dan a yeneral apetáit for de unfamiliar."
-          },
-          {
-            "t": "Readers appear to be following films, music and television rather than",
-            "p": "ríders apíar tu bi folóuing films, musik end televishon ráder dan"
-          },
-          {
-            "t": "seeking novelty for its own sake.",
-            "p": "siking novelti for its óun séik."
-          }
-        ],
-        [
-          {
-            "t": "Translators themselves are divided about the change.",
-            "p": "transléitors demsélvs ar diváided abáut de chéinch."
-          },
-          {
-            "t": "Some regard the increased visibility as overdue recognition of",
-            "p": "sam regard de inkréist visibíliti as overdue rekognishon ov"
-          },
-          {
-            "t": "authorship, since a translated novel is in a meaningful sense written",
-            "p": "osorship, sins a transléited novel is in a miningful sens riten"
-          },
-          {
-            "t": "twice. Others worry that celebrity translation encourages publishers to",
-            "p": "tuáik. áders uori dat selebriti translashon enkáuaréigs páblishers tu"
-          },
-          {
-            "t": "commission by reputation rather than fit, and that a name on a cover is",
-            "p": "komishon bái reputashon ráder dan fit, end dat a néim on a cáver is"
-          },
-          {
-            "t": "no guarantee of a good match between translator and text.",
-            "p": "nóu guaranti ov a gud mach bituín transléitor end tekst."
-          }
-        ],
-        [
-          {
-            "t": "What almost everyone agrees on is that the finances stay punishing.",
-            "p": "uót ólmoust everióun agris on is dat de finanses stéi punishing."
-          },
-          {
-            "t": "Most translators are paid by the word, most rates have not risen with",
-            "p": "móust transléitors ar péid bái de uord, móust réits jav not risen uíd"
-          },
-          {
-            "t": "the sales figures, and a translator whose book wins a major prize may",
-            "p": "de séils fíguers, end a transléitor uóus buk uins a mayor práis méi"
-          },
-          {
-            "t": "still earn less from it than the publicity would suggest.",
-            "p": "stil irn les from it dan de publisiti vud sagchést."
-          },
-          {
-            "t": "The visibility arrived considerably faster than the money.",
-            "p": "de visibíliti aráivd konsiderabli faster dan de máni."
-          }
-        ]
+      [
+        {
+          "t": "Another factor is structural. Small independent presses,",
+          "p": "anoser faktor is strákchural. smal independent préses,"
+        },
+        {
+          "t": "several of them run by former translators, began acquiring rights that",
+          "p": "séveral ov dem run bái former transléitors, began akkuáering ráits dat"
+        },
+        {
+          "t": "larger firms considered uncommercial. Their overheads are lower,",
+          "p": "laryer ferms konsiderd unkomershal. déar overjids ar lóuer,"
+        },
+        {
+          "t": "their print runs shorter, and they can make a title profitable at sales",
+          "p": "déar print runs shorter, end déi can méik a titol prófitabol at séils"
+        },
+        {
+          "t": "figures that would embarrass a large publisher.",
+          "p": "fíguers dat vud embaras a lary páblisher."
+        },
+        {
+          "t": "Several of the decade's translated bestsellers began at presses",
+          "p": "séveral ov de dékeids transléited béstselars began at préses"
+        },
+        {
+          "t": "employing fewer than five people.",
+          "p": "emploing feuer dan fáiv pípol."
+        }
+      ],
+      [
+        {
+          "t": "The pattern is not uniform across languages.",
+          "p": "de pátern is not uniform acrós lánguiches."
+        },
+        {
+          "t": "Fiction translated from Japanese, Korean and Spanish has grown sharply.",
+          "p": "fíkshon transléited from yapanís, corían end spánish jas gróun sharpli."
+        },
+        {
+          "t": "Translation from Arabic, Bengali and most African languages has barely",
+          "p": "translashon from arabik, bengáli end móust áfrican lánguiches jas bareli"
+        },
+        {
+          "t": "moved, which suggests that the shift reflects the reach of particular",
+          "p": "muvd, uích sagchésts dat de shift reflekts de rich ov partikular"
+        },
+        {
+          "t": "cultural exports rather than a general appetite for the unfamiliar.",
+          "p": "kulteral eksports ráder dan a yeneral apetáit for de unfamiliar."
+        },
+        {
+          "t": "Readers appear to be following films, music and television rather than",
+          "p": "ríders apíar tu bi folóuing films, musik end televishon ráder dan"
+        },
+        {
+          "t": "seeking novelty for its own sake.",
+          "p": "siking novelti for its óun séik."
+        }
+      ],
+      [
+        {
+          "t": "Translators themselves are divided about the change.",
+          "p": "transléitors demsélvs ar diváided abáut de chéinch."
+        },
+        {
+          "t": "Some regard the increased visibility as overdue recognition of",
+          "p": "sam regard de inkréist visibíliti as overdue rekognishon ov"
+        },
+        {
+          "t": "authorship, since a translated novel is in a meaningful sense written",
+          "p": "osorship, sins a transléited novel is in a miningful sens riten"
+        },
+        {
+          "t": "twice. Others worry that celebrity translation encourages publishers to",
+          "p": "tuáik. áders uori dat selebriti translashon enkáuaréigs páblishers tu"
+        },
+        {
+          "t": "commission by reputation rather than fit, and that a name on a cover is",
+          "p": "komishon bái reputashon ráder dan fit, end dat a néim on a cáver is"
+        },
+        {
+          "t": "no guarantee of a good match between translator and text.",
+          "p": "nóu guaranti ov a gud mach bituín transléitor end tekst."
+        }
+      ],
+      [
+        {
+          "t": "What almost everyone agrees on is that the finances stay punishing.",
+          "p": "uót ólmoust everióun agris on is dat de finanses stéi punishing."
+        },
+        {
+          "t": "Most translators are paid by the word, most rates have not risen with",
+          "p": "móust transléitors ar péid bái de uord, móust réits jav not risen uíd"
+        },
+        {
+          "t": "the sales figures, and a translator whose book wins a major prize may",
+          "p": "de séils fíguers, end a transléitor uóus buk uins a mayor práis méi"
+        },
+        {
+          "t": "still earn less from it than the publicity would suggest.",
+          "p": "stil irn les from it dan de publisiti vud sagchést."
+        },
+        {
+          "t": "The visibility arrived considerably faster than the money.",
+          "p": "de visibíliti aráivd konsiderabli faster dan de máni."
+        }
       ]
-    },
-    {
-      "title": "The trouble with counting wild animals",
-      "body": [
-        "A newspaper reports that a species has declined by sixty per cent since 1970. The figure is repeated, becomes a campaign slogan, and eventually appears in policy documents. Almost nobody who encounters it asks the awkward preliminary question, which is how anyone knows how many of an animal existed in 1970, or exists now.",
-        "Counting wild populations is difficult in ways that are easy to underestimate. Animals move, hide, migrate and look like one another. They are distributed unevenly across terrain that is frequently inaccessible. A complete census is impossible for all but a handful of large, conspicuous and geographically confined species, and even those are contested.",
-        "What ecologists produce instead are estimates built from samples. A defined area is surveyed intensively, a density is calculated, and that density is extrapolated across the habitat believed to be comparable. Each of those steps introduces uncertainty, and the uncertainties compound. A responsible published figure therefore arrives with a confidence interval attached, often a wide one.",
-        "That interval is the first casualty of communication. A finding that a population lies somewhere between four hundred thousand and one point four million becomes, in a headline, a population of nine hundred thousand. The midpoint is not wrong exactly, but it conveys a precision the underlying work never claimed, and it makes subsequent revisions look like scandals rather than science.",
-        "Newer methods have improved matters without solving the problem. Camera traps, acoustic monitoring, satellite tracking and the analysis of DNA left in soil and water have all reduced the reliance on direct observation. Each brings its own biases: a camera trap records animals that pass a particular point, and animals that avoid open ground pass such points less often.",
-        "The consequence is not that population figures are worthless. Trends are considerably more reliable than absolute numbers, because a method with consistent biases will still show a decline accurately even if its totals are wrong. An ecologist who is unsure whether a population is two hundred thousand or six hundred thousand may be entirely confident that it is falling.",
-        "This distinction rarely survives contact with public debate, where it is treated as an evasion. It is not. Insisting that we know less than we claim, while continuing to act on what the evidence does support, is an ordinary scientific position that happens to be difficult to fit into a headline or a slogan."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Durante buena parte del siglo pasado, los editores de los mercados de habla inglesa trataron la ficción traducida como una categoría con un techo. La suposición no era del todo infundada: la traducción cuesta dinero, los nombres extranjeros complican el marketing y se creía que los lectores preferían escenarios que reconocían. Alrededor del tres por ciento de la ficción publicada era traducida, una cifra tan estable que llegó a tener un apodo.",
+      "Esa cifra ha ido subiendo, de forma desigual y desde una base baja. Las razones que se ofrecen son numerosas y en su mayoría no comprobadas, lo que no ha impedido que se repitan con seguridad en los congresos del sector. Los subtítulos del streaming, las series policiales internacionales, las listas de finalistas de premios y el derrumbe de ciertas estructuras de control aparecen todas en la lista.",
+      "Una explicación con mejor evidencia detrás tiene que ver con los propios traductores. Nombrar a los traductores en las portadas, antes poco habitual, se convirtió en una campaña pública alrededor de 2021 y ahora es la norma en varias grandes editoriales. Los libros acreditados de este modo se han vendido de forma medible mejor, aunque no está resuelto si el crédito provoca las ventas o simplemente distingue a las editoriales que ya invertían en promoción.",
+      "Otro factor es estructural. Pequeñas editoriales independientes, varias de ellas dirigidas por antiguos traductores, empezaron a adquirir derechos que las firmas más grandes consideraban poco comerciales. Sus gastos generales son más bajos, sus tiradas más cortas, y pueden hacer rentable un título con cifras de ventas que avergonzarían a una gran editorial. Varios de los superventas traducidos de la década comenzaron en editoriales con menos de cinco empleados.",
+      "El patrón no es uniforme entre los idiomas. La ficción traducida del japonés, el coreano y el español ha crecido con fuerza. La traducción del árabe, el bengalí y la mayoría de las lenguas africanas apenas se ha movido, lo que sugiere que el cambio refleja el alcance de determinadas exportaciones culturales y no un apetito general por lo desconocido. Los lectores parecen seguir el cine, la música y la televisión en lugar de buscar la novedad por sí misma.",
+      "Los propios traductores están divididos respecto al cambio. Algunos consideran la mayor visibilidad como un reconocimiento largamente merecido de la autoría, ya que una novela traducida está, en un sentido significativo, escrita dos veces. Otros temen que la traducción vuelta celebridad anime a los editores a contratar por reputación en lugar de por idoneidad, y que un nombre en una portada no garantice una buena correspondencia entre el traductor y el texto.",
+      "En lo que casi todos coinciden es en que las finanzas siguen siendo duras. A la mayoría de los traductores se les paga por palabra, la mayoría de las tarifas no han subido junto con las cifras de ventas, y un traductor cuyo libro gana un premio importante puede aun así ganar con él menos de lo que sugeriría la publicidad. La visibilidad llegó bastante más rápido que el dinero."
+    ]
+  },
+  {
+    "title": "The trouble with counting wild animals",
+    "body": [
+      "A newspaper reports that a species has declined by sixty per cent since 1970. The figure is repeated, becomes a campaign slogan, and eventually appears in policy documents. Almost nobody who encounters it asks the awkward preliminary question, which is how anyone knows how many of an animal existed in 1970, or exists now.",
+      "Counting wild populations is difficult in ways that are easy to underestimate. Animals move, hide, migrate and look like one another. They are distributed unevenly across terrain that is frequently inaccessible. A complete census is impossible for all but a handful of large, conspicuous and geographically confined species, and even those are contested.",
+      "What ecologists produce instead are estimates built from samples. A defined area is surveyed intensively, a density is calculated, and that density is extrapolated across the habitat believed to be comparable. Each of those steps introduces uncertainty, and the uncertainties compound. A responsible published figure therefore arrives with a confidence interval attached, often a wide one.",
+      "That interval is the first casualty of communication. A finding that a population lies somewhere between four hundred thousand and one point four million becomes, in a headline, a population of nine hundred thousand. The midpoint is not wrong exactly, but it conveys a precision the underlying work never claimed, and it makes subsequent revisions look like scandals rather than science.",
+      "Newer methods have improved matters without solving the problem. Camera traps, acoustic monitoring, satellite tracking and the analysis of DNA left in soil and water have all reduced the reliance on direct observation. Each brings its own biases: a camera trap records animals that pass a particular point, and animals that avoid open ground pass such points less often.",
+      "The consequence is not that population figures are worthless. Trends are considerably more reliable than absolute numbers, because a method with consistent biases will still show a decline accurately even if its totals are wrong. An ecologist who is unsure whether a population is two hundred thousand or six hundred thousand may be entirely confident that it is falling.",
+      "This distinction rarely survives contact with public debate, where it is treated as an evasion. It is not. Insisting that we know less than we claim, while continuing to act on what the evidence does support, is an ordinary scientific position that happens to be difficult to fit into a headline or a slogan."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "A complete count is possible for most wild species.",
+        "a": "False",
+        "why": "It is impossible for all but a handful of large, conspicuous, confined species."
+      },
+      {
+        "q": "Published population estimates usually include a range of uncertainty.",
+        "a": "True",
+        "why": "A responsible figure arrives with a confidence interval, often wide."
+      },
+      {
+        "q": "Headlines typically preserve the full range of an estimate.",
+        "a": "False",
+        "why": "The interval is the first casualty; a range becomes a single midpoint figure."
+      },
+      {
+        "q": "Newer monitoring methods have eliminated bias from population studies.",
+        "a": "False",
+        "why": "Each new method brings its own biases."
+      },
+      {
+        "q": "Trends in a population can be reliable even when totals are uncertain.",
+        "a": "True",
+        "why": "Consistent biases still show a decline accurately even if totals are wrong."
+      }
+    ],
+    "short": [
+      {
+        "q": "What do ecologists produce instead of a complete census?",
+        "a": "estimates built from samples"
+      },
+      {
+        "q": "What kind of animals are underrepresented by camera traps?",
+        "a": "animals that avoid open ground"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What problem does reporting a midpoint figure create?",
+        "options": [
+          "It implies an accuracy the research never claimed.",
+          "It makes the original study impossible to locate.",
+          "It prevents comparison between different species.",
+          "It exaggerates the size of the population."
+        ],
+        "a": 0,
+        "why": "The midpoint conveys a precision the underlying work never claimed."
+      },
+      {
+        "q": "Why does the writer say revisions come to look like scandals?",
+        "options": [
+          "Because campaign groups reject new evidence.",
+          "Because the public was given falsely precise figures to begin with.",
+          "Because researchers conceal their original methods.",
+          "Because journals rarely publish corrections."
+        ],
+        "a": 1,
+        "why": "Once precision is implied, later corrections appear as failures rather than normal science."
+      },
+      {
+        "q": "What example illustrates the bias of camera traps?",
+        "options": [
+          "They cannot distinguish between similar species.",
+          "They are too expensive to deploy widely.",
+          "They under-record animals that keep away from open areas.",
+          "They fail during periods of bad weather."
+        ],
+        "a": 2,
+        "why": "A camera trap records animals passing a point, and animals avoiding open ground pass less often."
+      },
+      {
+        "q": "What is the writer's view of scientists who stress uncertainty?",
+        "options": [
+          "They should refrain from publishing until certain.",
+          "They are avoiding responsibility for their findings.",
+          "They undermine public trust unnecessarily.",
+          "They are taking an ordinary and defensible position."
+        ],
+        "a": 3,
+        "why": "The final paragraph calls it an ordinary scientific position, not an evasion."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "A complete count is possible for most wild species.",
-          "a": "False",
-          "why": "It is impossible for all but a handful of large, conspicuous, confined species."
+          "t": "A newspaper reports that a species has declined by sixty per cent since",
+          "p": "a neuspéiper reports dat a spesis jas dekláind bái siksti per sent sins"
         },
         {
-          "q": "Published population estimates usually include a range of uncertainty.",
-          "a": "True",
-          "why": "A responsible figure arrives with a confidence interval, often wide."
+          "t": "1970. The figure is repeated, becomes a campaign slogan,",
+          "p": "1970. de fíguer is rípéited, bicáms a campéin slogan,"
         },
         {
-          "q": "Headlines typically preserve the full range of an estimate.",
-          "a": "False",
-          "why": "The interval is the first casualty; a range becomes a single midpoint figure."
+          "t": "and eventually appears in policy documents. Almost nobody who encounters",
+          "p": "end eventuali apirs in polisi dokuments. ólmoust nobodi ju enkonters"
         },
         {
-          "q": "Newer monitoring methods have eliminated bias from population studies.",
-          "a": "False",
-          "why": "Each new method brings its own biases."
+          "t": "it asks the awkward preliminary question, which is how anyone knows how",
+          "p": "it asks de okuard preliminari kuéschon, uích is jáu anióun nóus jáu"
         },
         {
-          "q": "Trends in a population can be reliable even when totals are uncertain.",
-          "a": "True",
-          "why": "Consistent biases still show a decline accurately even if totals are wrong."
+          "t": "many of an animal existed in 1970, or exists now.",
+          "p": "méni ov an animal eksisted in 1970, or eksists náu."
         }
       ],
-      "short": [
+      [
         {
-          "q": "What do ecologists produce instead of a complete census?",
-          "a": "estimates built from samples"
+          "t": "Counting wild populations is difficult in ways that are easy to",
+          "p": "konting uáild populashons is difikult in uéis dat ar isi tu"
         },
         {
-          "q": "What kind of animals are underrepresented by camera traps?",
-          "a": "animals that avoid open ground"
+          "t": "underestimate. Animals move, hide, migrate and look like one another.",
+          "p": "underestiméit. animals móuv, jáid, migréit end luk láik uán anoser."
+        },
+        {
+          "t": "They are distributed unevenly across terrain that is frequently",
+          "p": "déi ar distributed unevenli acrós teréin dat is fríkuentli"
+        },
+        {
+          "t": "inaccessible. A complete census is impossible for all but a handful of",
+          "p": "inaksesibol. a komplít sénsas is imposibol for ol bat a jandful ov"
+        },
+        {
+          "t": "large, conspicuous and geographically confined species,",
+          "p": "lary, konspikuas end yeografikali konfáind spesis,"
+        },
+        {
+          "t": "and even those are contested.",
+          "p": "end íven dóus ar kontested."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What problem does reporting a midpoint figure create?",
-          "options": [
-            "It implies an accuracy the research never claimed.",
-            "It makes the original study impossible to locate.",
-            "It prevents comparison between different species.",
-            "It exaggerates the size of the population."
-          ],
-          "a": 0,
-          "why": "The midpoint conveys a precision the underlying work never claimed."
+          "t": "What ecologists produce instead are estimates built from samples.",
+          "p": "uót ekoloyists prodiús instid ar estiméits bilt from samples."
         },
         {
-          "q": "Why does the writer say revisions come to look like scandals?",
-          "options": [
-            "Because campaign groups reject new evidence.",
-            "Because the public was given falsely precise figures to begin with.",
-            "Because researchers conceal their original methods.",
-            "Because journals rarely publish corrections."
-          ],
-          "a": 1,
-          "why": "Once precision is implied, later corrections appear as failures rather than normal science."
+          "t": "A defined area is surveyed intensively, a density is calculated,",
+          "p": "a defáind ari is serveyd intensiveli, a dénsiti is kalkuléited,"
         },
         {
-          "q": "What example illustrates the bias of camera traps?",
-          "options": [
-            "They cannot distinguish between similar species.",
-            "They are too expensive to deploy widely.",
-            "They under-record animals that keep away from open areas.",
-            "They fail during periods of bad weather."
-          ],
-          "a": 2,
-          "why": "A camera trap records animals passing a point, and animals avoiding open ground pass less often."
+          "t": "and that density is extrapolated across the habitat believed to be",
+          "p": "end dat dénsiti is ekstrapoléited acrós de jábitat belivd tu bi"
         },
         {
-          "q": "What is the writer's view of scientists who stress uncertainty?",
-          "options": [
-            "They should refrain from publishing until certain.",
-            "They are avoiding responsibility for their findings.",
-            "They undermine public trust unnecessarily.",
-            "They are taking an ordinary and defensible position."
-          ],
-          "a": 3,
-          "why": "The final paragraph calls it an ordinary scientific position, not an evasion."
+          "t": "comparable. Each of those steps introduces uncertainty,",
+          "p": "komparabol. ich ov dóus steps introduses unsertéinti,"
+        },
+        {
+          "t": "and the uncertainties compound. A responsible published figure therefore",
+          "p": "end de unsertéintis kompond. a responsibol published fíguer serefóer"
+        },
+        {
+          "t": "arrives with a confidence interval attached,",
+          "p": "aráivs uíd a konfidens interval atached,"
+        },
+        {
+          "t": "often a wide one.",
+          "p": "ófen a uáid uán."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "A newspaper reports that a species has declined by sixty per cent since",
-            "p": "a neuspéiper reports dat a spesis jas dekláind bái siksti per sent sins"
-          },
-          {
-            "t": "1970. The figure is repeated, becomes a campaign slogan,",
-            "p": "1970. de fíguer is rípéited, bicáms a campéin slogan,"
-          },
-          {
-            "t": "and eventually appears in policy documents. Almost nobody who encounters",
-            "p": "end eventuali apirs in polisi dokuments. ólmoust nobodi ju enkonters"
-          },
-          {
-            "t": "it asks the awkward preliminary question, which is how anyone knows how",
-            "p": "it asks de okuard preliminari kuéschon, uích is jáu anióun nóus jáu"
-          },
-          {
-            "t": "many of an animal existed in 1970, or exists now.",
-            "p": "méni ov an animal eksisted in 1970, or eksists náu."
-          }
-        ],
-        [
-          {
-            "t": "Counting wild populations is difficult in ways that are easy to",
-            "p": "konting uáild populashons is difikult in uéis dat ar isi tu"
-          },
-          {
-            "t": "underestimate. Animals move, hide, migrate and look like one another.",
-            "p": "underestiméit. animals móuv, jáid, migréit end luk láik uán anoser."
-          },
-          {
-            "t": "They are distributed unevenly across terrain that is frequently",
-            "p": "déi ar distributed unevenli acrós teréin dat is fríkuentli"
-          },
-          {
-            "t": "inaccessible. A complete census is impossible for all but a handful of",
-            "p": "inaksesibol. a komplít sénsas is imposibol for ol bat a jandful ov"
-          },
-          {
-            "t": "large, conspicuous and geographically confined species,",
-            "p": "lary, konspikuas end yeografikali konfáind spesis,"
-          },
-          {
-            "t": "and even those are contested.",
-            "p": "end íven dóus ar kontested."
-          }
-        ],
-        [
-          {
-            "t": "What ecologists produce instead are estimates built from samples.",
-            "p": "uót ekoloyists prodiús instid ar estiméits bilt from samples."
-          },
-          {
-            "t": "A defined area is surveyed intensively, a density is calculated,",
-            "p": "a defáind ari is serveyd intensiveli, a dénsiti is kalkuléited,"
-          },
-          {
-            "t": "and that density is extrapolated across the habitat believed to be",
-            "p": "end dat dénsiti is ekstrapoléited acrós de jábitat belivd tu bi"
-          },
-          {
-            "t": "comparable. Each of those steps introduces uncertainty,",
-            "p": "komparabol. ich ov dóus steps introduses unsertéinti,"
-          },
-          {
-            "t": "and the uncertainties compound. A responsible published figure therefore",
-            "p": "end de unsertéintis kompond. a responsibol published fíguer serefóer"
-          },
-          {
-            "t": "arrives with a confidence interval attached,",
-            "p": "aráivs uíd a konfidens interval atached,"
-          },
-          {
-            "t": "often a wide one.",
-            "p": "ófen a uáid uán."
-          }
-        ],
-        [
-          {
-            "t": "That interval is the first casualty of communication.",
-            "p": "dat interval is de férst kasualti ov komunikashon."
-          },
-          {
-            "t": "A finding that a population lies somewhere between four hundred thousand",
-            "p": "a finding dat a populashon lis someuír bituín for jándred záusand"
-          },
-          {
-            "t": "and one point four million becomes, in a headline,",
-            "p": "end uán point for milion bicáms, in a jidláin,"
-          },
-          {
-            "t": "a population of nine hundred thousand. The midpoint is not wrong",
-            "p": "a populashon ov náin jándred záusand. de midpoint is not rong"
-          },
-          {
-            "t": "exactly, but it conveys a precision the underlying work never claimed,",
-            "p": "eksaktli, bat it konveys a presishon de underlying uérk néver klaáimd,"
-          },
-          {
-            "t": "and it makes subsequent revisions look like scandals rather than",
-            "p": "end it méiks subskuent revishons luk láik skandals ráder dan"
-          },
-          {
-            "t": "science.",
-            "p": "sins."
-          }
-        ],
-        [
-          {
-            "t": "Newer methods have improved matters without solving the problem.",
-            "p": "neuer mézods jav impróuvd maters uidáut solving de problem."
-          },
-          {
-            "t": "Camera traps, acoustic monitoring, satellite tracking and the analysis",
-            "p": "cámera traps, akostik monitóering, sátelait traking end de analysis"
-          },
-          {
-            "t": "of DNA left in soil and water have all reduced the reliance on direct",
-            "p": "ov dna left in sóil end uóter jav ol redust de relians on derekt"
-          },
-          {
-            "t": "observation. Each brings its own biases: a camera trap records animals",
-            "p": "observashon. ich brings its óun biases: a cámera trap rekords animals"
-          },
-          {
-            "t": "that pass a particular point, and animals that avoid open ground pass",
-            "p": "dat pas a partikular point, end animals dat avoid open grond pas"
-          },
-          {
-            "t": "such points less often.",
-            "p": "sach points les ófen."
-          }
-        ],
-        [
-          {
-            "t": "The consequence is not that population figures are worthless.",
-            "p": "de konskuens is not dat populashon fíguers ar uorsles."
-          },
-          {
-            "t": "Trends are considerably more reliable than absolute numbers,",
-            "p": "trends ar konsiderabli mor reliabol dan absoliút numbers,"
-          },
-          {
-            "t": "because a method with consistent biases will still show a decline",
-            "p": "bicós a mézod uíd konsistent biases uíl stil shóu a dekláin"
-          },
-          {
-            "t": "accurately even if its totals are wrong. An ecologist who is unsure",
-            "p": "akserateli íven if its tóutals ar rong. an ekoloyist ju is unsher"
-          },
-          {
-            "t": "whether a population is two hundred thousand or six hundred thousand may",
-            "p": "uéder a populashon is tu jándred záusand or siks jándred záusand méi"
-          },
-          {
-            "t": "be entirely confident that it is falling.",
-            "p": "bi entereli konfident dat it is faling."
-          }
-        ],
-        [
-          {
-            "t": "This distinction rarely survives contact with public debate,",
-            "p": "dis distinkshon rareli serváivs kontakt uíd publik debéit,"
-          },
-          {
-            "t": "where it is treated as an evasion. It is not.",
-            "p": "uér it is tréited as an evashon. it is not."
-          },
-          {
-            "t": "Insisting that we know less than we claim, while continuing to act on",
-            "p": "insisting dat uí no les dan uí kléim, uáil kontinuing tu akt on"
-          },
-          {
-            "t": "what the evidence does support, is an ordinary scientific position that",
-            "p": "uót de évidens das suport, is an ordinari sintifik posishon dat"
-          },
-          {
-            "t": "happens to be difficult to fit into a headline or a slogan.",
-            "p": "japens tu bi difikult tu fit íntu a jidláin or a slogan."
-          }
-        ]
+      [
+        {
+          "t": "That interval is the first casualty of communication.",
+          "p": "dat interval is de férst kasualti ov komunikashon."
+        },
+        {
+          "t": "A finding that a population lies somewhere between four hundred thousand",
+          "p": "a finding dat a populashon lis someuír bituín for jándred záusand"
+        },
+        {
+          "t": "and one point four million becomes, in a headline,",
+          "p": "end uán point for milion bicáms, in a jidláin,"
+        },
+        {
+          "t": "a population of nine hundred thousand. The midpoint is not wrong",
+          "p": "a populashon ov náin jándred záusand. de midpoint is not rong"
+        },
+        {
+          "t": "exactly, but it conveys a precision the underlying work never claimed,",
+          "p": "eksaktli, bat it konveys a presishon de underlying uérk néver klaáimd,"
+        },
+        {
+          "t": "and it makes subsequent revisions look like scandals rather than",
+          "p": "end it méiks subskuent revishons luk láik skandals ráder dan"
+        },
+        {
+          "t": "science.",
+          "p": "sins."
+        }
+      ],
+      [
+        {
+          "t": "Newer methods have improved matters without solving the problem.",
+          "p": "neuer mézods jav impróuvd maters uidáut solving de problem."
+        },
+        {
+          "t": "Camera traps, acoustic monitoring, satellite tracking and the analysis",
+          "p": "cámera traps, akostik monitóering, sátelait traking end de analysis"
+        },
+        {
+          "t": "of DNA left in soil and water have all reduced the reliance on direct",
+          "p": "ov dna left in sóil end uóter jav ol redust de relians on derekt"
+        },
+        {
+          "t": "observation. Each brings its own biases: a camera trap records animals",
+          "p": "observashon. ich brings its óun biases: a cámera trap rekords animals"
+        },
+        {
+          "t": "that pass a particular point, and animals that avoid open ground pass",
+          "p": "dat pas a partikular point, end animals dat avoid open grond pas"
+        },
+        {
+          "t": "such points less often.",
+          "p": "sach points les ófen."
+        }
+      ],
+      [
+        {
+          "t": "The consequence is not that population figures are worthless.",
+          "p": "de konskuens is not dat populashon fíguers ar uorsles."
+        },
+        {
+          "t": "Trends are considerably more reliable than absolute numbers,",
+          "p": "trends ar konsiderabli mor reliabol dan absoliút numbers,"
+        },
+        {
+          "t": "because a method with consistent biases will still show a decline",
+          "p": "bicós a mézod uíd konsistent biases uíl stil shóu a dekláin"
+        },
+        {
+          "t": "accurately even if its totals are wrong. An ecologist who is unsure",
+          "p": "akserateli íven if its tóutals ar rong. an ekoloyist ju is unsher"
+        },
+        {
+          "t": "whether a population is two hundred thousand or six hundred thousand may",
+          "p": "uéder a populashon is tu jándred záusand or siks jándred záusand méi"
+        },
+        {
+          "t": "be entirely confident that it is falling.",
+          "p": "bi entereli konfident dat it is faling."
+        }
+      ],
+      [
+        {
+          "t": "This distinction rarely survives contact with public debate,",
+          "p": "dis distinkshon rareli serváivs kontakt uíd publik debéit,"
+        },
+        {
+          "t": "where it is treated as an evasion. It is not.",
+          "p": "uér it is tréited as an evashon. it is not."
+        },
+        {
+          "t": "Insisting that we know less than we claim, while continuing to act on",
+          "p": "insisting dat uí no les dan uí kléim, uáil kontinuing tu akt on"
+        },
+        {
+          "t": "what the evidence does support, is an ordinary scientific position that",
+          "p": "uót de évidens das suport, is an ordinari sintifik posishon dat"
+        },
+        {
+          "t": "happens to be difficult to fit into a headline or a slogan.",
+          "p": "japens tu bi difikult tu fit íntu a jidláin or a slogan."
+        }
       ]
-    },
-    {
-      "title": "A hotel built entirely from what others discarded",
-      "body": [
-        "The Lindhagen opened in 2021 with forty rooms, a restaurant and an unusual constraint: nothing structural or decorative inside it was newly manufactured. Doors came from a demolished hospital, floorboards from a gymnasium, basins from a hotel refurbishment two streets away. The architects describe the project as an experiment in whether such a building could be delivered on a normal commercial timetable.",
-        "It could not, quite. The build ran eleven months over schedule, almost entirely because reclaimed materials arrive when they arrive. A conventional project orders four hundred identical door handles; this one waited for a school to be stripped out. The design had to be revised repeatedly as availability changed, which is the opposite of how construction documents normally work.",
-        "The cost outcome surprised the developers in both directions. Materials were cheap, sometimes free, since demolition contractors frequently pay to dispose of what the Lindhagen collected. Labour, however, was expensive: reclaimed timber must be de-nailed, planed and inspected, and fitting components that were never designed to go together takes skilled hands considerably longer than fitting new ones.",
-        "Guests, according to the operator, divide into three groups. A minority book specifically because of the building's provenance and want to be told the origin of everything. A larger group notices the aesthetic, assumes it is a deliberate style, and is mildly surprised to learn the reason. The third group notices nothing at all, which the architects regard as the most satisfying response.",
-        "Regulation proved to be the sharpest obstacle. Fire certification, structural warranties and insurance are all built around documented product specifications, and a floorboard from an unknown 1950s gymnasium has no specification. Each reclaimed element required individual testing or a certified engineer's sign-off, an expense that would rise steeply on a larger building.",
-        "The architects are therefore cautious about how far the model extends. A boutique hotel is small, has a tolerant client and can absorb delay. A hospital, a school or a housing block has none of those luxuries. Their published conclusion is that the approach suits projects where time is flexible and volumes are low, which describes a small fraction of what gets built.",
-        "What they consider genuinely transferable is less visible than the building. The project produced a catalogue of testing protocols for reclaimed components, and that documentation has been requested by more firms than have enquired about the architecture. The paperwork, not the aesthetic, may turn out to be the durable contribution."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Un periódico informa que una especie ha disminuido un sesenta por ciento desde 1970. La cifra se repite, se convierte en un lema de campaña y con el tiempo aparece en documentos de política pública. Casi nadie que se topa con ella se hace la incómoda pregunta preliminar, que es cómo se sabe cuántos ejemplares de un animal existían en 1970, o existen ahora.",
+      "Contar poblaciones silvestres es difícil de maneras que resultan fáciles de subestimar. Los animales se desplazan, se esconden, migran y se parecen entre sí. Están distribuidos de forma desigual por un terreno que con frecuencia es inaccesible. Un censo completo es imposible salvo para un puñado de especies grandes, llamativas y geográficamente confinadas, y hasta esas se discuten.",
+      "Lo que los ecólogos producen en su lugar son estimaciones construidas a partir de muestras. Se estudia intensivamente un área definida, se calcula una densidad, y esa densidad se extrapola al hábitat que se cree comparable. Cada uno de esos pasos introduce incertidumbre, y las incertidumbres se acumulan. Una cifra publicada de forma responsable llega, por tanto, con un intervalo de confianza adjunto, a menudo amplio.",
+      "Ese intervalo es la primera víctima de la comunicación. Un hallazgo de que una población se sitúa en algún punto entre cuatrocientos mil y un millón cuatrocientos mil se convierte, en un titular, en una población de novecientos mil. El punto medio no es exactamente erróneo, pero transmite una precisión que el trabajo de base nunca reclamó, y hace que las revisiones posteriores parezcan escándalos en lugar de ciencia.",
+      "Los métodos más nuevos han mejorado las cosas sin resolver el problema. Las cámaras trampa, el monitoreo acústico, el seguimiento por satélite y el análisis del ADN dejado en el suelo y el agua han reducido la dependencia de la observación directa. Cada uno aporta sus propios sesgos: una cámara trampa registra a los animales que pasan por un punto determinado, y los animales que evitan el terreno abierto pasan por esos puntos con menos frecuencia.",
+      "La consecuencia no es que las cifras de población carezcan de valor. Las tendencias son bastante más fiables que los números absolutos, porque un método con sesgos constantes seguirá mostrando una disminución con exactitud aunque sus totales sean erróneos. Un ecólogo que no está seguro de si una población es de doscientos mil o de seiscientos mil puede estar completamente seguro de que está descendiendo.",
+      "Esta distinción rara vez sobrevive al contacto con el debate público, donde se la trata como una evasiva. No lo es. Insistir en que sabemos menos de lo que afirmamos, mientras se sigue actuando sobre lo que la evidencia sí respalda, es una postura científica corriente que da la casualidad de que es difícil de encajar en un titular o en un lema."
+    ]
+  },
+  {
+    "title": "A hotel built entirely from what others discarded",
+    "body": [
+      "The Lindhagen opened in 2021 with forty rooms, a restaurant and an unusual constraint: nothing structural or decorative inside it was newly manufactured. Doors came from a demolished hospital, floorboards from a gymnasium, basins from a hotel refurbishment two streets away. The architects describe the project as an experiment in whether such a building could be delivered on a normal commercial timetable.",
+      "It could not, quite. The build ran eleven months over schedule, almost entirely because reclaimed materials arrive when they arrive. A conventional project orders four hundred identical door handles; this one waited for a school to be stripped out. The design had to be revised repeatedly as availability changed, which is the opposite of how construction documents normally work.",
+      "The cost outcome surprised the developers in both directions. Materials were cheap, sometimes free, since demolition contractors frequently pay to dispose of what the Lindhagen collected. Labour, however, was expensive: reclaimed timber must be de-nailed, planed and inspected, and fitting components that were never designed to go together takes skilled hands considerably longer than fitting new ones.",
+      "Guests, according to the operator, divide into three groups. A minority book specifically because of the building's provenance and want to be told the origin of everything. A larger group notices the aesthetic, assumes it is a deliberate style, and is mildly surprised to learn the reason. The third group notices nothing at all, which the architects regard as the most satisfying response.",
+      "Regulation proved to be the sharpest obstacle. Fire certification, structural warranties and insurance are all built around documented product specifications, and a floorboard from an unknown 1950s gymnasium has no specification. Each reclaimed element required individual testing or a certified engineer's sign-off, an expense that would rise steeply on a larger building.",
+      "The architects are therefore cautious about how far the model extends. A boutique hotel is small, has a tolerant client and can absorb delay. A hospital, a school or a housing block has none of those luxuries. Their published conclusion is that the approach suits projects where time is flexible and volumes are low, which describes a small fraction of what gets built.",
+      "What they consider genuinely transferable is less visible than the building. The project produced a catalogue of testing protocols for reclaimed components, and that documentation has been requested by more firms than have enquired about the architecture. The paperwork, not the aesthetic, may turn out to be the durable contribution."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "The Lindhagen was completed on its original schedule.",
+        "a": "False",
+        "why": "The build ran eleven months over schedule."
+      },
+      {
+        "q": "Reclaimed materials were often obtained very cheaply.",
+        "a": "True",
+        "why": "Materials were cheap, sometimes free, as contractors pay to dispose of them."
+      },
+      {
+        "q": "Labour costs were lower than on a conventional build.",
+        "a": "False",
+        "why": "Labour was expensive because of de-nailing, planing and fitting mismatched components."
+      },
+      {
+        "q": "Most guests book the hotel because of how it was built.",
+        "a": "False",
+        "why": "Only a minority book specifically for the provenance."
+      },
+      {
+        "q": "The hotel has won architectural awards for its design.",
+        "a": "Not Given",
+        "why": "No awards are mentioned in the passage."
+      }
+    ],
+    "short": [
+      {
+        "q": "Where did the hotel's doors originally come from?",
+        "a": "a demolished hospital"
+      },
+      {
+        "q": "What did the project produce that other firms have requested?",
+        "a": "testing protocols"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why did the design have to be revised so often?",
+        "options": [
+          "Available salvage determined what could be used.",
+          "The client kept changing the brief.",
+          "The original architects left the project.",
+          "Local planning rules were altered mid-project."
+        ],
+        "a": 0,
+        "why": "Reclaimed materials arrive when they arrive, so the design was revised as availability changed."
+      },
+      {
+        "q": "Which guest reaction do the architects value most?",
+        "options": [
+          "Detailed curiosity about each component's history.",
+          "Complete unawareness of how the building was made.",
+          "Willingness to pay a premium for the concept.",
+          "Admiration for the visual style."
+        ],
+        "a": 1,
+        "why": "The group that notices nothing at all is called the most satisfying response."
+      },
+      {
+        "q": "Why was regulation the sharpest obstacle?",
+        "options": [
+          "Insurance companies rejected the project entirely.",
+          "Reclaimed materials are banned in commercial buildings.",
+          "Certification systems depend on documented specifications that salvage lacks.",
+          "Inspectors refused to visit the site."
+        ],
+        "a": 2,
+        "why": "Fire certification, warranties and insurance assume documented specifications, which salvage has none."
+      },
+      {
+        "q": "What do the architects believe is the project's most transferable outcome?",
+        "options": [
+          "The relationships built with demolition contractors.",
+          "The visual style of the interiors.",
+          "The evidence that costs can be reduced.",
+          "The documented procedures for testing salvaged parts."
+        ],
+        "a": 3,
+        "why": "The catalogue of testing protocols has been requested more than the architecture."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "The Lindhagen was completed on its original schedule.",
-          "a": "False",
-          "why": "The build ran eleven months over schedule."
+          "t": "The Lindhagen opened in 2021 with forty rooms,",
+          "p": "de lindjayen opend in 2021 uíd forti rums,"
         },
         {
-          "q": "Reclaimed materials were often obtained very cheaply.",
-          "a": "True",
-          "why": "Materials were cheap, sometimes free, as contractors pay to dispose of them."
+          "t": "a restaurant and an unusual constraint: nothing structural or decorative",
+          "p": "a réstorant end an unusual konstréint: názing strákchural or dekoratáiv"
         },
         {
-          "q": "Labour costs were lower than on a conventional build.",
-          "a": "False",
-          "why": "Labour was expensive because of de-nailing, planing and fitting mismatched components."
+          "t": "inside it was newly manufactured. Doors came from a demolished hospital,",
+          "p": "insáid it uós neuli manufakterd. dors kéim from a demolished jospital,"
         },
         {
-          "q": "Most guests book the hotel because of how it was built.",
-          "a": "False",
-          "why": "Only a minority book specifically for the provenance."
+          "t": "floorboards from a gymnasium, basins from a hotel refurbishment two",
+          "p": "flórbords from a yymnasium, béisins from a jotel referbishment tu"
         },
         {
-          "q": "The hotel has won architectural awards for its design.",
-          "a": "Not Given",
-          "why": "No awards are mentioned in the passage."
+          "t": "streets away. The architects describe the project as an experiment in",
+          "p": "strits oéi. de arkitekts deskráib de próyect as an eksperiment in"
+        },
+        {
+          "t": "whether such a building could be delivered on a normal commercial",
+          "p": "uéder sach a bílding cud bi deliverd on a normal komershal"
+        },
+        {
+          "t": "timetable.",
+          "p": "táimteibol."
         }
       ],
-      "short": [
+      [
         {
-          "q": "Where did the hotel's doors originally come from?",
-          "a": "a demolished hospital"
+          "t": "It could not, quite. The build ran eleven months over schedule,",
+          "p": "it cud not, kuáit. de buáild ran iléven manzs óuver skediúl,"
         },
         {
-          "q": "What did the project produce that other firms have requested?",
-          "a": "testing protocols"
+          "t": "almost entirely because reclaimed materials arrive when they arrive.",
+          "p": "ólmoust entereli bicós rikléimd materials aráiv uén déi aráiv."
+        },
+        {
+          "t": "A conventional project orders four hundred identical door handles;",
+          "p": "a convénshonal próyect orders for jándred identikal dor jandles;"
+        },
+        {
+          "t": "this one waited for a school to be stripped out.",
+          "p": "dis uán uaáited for a skul tu bi stript áut."
+        },
+        {
+          "t": "The design had to be revised repeatedly as availability changed,",
+          "p": "de disáin jad tu bi reváist repitedli as avéilabiliti chéinchd,"
+        },
+        {
+          "t": "which is the opposite of how construction documents normally work.",
+          "p": "uích is de oposáit ov jáu konstrukshon dokuments normali uérk."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why did the design have to be revised so often?",
-          "options": [
-            "Available salvage determined what could be used.",
-            "The client kept changing the brief.",
-            "The original architects left the project.",
-            "Local planning rules were altered mid-project."
-          ],
-          "a": 0,
-          "why": "Reclaimed materials arrive when they arrive, so the design was revised as availability changed."
+          "t": "The cost outcome surprised the developers in both directions.",
+          "p": "de cost otkóum serpráist de develóupers in bóuz derekshons."
         },
         {
-          "q": "Which guest reaction do the architects value most?",
-          "options": [
-            "Detailed curiosity about each component's history.",
-            "Complete unawareness of how the building was made.",
-            "Willingness to pay a premium for the concept.",
-            "Admiration for the visual style."
-          ],
-          "a": 1,
-          "why": "The group that notices nothing at all is called the most satisfying response."
+          "t": "Materials were cheap, sometimes free, since demolition contractors",
+          "p": "materials uér chip, sometáims fri, sins demolishon kontraktors"
         },
         {
-          "q": "Why was regulation the sharpest obstacle?",
-          "options": [
-            "Insurance companies rejected the project entirely.",
-            "Reclaimed materials are banned in commercial buildings.",
-            "Certification systems depend on documented specifications that salvage lacks.",
-            "Inspectors refused to visit the site."
-          ],
-          "a": 2,
-          "why": "Fire certification, warranties and insurance assume documented specifications, which salvage has none."
+          "t": "frequently pay to dispose of what the Lindhagen collected.",
+          "p": "fríkuentli péi tu dispóus ov uót de lindjayen kolekted."
         },
         {
-          "q": "What do the architects believe is the project's most transferable outcome?",
-          "options": [
-            "The relationships built with demolition contractors.",
-            "The visual style of the interiors.",
-            "The evidence that costs can be reduced.",
-            "The documented procedures for testing salvaged parts."
-          ],
-          "a": 3,
-          "why": "The catalogue of testing protocols has been requested more than the architecture."
+          "t": "Labour, however, was expensive: reclaimed timber must be de-nailed,",
+          "p": "labáuar, jauéver, uós ekspénsiv: rikléimd tímber mast bi d-naáild,"
+        },
+        {
+          "t": "planed and inspected, and fitting components that were never designed to",
+          "p": "pléind end inspékted, end fiting komponents dat uér néver disáind tu"
+        },
+        {
+          "t": "go together takes skilled hands considerably longer than fitting new",
+          "p": "go tuguéder téiks skild jands konsiderabli lonyer dan fiting neu"
+        },
+        {
+          "t": "ones.",
+          "p": "uáns."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "The Lindhagen opened in 2021 with forty rooms,",
-            "p": "de lindjayen opend in 2021 uíd forti rums,"
-          },
-          {
-            "t": "a restaurant and an unusual constraint: nothing structural or decorative",
-            "p": "a réstorant end an unusual konstréint: názing strákchural or dekoratáiv"
-          },
-          {
-            "t": "inside it was newly manufactured. Doors came from a demolished hospital,",
-            "p": "insáid it uós neuli manufakterd. dors kéim from a demolished jospital,"
-          },
-          {
-            "t": "floorboards from a gymnasium, basins from a hotel refurbishment two",
-            "p": "flórbords from a yymnasium, béisins from a jotel referbishment tu"
-          },
-          {
-            "t": "streets away. The architects describe the project as an experiment in",
-            "p": "strits oéi. de arkitekts deskráib de próyect as an eksperiment in"
-          },
-          {
-            "t": "whether such a building could be delivered on a normal commercial",
-            "p": "uéder sach a bílding cud bi deliverd on a normal komershal"
-          },
-          {
-            "t": "timetable.",
-            "p": "táimteibol."
-          }
-        ],
-        [
-          {
-            "t": "It could not, quite. The build ran eleven months over schedule,",
-            "p": "it cud not, kuáit. de buáild ran iléven manzs óuver skediúl,"
-          },
-          {
-            "t": "almost entirely because reclaimed materials arrive when they arrive.",
-            "p": "ólmoust entereli bicós rikléimd materials aráiv uén déi aráiv."
-          },
-          {
-            "t": "A conventional project orders four hundred identical door handles;",
-            "p": "a convénshonal próyect orders for jándred identikal dor jandles;"
-          },
-          {
-            "t": "this one waited for a school to be stripped out.",
-            "p": "dis uán uaáited for a skul tu bi stript áut."
-          },
-          {
-            "t": "The design had to be revised repeatedly as availability changed,",
-            "p": "de disáin jad tu bi reváist repitedli as avéilabiliti chéinchd,"
-          },
-          {
-            "t": "which is the opposite of how construction documents normally work.",
-            "p": "uích is de oposáit ov jáu konstrukshon dokuments normali uérk."
-          }
-        ],
-        [
-          {
-            "t": "The cost outcome surprised the developers in both directions.",
-            "p": "de cost otkóum serpráist de develóupers in bóuz derekshons."
-          },
-          {
-            "t": "Materials were cheap, sometimes free, since demolition contractors",
-            "p": "materials uér chip, sometáims fri, sins demolishon kontraktors"
-          },
-          {
-            "t": "frequently pay to dispose of what the Lindhagen collected.",
-            "p": "fríkuentli péi tu dispóus ov uót de lindjayen kolekted."
-          },
-          {
-            "t": "Labour, however, was expensive: reclaimed timber must be de-nailed,",
-            "p": "labáuar, jauéver, uós ekspénsiv: rikléimd tímber mast bi d-naáild,"
-          },
-          {
-            "t": "planed and inspected, and fitting components that were never designed to",
-            "p": "pléind end inspékted, end fiting komponents dat uér néver disáind tu"
-          },
-          {
-            "t": "go together takes skilled hands considerably longer than fitting new",
-            "p": "go tuguéder téiks skild jands konsiderabli lonyer dan fiting neu"
-          },
-          {
-            "t": "ones.",
-            "p": "uáns."
-          }
-        ],
-        [
-          {
-            "t": "Guests, according to the operator, divide into three groups.",
-            "p": "guests, akkording tu de operator, diváid íntu zri grops."
-          },
-          {
-            "t": "A minority book specifically because of the building's provenance and",
-            "p": "a minoriti buk spesifikali bicós ov de bíldings provenans end"
-          },
-          {
-            "t": "want to be told the origin of everything. A larger group notices the",
-            "p": "uónt tu bi tóuld de oriyin ov everysing. a laryer grup nóutises de"
-          },
-          {
-            "t": "aesthetic, assumes it is a deliberate style,",
-            "p": "aesetik, asiúms it is a deliberéit styl,"
-          },
-          {
-            "t": "and is mildly surprised to learn the reason.",
-            "p": "end is mildli serpráist tu lirn de ríson."
-          },
-          {
-            "t": "The third group notices nothing at all, which the architects regard as",
-            "p": "de zerd grup nóutises názing at ol, uích de arkitekts regard as"
-          },
-          {
-            "t": "the most satisfying response.",
-            "p": "de móust satisfying respons."
-          }
-        ],
-        [
-          {
-            "t": "Regulation proved to be the sharpest obstacle.",
-            "p": "regulashon pruvd tu bi de sharpest obstakol."
-          },
-          {
-            "t": "Fire certification, structural warranties and insurance are all built",
-            "p": "fáer sertifikashon, strákchural uórantis end inserans ar ol bilt"
-          },
-          {
-            "t": "around documented product specifications, and a floorboard from an",
-            "p": "aráund dokumented produkt spesifikashons, end a flórbord from an"
-          },
-          {
-            "t": "unknown 1950s gymnasium has no specification.",
-            "p": "unknóun 1950s yymnasium jas nóu spesifikashon."
-          },
-          {
-            "t": "Each reclaimed element required individual testing or a certified",
-            "p": "ich rikléimd element rkuáerd individual testing or a sertifáid"
-          },
-          {
-            "t": "engineer's sign-off, an expense that would rise steeply on a larger",
-            "p": "enyiníar's sáin-of, an ekspens dat vud ráis stipli on a laryer"
-          },
-          {
-            "t": "building.",
-            "p": "bílding."
-          }
-        ],
-        [
-          {
-            "t": "The architects are therefore cautious about how far the model extends.",
-            "p": "de arkitekts ar serefóer koshas abáut jáu far de model ekstends."
-          },
-          {
-            "t": "A boutique hotel is small, has a tolerant client and can absorb delay.",
-            "p": "a botikue jotel is smal, jas a tolerant klint end can absórb deléi."
-          },
-          {
-            "t": "A hospital, a school or a housing block has none of those luxuries.",
-            "p": "a jospital, a skul or a josing blok jas nan ov dóus lukseris."
-          },
-          {
-            "t": "Their published conclusion is that the approach suits projects where",
-            "p": "déar published konklushon is dat de apróuch suits próyects uér"
-          },
-          {
-            "t": "time is flexible and volumes are low, which describes a small fraction",
-            "p": "táim is fleksibol end vólioms ar lo, uích deskráibs a smal frakshon"
-          },
-          {
-            "t": "of what gets built.",
-            "p": "ov uót yets bilt."
-          }
-        ],
-        [
-          {
-            "t": "What they consider genuinely transferable is less visible than the",
-            "p": "uót déi konsáider yenuineli transferabol is les vísibol dan de"
-          },
-          {
-            "t": "building. The project produced a catalogue of testing protocols for",
-            "p": "bílding. de próyect produst a katalogue ov testing protokols for"
-          },
-          {
-            "t": "reclaimed components, and that documentation has been requested by more",
-            "p": "rikléimd komponents, end dat dokumentashon jas bin rkuested bái mor"
-          },
-          {
-            "t": "firms than have enquired about the architecture.",
-            "p": "ferms dan jav enkuáerd abáut de arkitekcher."
-          },
-          {
-            "t": "The paperwork, not the aesthetic, may turn out to be the durable",
-            "p": "de paperuork, not de aesetik, méi tern áut tu bi de derabol"
-          },
-          {
-            "t": "contribution.",
-            "p": "kontribushon."
-          }
-        ]
+      [
+        {
+          "t": "Guests, according to the operator, divide into three groups.",
+          "p": "guests, akkording tu de operator, diváid íntu zri grops."
+        },
+        {
+          "t": "A minority book specifically because of the building's provenance and",
+          "p": "a minoriti buk spesifikali bicós ov de bíldings provenans end"
+        },
+        {
+          "t": "want to be told the origin of everything. A larger group notices the",
+          "p": "uónt tu bi tóuld de oriyin ov everysing. a laryer grup nóutises de"
+        },
+        {
+          "t": "aesthetic, assumes it is a deliberate style,",
+          "p": "aesetik, asiúms it is a deliberéit styl,"
+        },
+        {
+          "t": "and is mildly surprised to learn the reason.",
+          "p": "end is mildli serpráist tu lirn de ríson."
+        },
+        {
+          "t": "The third group notices nothing at all, which the architects regard as",
+          "p": "de zerd grup nóutises názing at ol, uích de arkitekts regard as"
+        },
+        {
+          "t": "the most satisfying response.",
+          "p": "de móust satisfying respons."
+        }
+      ],
+      [
+        {
+          "t": "Regulation proved to be the sharpest obstacle.",
+          "p": "regulashon pruvd tu bi de sharpest obstakol."
+        },
+        {
+          "t": "Fire certification, structural warranties and insurance are all built",
+          "p": "fáer sertifikashon, strákchural uórantis end inserans ar ol bilt"
+        },
+        {
+          "t": "around documented product specifications, and a floorboard from an",
+          "p": "aráund dokumented produkt spesifikashons, end a flórbord from an"
+        },
+        {
+          "t": "unknown 1950s gymnasium has no specification.",
+          "p": "unknóun 1950s yymnasium jas nóu spesifikashon."
+        },
+        {
+          "t": "Each reclaimed element required individual testing or a certified",
+          "p": "ich rikléimd element rkuáerd individual testing or a sertifáid"
+        },
+        {
+          "t": "engineer's sign-off, an expense that would rise steeply on a larger",
+          "p": "enyiníar's sáin-of, an ekspens dat vud ráis stipli on a laryer"
+        },
+        {
+          "t": "building.",
+          "p": "bílding."
+        }
+      ],
+      [
+        {
+          "t": "The architects are therefore cautious about how far the model extends.",
+          "p": "de arkitekts ar serefóer koshas abáut jáu far de model ekstends."
+        },
+        {
+          "t": "A boutique hotel is small, has a tolerant client and can absorb delay.",
+          "p": "a botikue jotel is smal, jas a tolerant klint end can absórb deléi."
+        },
+        {
+          "t": "A hospital, a school or a housing block has none of those luxuries.",
+          "p": "a jospital, a skul or a josing blok jas nan ov dóus lukseris."
+        },
+        {
+          "t": "Their published conclusion is that the approach suits projects where",
+          "p": "déar published konklushon is dat de apróuch suits próyects uér"
+        },
+        {
+          "t": "time is flexible and volumes are low, which describes a small fraction",
+          "p": "táim is fleksibol end vólioms ar lo, uích deskráibs a smal frakshon"
+        },
+        {
+          "t": "of what gets built.",
+          "p": "ov uót yets bilt."
+        }
+      ],
+      [
+        {
+          "t": "What they consider genuinely transferable is less visible than the",
+          "p": "uót déi konsáider yenuineli transferabol is les vísibol dan de"
+        },
+        {
+          "t": "building. The project produced a catalogue of testing protocols for",
+          "p": "bílding. de próyect produst a katalogue ov testing protokols for"
+        },
+        {
+          "t": "reclaimed components, and that documentation has been requested by more",
+          "p": "rikléimd komponents, end dat dokumentashon jas bin rkuested bái mor"
+        },
+        {
+          "t": "firms than have enquired about the architecture.",
+          "p": "ferms dan jav enkuáerd abáut de arkitekcher."
+        },
+        {
+          "t": "The paperwork, not the aesthetic, may turn out to be the durable",
+          "p": "de paperuork, not de aesetik, méi tern áut tu bi de derabol"
+        },
+        {
+          "t": "contribution.",
+          "p": "kontribushon."
+        }
       ]
-    },
-    {
-      "title": "Four reviews of the same restaurant",
-      "body": [
-        "Kessel opened in March in a converted tram depot and has since attracted the kind of attention that makes reviewers competitive. What follows is an attempt to read four published notices side by side, not to decide which is correct but to show how completely the same evening can be described in incompatible ways.",
-        "The first reviewer, writing for a national weekend supplement, spent most of her column on the room. She admired the height of the ceiling, disliked the acoustics, and mentioned three dishes in a single sentence near the end. Her verdict was warm. A reader would finish the piece knowing what the place feels like and almost nothing about what it serves.",
-        "The second, a food blogger with a large following, inverted this exactly. She listed nine courses with weights, temperatures and provenance, criticised the seasoning of two of them in detail, and referred to the building only to note that it was cold near the door. Her verdict was lukewarm, and the disagreement with the first reviewer concerned criteria rather than facts.",
-        "The third notice appeared in a local paper and was written by someone who had eaten there four times, twice before the official opening. He was the only reviewer to mention prices in relation to local wages, the only one to name a server, and the only one who observed that the menu had already changed twice. His verdict was affectionate and slightly worried.",
-        "The fourth was a single paragraph in a listings magazine, evidently written from a press release and a brief visit. It contained one factual error about the chef's previous employment, praised a dish that had been removed from the menu, and awarded four stars out of five. It is also, by a considerable margin, the review most often quoted in the restaurant's own publicity.",
-        "None of these pieces is dishonest. Each reflects a different assumption about what a review is for: atmosphere, technique, community context, or a rapid consumer signal. Readers rarely know which assumption they are getting, because publications almost never state it, and the star rating at the end flattens all four into apparently comparable numbers.",
-        "The restaurant, for its part, has responded in the way most do. It has printed the four stars on a card by the entrance and mentions none of the other reviews. This is not deceptive so much as predictable: of the four notices, only one produced a number, and only numbers fit on a card."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "El Lindhagen abrió en 2021 con cuarenta habitaciones, un restaurante y una restricción inusual: nada estructural ni decorativo en su interior era de fabricación nueva. Las puertas provenían de un hospital demolido, las tablas del suelo de un gimnasio, los lavabos de la reforma de un hotel a dos calles de distancia. Los arquitectos describen el proyecto como un experimento sobre si un edificio así podría entregarse en un plazo comercial normal.",
+      "No pudo, del todo. La obra se extendió once meses más de lo previsto, casi por completo porque los materiales recuperados llegan cuando llegan. Un proyecto convencional encarga cuatrocientas manijas de puerta idénticas; este esperó a que se desmantelara una escuela. El diseño tuvo que revisarse una y otra vez a medida que cambiaba la disponibilidad, que es lo opuesto a cómo funcionan normalmente los documentos de construcción.",
+      "El resultado en cuanto a costos sorprendió a los promotores en ambos sentidos. Los materiales eran baratos, a veces gratuitos, ya que las empresas de demolición con frecuencia pagan por deshacerse de lo que el Lindhagen recogía. La mano de obra, en cambio, era cara: la madera recuperada debe desclavarse, cepillarse e inspeccionarse, y encajar componentes que nunca fueron diseñados para ir juntos lleva a manos expertas bastante más tiempo que colocar unos nuevos.",
+      "Los huéspedes, según el operador, se dividen en tres grupos. Una minoría reserva específicamente por la procedencia del edificio y quiere que le cuenten el origen de todo. Un grupo más numeroso nota la estética, supone que es un estilo deliberado y se sorprende un poco al conocer la razón. El tercer grupo no nota nada en absoluto, lo que los arquitectos consideran la respuesta más satisfactoria.",
+      "La normativa resultó ser el obstáculo más agudo. La certificación contra incendios, las garantías estructurales y los seguros están todos construidos en torno a especificaciones de producto documentadas, y una tabla de suelo de un gimnasio desconocido de los años cincuenta no tiene especificación. Cada elemento recuperado requirió pruebas individuales o el visto bueno de un ingeniero certificado, un gasto que se dispararía en un edificio más grande.",
+      "Los arquitectos son, por tanto, cautelosos sobre hasta dónde se extiende el modelo. Un hotel boutique es pequeño, tiene un cliente tolerante y puede absorber demoras. Un hospital, una escuela o un bloque de viviendas no tienen ninguno de esos lujos. Su conclusión publicada es que el enfoque conviene a proyectos donde el tiempo es flexible y los volúmenes son bajos, lo que describe una pequeña fracción de lo que se construye.",
+      "Lo que consideran genuinamente transferible es menos visible que el edificio. El proyecto produjo un catálogo de protocolos de prueba para componentes recuperados, y esa documentación ha sido solicitada por más empresas de las que han preguntado por la arquitectura. Puede que sean los papeles, y no la estética, la contribución duradera."
+    ]
+  },
+  {
+    "title": "Four reviews of the same restaurant",
+    "body": [
+      "Kessel opened in March in a converted tram depot and has since attracted the kind of attention that makes reviewers competitive. What follows is an attempt to read four published notices side by side, not to decide which is correct but to show how completely the same evening can be described in incompatible ways.",
+      "The first reviewer, writing for a national weekend supplement, spent most of her column on the room. She admired the height of the ceiling, disliked the acoustics, and mentioned three dishes in a single sentence near the end. Her verdict was warm. A reader would finish the piece knowing what the place feels like and almost nothing about what it serves.",
+      "The second, a food blogger with a large following, inverted this exactly. She listed nine courses with weights, temperatures and provenance, criticised the seasoning of two of them in detail, and referred to the building only to note that it was cold near the door. Her verdict was lukewarm, and the disagreement with the first reviewer concerned criteria rather than facts.",
+      "The third notice appeared in a local paper and was written by someone who had eaten there four times, twice before the official opening. He was the only reviewer to mention prices in relation to local wages, the only one to name a server, and the only one who observed that the menu had already changed twice. His verdict was affectionate and slightly worried.",
+      "The fourth was a single paragraph in a listings magazine, evidently written from a press release and a brief visit. It contained one factual error about the chef's previous employment, praised a dish that had been removed from the menu, and awarded four stars out of five. It is also, by a considerable margin, the review most often quoted in the restaurant's own publicity.",
+      "None of these pieces is dishonest. Each reflects a different assumption about what a review is for: atmosphere, technique, community context, or a rapid consumer signal. Readers rarely know which assumption they are getting, because publications almost never state it, and the star rating at the end flattens all four into apparently comparable numbers.",
+      "The restaurant, for its part, has responded in the way most do. It has printed the four stars on a card by the entrance and mentions none of the other reviews. This is not deceptive so much as predictable: of the four notices, only one produced a number, and only numbers fit on a card."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "The first reviewer focused mainly on the food rather than the setting.",
+        "a": "False",
+        "why": "She spent most of her column on the room and mentioned dishes only briefly."
+      },
+      {
+        "q": "The second and first reviewers disagreed about the facts of the meal.",
+        "a": "False",
+        "why": "The disagreement concerned criteria rather than facts."
+      },
+      {
+        "q": "The third reviewer had visited the restaurant more than once.",
+        "a": "True",
+        "why": "He had eaten there four times, twice before the official opening."
+      },
+      {
+        "q": "The fourth review contained an inaccuracy.",
+        "a": "True",
+        "why": "It contained a factual error about the chef's previous employment."
+      },
+      {
+        "q": "The restaurant has publicly complained about one of the reviews.",
+        "a": "Not Given",
+        "why": "Its only response described is printing the four stars; no complaint is mentioned."
+      }
+    ],
+    "short": [
+      {
+        "q": "What was the building before it became a restaurant?",
+        "a": "a tram depot"
+      },
+      {
+        "q": "Which review is quoted most often in the restaurant's publicity?",
+        "a": "the fourth"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What does the writer say distinguishes the four reviews?",
+        "options": [
+          "Their underlying assumptions about a review's purpose.",
+          "Whether the reviewers paid for their meals.",
+          "The amount each reviewer was paid.",
+          "Their differing levels of professional competence."
+        ],
+        "a": 0,
+        "why": "Each reflects a different assumption about what a review is for."
+      },
+      {
+        "q": "Why does the writer single out the third reviewer?",
+        "options": [
+          "He wrote the longest of the four notices.",
+          "He alone considered cost against local earnings and named staff.",
+          "He was the most critical of the cooking.",
+          "He had trained as a chef himself."
+        ],
+        "a": 1,
+        "why": "He was the only one to mention prices relative to local wages and to name a server."
+      },
+      {
+        "q": "What problem does the writer identify with star ratings?",
+        "options": [
+          "They discourage readers from reading the text.",
+          "They are calculated by editors rather than reviewers.",
+          "They make reviews with different aims look equivalent.",
+          "They are usually awarded too generously."
+        ],
+        "a": 2,
+        "why": "The star rating flattens four different approaches into apparently comparable numbers."
+      },
+      {
+        "q": "How does the writer judge the restaurant's use of the four-star review?",
+        "options": [
+          "As a mistake that will damage its reputation.",
+          "As evidence that the other reviews were unfair.",
+          "As dishonest and worth condemning.",
+          "As an understandable consequence of how ratings work."
+        ],
+        "a": 3,
+        "why": "It is called not deceptive so much as predictable, since only numbers fit on a card."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "The first reviewer focused mainly on the food rather than the setting.",
-          "a": "False",
-          "why": "She spent most of her column on the room and mentioned dishes only briefly."
+          "t": "Kessel opened in March in a converted tram depot and has since attracted",
+          "p": "kesel opend in march in a konverted tram depot end jas sins atrakted"
         },
         {
-          "q": "The second and first reviewers disagreed about the facts of the meal.",
-          "a": "False",
-          "why": "The disagreement concerned criteria rather than facts."
+          "t": "the kind of attention that makes reviewers competitive.",
+          "p": "de káind ov atenshon dat méiks riviúers kompetitáiv."
         },
         {
-          "q": "The third reviewer had visited the restaurant more than once.",
-          "a": "True",
-          "why": "He had eaten there four times, twice before the official opening."
+          "t": "What follows is an attempt to read four published notices side by side,",
+          "p": "uót folóus is an atempt tu rid for published nóutises sáid bái sáid,"
         },
         {
-          "q": "The fourth review contained an inaccuracy.",
-          "a": "True",
-          "why": "It contained a factual error about the chef's previous employment."
+          "t": "not to decide which is correct but to show how completely the same",
+          "p": "not tu dekáid uích is korekt bat tu shóu jáu kompleteli de séim"
         },
         {
-          "q": "The restaurant has publicly complained about one of the reviews.",
-          "a": "Not Given",
-          "why": "Its only response described is printing the four stars; no complaint is mentioned."
+          "t": "evening can be described in incompatible ways.",
+          "p": "evening can bi deskráibd in inkompatibol uéis."
         }
       ],
-      "short": [
+      [
         {
-          "q": "What was the building before it became a restaurant?",
-          "a": "a tram depot"
+          "t": "The first reviewer, writing for a national weekend supplement,",
+          "p": "de férst riviúer, ráiting for a nashonal uikend suplement,"
         },
         {
-          "q": "Which review is quoted most often in the restaurant's publicity?",
-          "a": "the fourth"
+          "t": "spent most of her column on the room. She admired the height of the",
+          "p": "spent móust ov jer kolumn on de rum. shi admáerd de jeáit ov de"
+        },
+        {
+          "t": "ceiling, disliked the acoustics, and mentioned three dishes in a single",
+          "p": "síling, disláikt de acústics, end mentióund zri dishes in a singol"
+        },
+        {
+          "t": "sentence near the end. Her verdict was warm.",
+          "p": "sentens níar de end. jer vérdict uós uarm."
+        },
+        {
+          "t": "A reader would finish the piece knowing what the place feels like and",
+          "p": "a réider vud finish de piík nóuing uót de pléis fils láik end"
+        },
+        {
+          "t": "almost nothing about what it serves.",
+          "p": "ólmoust názing abáut uót it serves."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What does the writer say distinguishes the four reviews?",
-          "options": [
-            "Their underlying assumptions about a review's purpose.",
-            "Whether the reviewers paid for their meals.",
-            "The amount each reviewer was paid.",
-            "Their differing levels of professional competence."
-          ],
-          "a": 0,
-          "why": "Each reflects a different assumption about what a review is for."
+          "t": "The second, a food blogger with a large following,",
+          "p": "de sécond, a fud blóguer uíd a lary folóuing,"
         },
         {
-          "q": "Why does the writer single out the third reviewer?",
-          "options": [
-            "He wrote the longest of the four notices.",
-            "He alone considered cost against local earnings and named staff.",
-            "He was the most critical of the cooking.",
-            "He had trained as a chef himself."
-          ],
-          "a": 1,
-          "why": "He was the only one to mention prices relative to local wages and to name a server."
+          "t": "inverted this exactly. She listed nine courses with weights,",
+          "p": "inverted dis eksaktli. shi listed náin córses uíd ueáits,"
         },
         {
-          "q": "What problem does the writer identify with star ratings?",
-          "options": [
-            "They discourage readers from reading the text.",
-            "They are calculated by editors rather than reviewers.",
-            "They make reviews with different aims look equivalent.",
-            "They are usually awarded too generously."
-          ],
-          "a": 2,
-          "why": "The star rating flattens four different approaches into apparently comparable numbers."
+          "t": "temperatures and provenance, criticised the seasoning of two of them in",
+          "p": "temperachers end provenans, kritikáist de sísoning ov tu ov dem in"
         },
         {
-          "q": "How does the writer judge the restaurant's use of the four-star review?",
-          "options": [
-            "As a mistake that will damage its reputation.",
-            "As evidence that the other reviews were unfair.",
-            "As dishonest and worth condemning.",
-            "As an understandable consequence of how ratings work."
-          ],
-          "a": 3,
-          "why": "It is called not deceptive so much as predictable, since only numbers fit on a card."
+          "t": "detail, and referred to the building only to note that it was cold near",
+          "p": "detéil, end referd tu de bílding óunli tu nóut dat it uós kóuld níar"
+        },
+        {
+          "t": "the door. Her verdict was lukewarm, and the disagreement with the first",
+          "p": "de dor. jer vérdict uós lukeuarm, end de disagriment uíd de férst"
+        },
+        {
+          "t": "reviewer concerned criteria rather than facts.",
+          "p": "riviúer consérnd kriteria ráder dan fakts."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Kessel opened in March in a converted tram depot and has since attracted",
-            "p": "kesel opend in march in a konverted tram depot end jas sins atrakted"
-          },
-          {
-            "t": "the kind of attention that makes reviewers competitive.",
-            "p": "de káind ov atenshon dat méiks riviúers kompetitáiv."
-          },
-          {
-            "t": "What follows is an attempt to read four published notices side by side,",
-            "p": "uót folóus is an atempt tu rid for published nóutises sáid bái sáid,"
-          },
-          {
-            "t": "not to decide which is correct but to show how completely the same",
-            "p": "not tu dekáid uích is korekt bat tu shóu jáu kompleteli de séim"
-          },
-          {
-            "t": "evening can be described in incompatible ways.",
-            "p": "evening can bi deskráibd in inkompatibol uéis."
-          }
-        ],
-        [
-          {
-            "t": "The first reviewer, writing for a national weekend supplement,",
-            "p": "de férst riviúer, ráiting for a nashonal uikend suplement,"
-          },
-          {
-            "t": "spent most of her column on the room. She admired the height of the",
-            "p": "spent móust ov jer kolumn on de rum. shi admáerd de jeáit ov de"
-          },
-          {
-            "t": "ceiling, disliked the acoustics, and mentioned three dishes in a single",
-            "p": "síling, disláikt de acústics, end mentióund zri dishes in a singol"
-          },
-          {
-            "t": "sentence near the end. Her verdict was warm.",
-            "p": "sentens níar de end. jer vérdict uós uarm."
-          },
-          {
-            "t": "A reader would finish the piece knowing what the place feels like and",
-            "p": "a réider vud finish de piík nóuing uót de pléis fils láik end"
-          },
-          {
-            "t": "almost nothing about what it serves.",
-            "p": "ólmoust názing abáut uót it serves."
-          }
-        ],
-        [
-          {
-            "t": "The second, a food blogger with a large following,",
-            "p": "de sécond, a fud blóguer uíd a lary folóuing,"
-          },
-          {
-            "t": "inverted this exactly. She listed nine courses with weights,",
-            "p": "inverted dis eksaktli. shi listed náin córses uíd ueáits,"
-          },
-          {
-            "t": "temperatures and provenance, criticised the seasoning of two of them in",
-            "p": "temperachers end provenans, kritikáist de sísoning ov tu ov dem in"
-          },
-          {
-            "t": "detail, and referred to the building only to note that it was cold near",
-            "p": "detéil, end referd tu de bílding óunli tu nóut dat it uós kóuld níar"
-          },
-          {
-            "t": "the door. Her verdict was lukewarm, and the disagreement with the first",
-            "p": "de dor. jer vérdict uós lukeuarm, end de disagriment uíd de férst"
-          },
-          {
-            "t": "reviewer concerned criteria rather than facts.",
-            "p": "riviúer consérnd kriteria ráder dan fakts."
-          }
-        ],
-        [
-          {
-            "t": "The third notice appeared in a local paper and was written by someone",
-            "p": "de zerd nóutis apéerd in a lokal péiper end uós riten bái somóun"
-          },
-          {
-            "t": "who had eaten there four times, twice before the official opening.",
-            "p": "ju jad iten déar for táims, tuáik bifór de ofishal opening."
-          },
-          {
-            "t": "He was the only reviewer to mention prices in relation to local wages,",
-            "p": "ji uós de óunli riviúer tu menshon prises in relashon tu lokal uéiches,"
-          },
-          {
-            "t": "the only one to name a server, and the only one who observed that the",
-            "p": "de óunli uán tu néim a sérver, end de óunli uán ju observd dat de"
-          },
-          {
-            "t": "menu had already changed twice. His verdict was affectionate and",
-            "p": "méniu jad alridi chéinchd tuáik. jis vérdict uós afektionéit end"
-          },
-          {
-            "t": "slightly worried.",
-            "p": "sláitli uoráid."
-          }
-        ],
-        [
-          {
-            "t": "The fourth was a single paragraph in a listings magazine,",
-            "p": "de fóurs uós a singol paragraf in a listings magasáin,"
-          },
-          {
-            "t": "evidently written from a press release and a brief visit.",
-            "p": "evidentli riten from a pres ríléis end a brif visit."
-          },
-          {
-            "t": "It contained one factual error about the chef's previous employment,",
-            "p": "it kontaáind uán faktual eror abáut de chef's previas emploiment,"
-          },
-          {
-            "t": "praised a dish that had been removed from the menu,",
-            "p": "praáist a dish dat jad bin remóuvd from de méniu,"
-          },
-          {
-            "t": "and awarded four stars out of five. It is also,",
-            "p": "end oarded for stars áut ov fáiv. it is ólsou,"
-          },
-          {
-            "t": "by a considerable margin, the review most often quoted in the",
-            "p": "bái a konsiderabol maryin, de riviú móust ófen kuóuted in de"
-          },
-          {
-            "t": "restaurant's own publicity.",
-            "p": "réstorants óun publisiti."
-          }
-        ],
-        [
-          {
-            "t": "None of these pieces is dishonest. Each reflects a different assumption",
-            "p": "nan ov dís piíks is dishonest. ich reflekts a dífrent asumpshon"
-          },
-          {
-            "t": "about what a review is for: atmosphere, technique,",
-            "p": "abáut uót a riviú is for: atmosfír, teknikue,"
-          },
-          {
-            "t": "community context, or a rapid consumer signal.",
-            "p": "komuniti kontekst, or a rapid konsumer signal."
-          },
-          {
-            "t": "Readers rarely know which assumption they are getting,",
-            "p": "ríders rareli no uích asumpshon déi ar yeting,"
-          },
-          {
-            "t": "because publications almost never state it, and the star rating at the",
-            "p": "bicós publikashons ólmoust néver stéit it, end de star réiting at de"
-          },
-          {
-            "t": "end flattens all four into apparently comparable numbers.",
-            "p": "end flatens ol for íntu aparentli komparabol numbers."
-          }
-        ],
-        [
-          {
-            "t": "The restaurant, for its part, has responded in the way most do.",
-            "p": "de réstorant, for its part, jas responded in de uéi móust du."
-          },
-          {
-            "t": "It has printed the four stars on a card by the entrance and mentions",
-            "p": "it jas printed de for stars on a kard bái de entrans end menshons"
-          },
-          {
-            "t": "none of the other reviews. This is not deceptive so much as predictable:",
-            "p": "nan ov de áder riviús. dis is not deseptáiv sóu mach as prediktabol:"
-          },
-          {
-            "t": "of the four notices, only one produced a number,",
-            "p": "ov de for nóutises, óunli uán produst a number,"
-          },
-          {
-            "t": "and only numbers fit on a card.",
-            "p": "end óunli numbers fit on a kard."
-          }
-        ]
+      [
+        {
+          "t": "The third notice appeared in a local paper and was written by someone",
+          "p": "de zerd nóutis apéerd in a lokal péiper end uós riten bái somóun"
+        },
+        {
+          "t": "who had eaten there four times, twice before the official opening.",
+          "p": "ju jad iten déar for táims, tuáik bifór de ofishal opening."
+        },
+        {
+          "t": "He was the only reviewer to mention prices in relation to local wages,",
+          "p": "ji uós de óunli riviúer tu menshon prises in relashon tu lokal uéiches,"
+        },
+        {
+          "t": "the only one to name a server, and the only one who observed that the",
+          "p": "de óunli uán tu néim a sérver, end de óunli uán ju observd dat de"
+        },
+        {
+          "t": "menu had already changed twice. His verdict was affectionate and",
+          "p": "méniu jad alridi chéinchd tuáik. jis vérdict uós afektionéit end"
+        },
+        {
+          "t": "slightly worried.",
+          "p": "sláitli uoráid."
+        }
+      ],
+      [
+        {
+          "t": "The fourth was a single paragraph in a listings magazine,",
+          "p": "de fóurs uós a singol paragraf in a listings magasáin,"
+        },
+        {
+          "t": "evidently written from a press release and a brief visit.",
+          "p": "evidentli riten from a pres ríléis end a brif visit."
+        },
+        {
+          "t": "It contained one factual error about the chef's previous employment,",
+          "p": "it kontaáind uán faktual eror abáut de chef's previas emploiment,"
+        },
+        {
+          "t": "praised a dish that had been removed from the menu,",
+          "p": "praáist a dish dat jad bin remóuvd from de méniu,"
+        },
+        {
+          "t": "and awarded four stars out of five. It is also,",
+          "p": "end oarded for stars áut ov fáiv. it is ólsou,"
+        },
+        {
+          "t": "by a considerable margin, the review most often quoted in the",
+          "p": "bái a konsiderabol maryin, de riviú móust ófen kuóuted in de"
+        },
+        {
+          "t": "restaurant's own publicity.",
+          "p": "réstorants óun publisiti."
+        }
+      ],
+      [
+        {
+          "t": "None of these pieces is dishonest. Each reflects a different assumption",
+          "p": "nan ov dís piíks is dishonest. ich reflekts a dífrent asumpshon"
+        },
+        {
+          "t": "about what a review is for: atmosphere, technique,",
+          "p": "abáut uót a riviú is for: atmosfír, teknikue,"
+        },
+        {
+          "t": "community context, or a rapid consumer signal.",
+          "p": "komuniti kontekst, or a rapid konsumer signal."
+        },
+        {
+          "t": "Readers rarely know which assumption they are getting,",
+          "p": "ríders rareli no uích asumpshon déi ar yeting,"
+        },
+        {
+          "t": "because publications almost never state it, and the star rating at the",
+          "p": "bicós publikashons ólmoust néver stéit it, end de star réiting at de"
+        },
+        {
+          "t": "end flattens all four into apparently comparable numbers.",
+          "p": "end flatens ol for íntu aparentli komparabol numbers."
+        }
+      ],
+      [
+        {
+          "t": "The restaurant, for its part, has responded in the way most do.",
+          "p": "de réstorant, for its part, jas responded in de uéi móust du."
+        },
+        {
+          "t": "It has printed the four stars on a card by the entrance and mentions",
+          "p": "it jas printed de for stars on a kard bái de entrans end menshons"
+        },
+        {
+          "t": "none of the other reviews. This is not deceptive so much as predictable:",
+          "p": "nan ov de áder riviús. dis is not deseptáiv sóu mach as prediktabol:"
+        },
+        {
+          "t": "of the four notices, only one produced a number,",
+          "p": "ov de for nóutises, óunli uán produst a number,"
+        },
+        {
+          "t": "and only numbers fit on a card.",
+          "p": "end óunli numbers fit on a kard."
+        }
       ]
-    },
-    {
-      "title": "The swimmer who kept going after the record fell",
-      "body": [
-        "Ineke Vos held the national eight-hundred-metre record for six years. She lost it on a Tuesday evening in a regional pool, to a nineteen-year-old she had never raced, by seven-tenths of a second. Vos was thirty-four, present at the meet, and watching from the second lane.",
-        "The interview she gave afterwards became briefly notorious for its flatness. Asked how it felt, she said the record had been borrowed and was now returned. Asked whether she would try to reclaim it, she said probably not. Asked whether she would retire, she said she had no intention of retiring and appeared puzzled that the question followed from the others.",
-        "This confusion is instructive. Sports coverage tends to treat records as the reason athletes compete, so losing one is narrated as a crisis requiring either a comeback or a departure. Vos has been consistent for a decade that the record was a by-product. What she describes wanting is the training, which she has organised her life around since she was eleven.",
-        "Her coach corroborates this, though with reservations. He notes that Vos trains harder than athletes half her age, that her technique has improved measurably in the past three seasons, and that she is nonetheless slower than she was at twenty-six. He also says, carefully, that an athlete who genuinely did not care about times would not check the board as quickly as she does.",
-        "The wider pattern is well documented in longitudinal work on masters athletes. Performance in endurance events declines from the late twenties but the rate is modest until roughly the mid-forties, after which it steepens. Many competitors report that their satisfaction becomes less comparative over the same period, shifting from placing to process.",
-        "Whether this is genuine adjustment or a sensible accommodation to decline is difficult to separate, and the athletes interviewed for such studies say so themselves. Vos, asked directly, replied that the distinction assumes she was ever primarily comparing herself to others, which she disputes without being able to prove.",
-        "She swam the same event again in November and finished fourth. The nineteen-year-old won. Vos's time was four seconds outside her own former record and two seconds faster than she had managed that spring, which she described afterwards as the more interesting of the two comparisons."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Kessel abrió en marzo en una antigua cochera de tranvías y desde entonces ha atraído el tipo de atención que vuelve competitivos a los críticos. Lo que sigue es un intento de leer cuatro reseñas publicadas una junto a la otra, no para decidir cuál es correcta, sino para mostrar hasta qué punto una misma velada puede describirse de maneras incompatibles.",
+      "La primera crítica, que escribía para un suplemento de fin de semana de tirada nacional, dedicó la mayor parte de su columna al local. Admiró la altura del techo, le disgustó la acústica y mencionó tres platos en una sola frase cerca del final. Su veredicto fue cálido. Un lector terminaría el artículo sabiendo cómo se siente el lugar y casi nada sobre lo que sirve.",
+      "La segunda, una bloguera gastronómica con muchos seguidores, invirtió esto exactamente. Enumeró nueve platos con pesos, temperaturas y procedencia, criticó en detalle el sazón de dos de ellos y se refirió al edificio solo para señalar que hacía frío cerca de la puerta. Su veredicto fue tibio, y la discrepancia con la primera crítica tenía que ver con los criterios, no con los hechos.",
+      "La tercera reseña apareció en un diario local y la escribió alguien que había comido allí cuatro veces, dos de ellas antes de la apertura oficial. Fue el único crítico que mencionó los precios en relación con los salarios locales, el único que nombró a un camarero y el único que observó que el menú ya había cambiado dos veces. Su veredicto fue cariñoso y un poco preocupado.",
+      "La cuarta fue un solo párrafo en una revista de guía de ocio, evidentemente escrita a partir de una nota de prensa y una visita breve. Contenía un error de hecho sobre el empleo anterior del chef, elogiaba un plato que había sido retirado del menú y otorgaba cuatro estrellas de cinco. Es también, por un margen considerable, la reseña más citada en la propia publicidad del restaurante.",
+      "Ninguna de estas piezas es deshonesta. Cada una refleja una suposición distinta sobre para qué sirve una reseña: la atmósfera, la técnica, el contexto de la comunidad o una señal rápida para el consumidor. Los lectores rara vez saben cuál están recibiendo, porque las publicaciones casi nunca lo declaran, y la puntuación en estrellas del final aplana las cuatro en números aparentemente comparables.",
+      "El restaurante, por su parte, ha respondido como lo hacen casi todos. Ha impreso las cuatro estrellas en un cartel junto a la entrada y no menciona ninguna de las otras reseñas. Esto no es tanto engañoso como previsible: de las cuatro reseñas, solo una produjo un número, y solo los números caben en un cartel."
+    ]
+  },
+  {
+    "title": "The swimmer who kept going after the record fell",
+    "body": [
+      "Ineke Vos held the national eight-hundred-metre record for six years. She lost it on a Tuesday evening in a regional pool, to a nineteen-year-old she had never raced, by seven-tenths of a second. Vos was thirty-four, present at the meet, and watching from the second lane.",
+      "The interview she gave afterwards became briefly notorious for its flatness. Asked how it felt, she said the record had been borrowed and was now returned. Asked whether she would try to reclaim it, she said probably not. Asked whether she would retire, she said she had no intention of retiring and appeared puzzled that the question followed from the others.",
+      "This confusion is instructive. Sports coverage tends to treat records as the reason athletes compete, so losing one is narrated as a crisis requiring either a comeback or a departure. Vos has been consistent for a decade that the record was a by-product. What she describes wanting is the training, which she has organised her life around since she was eleven.",
+      "Her coach corroborates this, though with reservations. He notes that Vos trains harder than athletes half her age, that her technique has improved measurably in the past three seasons, and that she is nonetheless slower than she was at twenty-six. He also says, carefully, that an athlete who genuinely did not care about times would not check the board as quickly as she does.",
+      "The wider pattern is well documented in longitudinal work on masters athletes. Performance in endurance events declines from the late twenties but the rate is modest until roughly the mid-forties, after which it steepens. Many competitors report that their satisfaction becomes less comparative over the same period, shifting from placing to process.",
+      "Whether this is genuine adjustment or a sensible accommodation to decline is difficult to separate, and the athletes interviewed for such studies say so themselves. Vos, asked directly, replied that the distinction assumes she was ever primarily comparing herself to others, which she disputes without being able to prove.",
+      "She swam the same event again in November and finished fourth. The nineteen-year-old won. Vos's time was four seconds outside her own former record and two seconds faster than she had managed that spring, which she described afterwards as the more interesting of the two comparisons."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Vos was present when her record was broken.",
+        "a": "True",
+        "why": "She was at the meet, watching from the second lane."
+      },
+      {
+        "q": "She announced her retirement after losing the record.",
+        "a": "False",
+        "why": "She said she had no intention of retiring."
+      },
+      {
+        "q": "Her coach fully accepts that she is indifferent to times.",
+        "a": "False",
+        "why": "He says an athlete who truly did not care would not check the board so quickly."
+      },
+      {
+        "q": "Endurance performance declines sharply from the late twenties onwards.",
+        "a": "False",
+        "why": "The rate is modest until roughly the mid-forties, after which it steepens."
+      },
+      {
+        "q": "Vos has competed internationally for her country.",
+        "a": "Not Given",
+        "why": "Only the national record and regional meets are mentioned."
+      }
+    ],
+    "short": [
+      {
+        "q": "By how much was the record broken?",
+        "a": "seven-tenths of a second"
+      },
+      {
+        "q": "At what age did Vos begin organising her life around training?",
+        "a": "eleven"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why did Vos's answers confuse the interviewer?",
+        "options": [
+          "She did not treat losing the record as a turning point.",
+          "She claimed the timing equipment was faulty.",
+          "She blamed the officials for the result.",
+          "She refused to discuss the race at all."
+        ],
+        "a": 0,
+        "why": "Coverage expects a crisis requiring comeback or departure; she treated the record as a by-product."
+      },
+      {
+        "q": "What reservation does her coach express?",
+        "options": [
+          "That her training volume is dangerously high.",
+          "That her behaviour suggests she cares more than she admits.",
+          "That her technique has stopped improving.",
+          "That she should compete at a shorter distance."
+        ],
+        "a": 1,
+        "why": "He notes she checks the board too quickly for someone indifferent to times."
+      },
+      {
+        "q": "What do studies of masters athletes report about satisfaction?",
+        "options": [
+          "It is highest among those who retire early.",
+          "It disappears once performance begins to decline.",
+          "It becomes less focused on comparison with others.",
+          "It depends mainly on the quality of coaching."
+        ],
+        "a": 2,
+        "why": "Satisfaction shifts from placing to process over the same period."
+      },
+      {
+        "q": "Why does the final paragraph mention two different comparisons?",
+        "options": [
+          "To explain why she finished outside the medals.",
+          "To show that Vos had returned to her best form.",
+          "To criticise the fairness of the November race.",
+          "To illustrate which measure of progress she values."
+        ],
+        "a": 3,
+        "why": "She called the improvement on her own spring time the more interesting comparison."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Vos was present when her record was broken.",
-          "a": "True",
-          "why": "She was at the meet, watching from the second lane."
+          "t": "Ineke Vos held the national eight-hundred-metre record for six years.",
+          "p": "iník vos jeld de nashonal eáit-jundrd-metr récord for siks yirs."
         },
         {
-          "q": "She announced her retirement after losing the record.",
-          "a": "False",
-          "why": "She said she had no intention of retiring."
+          "t": "She lost it on a Tuesday evening in a regional pool,",
+          "p": "shi lost it on a tuesdéi evening in a reyional pul,"
         },
         {
-          "q": "Her coach fully accepts that she is indifferent to times.",
-          "a": "False",
-          "why": "He says an athlete who truly did not care would not check the board so quickly."
+          "t": "to a nineteen-year-old she had never raced, by seven-tenths of a second.",
+          "p": "tu a ninetin-yíar-óuld shi jad néver réist, bái seven-tens ov a sécond."
         },
         {
-          "q": "Endurance performance declines sharply from the late twenties onwards.",
-          "a": "False",
-          "why": "The rate is modest until roughly the mid-forties, after which it steepens."
+          "t": "Vos was thirty-four, present at the meet, and watching from the second",
+          "p": "vos uós serti-fáuar, present at de mit, end uaching from de sécond"
         },
         {
-          "q": "Vos has competed internationally for her country.",
-          "a": "Not Given",
-          "why": "Only the national record and regional meets are mentioned."
+          "t": "lane.",
+          "p": "léin."
         }
       ],
-      "short": [
+      [
         {
-          "q": "By how much was the record broken?",
-          "a": "seven-tenths of a second"
+          "t": "The interview she gave afterwards became briefly notorious for its",
+          "p": "de ínterviu shi géiv afteruards bikéim brifli notorias for its"
         },
         {
-          "q": "At what age did Vos begin organising her life around training?",
-          "a": "eleven"
+          "t": "flatness. Asked how it felt, she said the record had been borrowed and",
+          "p": "flatnes. askt jáu it felt, shi sed de récord jad bin boróued end"
+        },
+        {
+          "t": "was now returned. Asked whether she would try to reclaim it,",
+          "p": "uós náu reternd. askt uéder shi vud tri tu rikléim it,"
+        },
+        {
+          "t": "she said probably not. Asked whether she would retire,",
+          "p": "shi sed probabli not. askt uéder shi vud retáer,"
+        },
+        {
+          "t": "she said she had no intention of retiring and appeared puzzled that the",
+          "p": "shi sed shi jad nóu intenshon ov retáering end apéerd pusld dat de"
+        },
+        {
+          "t": "question followed from the others.",
+          "p": "kuéschon folóued from de áders."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why did Vos's answers confuse the interviewer?",
-          "options": [
-            "She did not treat losing the record as a turning point.",
-            "She claimed the timing equipment was faulty.",
-            "She blamed the officials for the result.",
-            "She refused to discuss the race at all."
-          ],
-          "a": 0,
-          "why": "Coverage expects a crisis requiring comeback or departure; she treated the record as a by-product."
+          "t": "This confusion is instructive. Sports coverage tends to treat records as",
+          "p": "dis konfushon is instruktáiv. sports kóuveréig tends tu trit rekords as"
         },
         {
-          "q": "What reservation does her coach express?",
-          "options": [
-            "That her training volume is dangerously high.",
-            "That her behaviour suggests she cares more than she admits.",
-            "That her technique has stopped improving.",
-            "That she should compete at a shorter distance."
-          ],
-          "a": 1,
-          "why": "He notes she checks the board too quickly for someone indifferent to times."
+          "t": "the reason athletes compete, so losing one is narrated as a crisis",
+          "p": "de ríson ázlits kompít, sóu lóusing uán is naréited as a krisis"
         },
         {
-          "q": "What do studies of masters athletes report about satisfaction?",
-          "options": [
-            "It is highest among those who retire early.",
-            "It disappears once performance begins to decline.",
-            "It becomes less focused on comparison with others.",
-            "It depends mainly on the quality of coaching."
-          ],
-          "a": 2,
-          "why": "Satisfaction shifts from placing to process over the same period."
+          "t": "requiring either a comeback or a departure. Vos has been consistent for",
+          "p": "rkuáering iser a komebak or a deparcher. vos jas bin konsistent for"
         },
         {
-          "q": "Why does the final paragraph mention two different comparisons?",
-          "options": [
-            "To explain why she finished outside the medals.",
-            "To show that Vos had returned to her best form.",
-            "To criticise the fairness of the November race.",
-            "To illustrate which measure of progress she values."
-          ],
-          "a": 3,
-          "why": "She called the improvement on her own spring time the more interesting comparison."
+          "t": "a decade that the record was a by-product. What she describes wanting is",
+          "p": "a dékeid dat de récord uós a bi-produkt. uót shi deskráibs uanting is"
+        },
+        {
+          "t": "the training, which she has organised her life around since she was",
+          "p": "de traáining, uích shi jas organáist jer láif aráund sins shi uós"
+        },
+        {
+          "t": "eleven.",
+          "p": "iléven."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Ineke Vos held the national eight-hundred-metre record for six years.",
-            "p": "iník vos jeld de nashonal eáit-jundrd-metr récord for siks yirs."
-          },
-          {
-            "t": "She lost it on a Tuesday evening in a regional pool,",
-            "p": "shi lost it on a tuesdéi evening in a reyional pul,"
-          },
-          {
-            "t": "to a nineteen-year-old she had never raced, by seven-tenths of a second.",
-            "p": "tu a ninetin-yíar-óuld shi jad néver réist, bái seven-tens ov a sécond."
-          },
-          {
-            "t": "Vos was thirty-four, present at the meet, and watching from the second",
-            "p": "vos uós serti-fáuar, present at de mit, end uaching from de sécond"
-          },
-          {
-            "t": "lane.",
-            "p": "léin."
-          }
-        ],
-        [
-          {
-            "t": "The interview she gave afterwards became briefly notorious for its",
-            "p": "de ínterviu shi géiv afteruards bikéim brifli notorias for its"
-          },
-          {
-            "t": "flatness. Asked how it felt, she said the record had been borrowed and",
-            "p": "flatnes. askt jáu it felt, shi sed de récord jad bin boróued end"
-          },
-          {
-            "t": "was now returned. Asked whether she would try to reclaim it,",
-            "p": "uós náu reternd. askt uéder shi vud tri tu rikléim it,"
-          },
-          {
-            "t": "she said probably not. Asked whether she would retire,",
-            "p": "shi sed probabli not. askt uéder shi vud retáer,"
-          },
-          {
-            "t": "she said she had no intention of retiring and appeared puzzled that the",
-            "p": "shi sed shi jad nóu intenshon ov retáering end apéerd pusld dat de"
-          },
-          {
-            "t": "question followed from the others.",
-            "p": "kuéschon folóued from de áders."
-          }
-        ],
-        [
-          {
-            "t": "This confusion is instructive. Sports coverage tends to treat records as",
-            "p": "dis konfushon is instruktáiv. sports kóuveréig tends tu trit rekords as"
-          },
-          {
-            "t": "the reason athletes compete, so losing one is narrated as a crisis",
-            "p": "de ríson ázlits kompít, sóu lóusing uán is naréited as a krisis"
-          },
-          {
-            "t": "requiring either a comeback or a departure. Vos has been consistent for",
-            "p": "rkuáering iser a komebak or a deparcher. vos jas bin konsistent for"
-          },
-          {
-            "t": "a decade that the record was a by-product. What she describes wanting is",
-            "p": "a dékeid dat de récord uós a bi-produkt. uót shi deskráibs uanting is"
-          },
-          {
-            "t": "the training, which she has organised her life around since she was",
-            "p": "de traáining, uích shi jas organáist jer láif aráund sins shi uós"
-          },
-          {
-            "t": "eleven.",
-            "p": "iléven."
-          }
-        ],
-        [
-          {
-            "t": "Her coach corroborates this, though with reservations.",
-            "p": "jer cóuch koroboréits dis, dóu uíd reservashons."
-          },
-          {
-            "t": "He notes that Vos trains harder than athletes half her age,",
-            "p": "ji nóuts dat vos tréins jarder dan ázlits jaf jer éig,"
-          },
-          {
-            "t": "that her technique has improved measurably in the past three seasons,",
-            "p": "dat jer teknikue jas impróuvd miserabli in de past zri sisons,"
-          },
-          {
-            "t": "and that she is nonetheless slower than she was at twenty-six.",
-            "p": "end dat shi is noneseles slóuer dan shi uós at tuenti-siks."
-          },
-          {
-            "t": "He also says, carefully, that an athlete who genuinely did not care",
-            "p": "ji ólsou ses, karefuli, dat an ázlit ju yenuineli did not kéer"
-          },
-          {
-            "t": "about times would not check the board as quickly as she does.",
-            "p": "abáut táims vud not chek de bóurd as kuikli as shi das."
-          }
-        ],
-        [
-          {
-            "t": "The wider pattern is well documented in longitudinal work on masters",
-            "p": "de uáider pátern is uel dokumented in lonyitudinal uérk on masters"
-          },
-          {
-            "t": "athletes. Performance in endurance events declines from the late",
-            "p": "ázlits. performans in endiúrans events dekláins from de léit"
-          },
-          {
-            "t": "twenties but the rate is modest until roughly the mid-forties,",
-            "p": "tuentis bat de réit is modest antíl ráfli de mid-fortis,"
-          },
-          {
-            "t": "after which it steepens. Many competitors report that their satisfaction",
-            "p": "áfter uích it stipens. méni compétitors report dat déar satisfákshon"
-          },
-          {
-            "t": "becomes less comparative over the same period,",
-            "p": "bicáms les komparatáiv óuver de séim period,"
-          },
-          {
-            "t": "shifting from placing to process.",
-            "p": "shifting from pléising tu próuses."
-          }
-        ],
-        [
-          {
-            "t": "Whether this is genuine adjustment or a sensible accommodation to",
-            "p": "uéder dis is yenuáin adyustment or a sensibol akkomodashon tu"
-          },
-          {
-            "t": "decline is difficult to separate, and the athletes interviewed for such",
-            "p": "dekláin is difikult tu separéit, end de ázlits interviued for sach"
-          },
-          {
-            "t": "studies say so themselves. Vos, asked directly,",
-            "p": "studis séi sóu demsélvs. vos, askt derektli,"
-          },
-          {
-            "t": "replied that the distinction assumes she was ever primarily comparing",
-            "p": "repláid dat de distinkshon asiúms shi uós ever primarili kompéering"
-          },
-          {
-            "t": "herself to others, which she disputes without being able to prove.",
-            "p": "jerself tu áders, uích shi dispiúts uidáut bing abol tu próuv."
-          }
-        ],
-        [
-          {
-            "t": "She swam the same event again in November and finished fourth.",
-            "p": "shi suam de séim event eguén in november end finished fóurs."
-          },
-          {
-            "t": "The nineteen-year-old won. Vos's time was four seconds outside her own",
-            "p": "de ninetin-yíar-óuld uon. vos's táim uós for séconds otsáid jer óun"
-          },
-          {
-            "t": "former record and two seconds faster than she had managed that spring,",
-            "p": "former récord end tu séconds faster dan shi jad manéiyd dat spring,"
-          },
-          {
-            "t": "which she described afterwards as the more interesting of the two",
-            "p": "uích shi deskráibd afteruards as de mor interesting ov de tu"
-          },
-          {
-            "t": "comparisons.",
-            "p": "komparisons."
-          }
-        ]
+      [
+        {
+          "t": "Her coach corroborates this, though with reservations.",
+          "p": "jer cóuch koroboréits dis, dóu uíd reservashons."
+        },
+        {
+          "t": "He notes that Vos trains harder than athletes half her age,",
+          "p": "ji nóuts dat vos tréins jarder dan ázlits jaf jer éig,"
+        },
+        {
+          "t": "that her technique has improved measurably in the past three seasons,",
+          "p": "dat jer teknikue jas impróuvd miserabli in de past zri sisons,"
+        },
+        {
+          "t": "and that she is nonetheless slower than she was at twenty-six.",
+          "p": "end dat shi is noneseles slóuer dan shi uós at tuenti-siks."
+        },
+        {
+          "t": "He also says, carefully, that an athlete who genuinely did not care",
+          "p": "ji ólsou ses, karefuli, dat an ázlit ju yenuineli did not kéer"
+        },
+        {
+          "t": "about times would not check the board as quickly as she does.",
+          "p": "abáut táims vud not chek de bóurd as kuikli as shi das."
+        }
+      ],
+      [
+        {
+          "t": "The wider pattern is well documented in longitudinal work on masters",
+          "p": "de uáider pátern is uel dokumented in lonyitudinal uérk on masters"
+        },
+        {
+          "t": "athletes. Performance in endurance events declines from the late",
+          "p": "ázlits. performans in endiúrans events dekláins from de léit"
+        },
+        {
+          "t": "twenties but the rate is modest until roughly the mid-forties,",
+          "p": "tuentis bat de réit is modest antíl ráfli de mid-fortis,"
+        },
+        {
+          "t": "after which it steepens. Many competitors report that their satisfaction",
+          "p": "áfter uích it stipens. méni compétitors report dat déar satisfákshon"
+        },
+        {
+          "t": "becomes less comparative over the same period,",
+          "p": "bicáms les komparatáiv óuver de séim period,"
+        },
+        {
+          "t": "shifting from placing to process.",
+          "p": "shifting from pléising tu próuses."
+        }
+      ],
+      [
+        {
+          "t": "Whether this is genuine adjustment or a sensible accommodation to",
+          "p": "uéder dis is yenuáin adyustment or a sensibol akkomodashon tu"
+        },
+        {
+          "t": "decline is difficult to separate, and the athletes interviewed for such",
+          "p": "dekláin is difikult tu separéit, end de ázlits interviued for sach"
+        },
+        {
+          "t": "studies say so themselves. Vos, asked directly,",
+          "p": "studis séi sóu demsélvs. vos, askt derektli,"
+        },
+        {
+          "t": "replied that the distinction assumes she was ever primarily comparing",
+          "p": "repláid dat de distinkshon asiúms shi uós ever primarili kompéering"
+        },
+        {
+          "t": "herself to others, which she disputes without being able to prove.",
+          "p": "jerself tu áders, uích shi dispiúts uidáut bing abol tu próuv."
+        }
+      ],
+      [
+        {
+          "t": "She swam the same event again in November and finished fourth.",
+          "p": "shi suam de séim event eguén in november end finished fóurs."
+        },
+        {
+          "t": "The nineteen-year-old won. Vos's time was four seconds outside her own",
+          "p": "de ninetin-yíar-óuld uon. vos's táim uós for séconds otsáid jer óun"
+        },
+        {
+          "t": "former record and two seconds faster than she had managed that spring,",
+          "p": "former récord end tu séconds faster dan shi jad manéiyd dat spring,"
+        },
+        {
+          "t": "which she described afterwards as the more interesting of the two",
+          "p": "uích shi deskráibd afteruards as de mor interesting ov de tu"
+        },
+        {
+          "t": "comparisons.",
+          "p": "komparisons."
+        }
       ]
-    },
-    {
-      "title": "What happened when a clinic stopped sending reminders",
-      "body": [
-        "A general practice in a mid-sized town spent four years sending automated text reminders before appointments. Missed appointments fell from fourteen per cent to nine. When the messaging contract expired in 2022 and the supplier raised its price sharply, the practice manager decided, partly out of irritation, to stop sending them for six months and see what happened.",
-        "The rate rose, but only to eleven per cent, not the fourteen the practice had expected. This was interesting enough that the manager, who has no research training, wrote it up in a short note that was eventually published in a primary care journal after a good deal of editorial assistance.",
-        "The likely explanation offered by the reviewers was habituation. Patients who had received reminders for four years had built the appointments into their routines, and many had independently set their own alarms, calendar entries or notes. The reminders had done work that no longer needed doing, at least for existing patients.",
-        "The distribution mattered more than the average. Missed appointments among patients registered before 2018 barely changed at all. Among those registered in the previous eighteen months, they rose steeply. The intervention was still working, but only for the group that had not yet developed its own habits, which is not how the service had been costed or described.",
-        "This has an obvious implication and a less obvious one. The obvious one is that reminders could be targeted at newer patients at a fraction of the cost. The less obvious one is that the original evaluation, which compared reminders against no reminders across the whole list, could not have detected this and would have been read as justifying permanent universal coverage.",
-        "The practice now sends reminders for the first year of registration and for a small number of appointment types where the consequences of absence are serious. Missed appointments sit at ten per cent, marginally worse than under the universal scheme, at roughly a fifth of the cost. The manager describes this trade as obviously acceptable and acknowledges that not everyone agrees.",
-        "The note has been cited more often than its author expected, mostly by people making a broader argument about evaluation design rather than about text messages. Its central point is not really about reminders at all: an intervention that works can stop being necessary for the people it has already helped, and averages will hide this indefinitely."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Ineke Vos ostentó el récord nacional de ochocientos metros durante seis años. Lo perdió un martes por la noche en una piscina regional, ante una joven de diecinueve años contra la que nunca había competido, por siete décimas de segundo. Vos tenía treinta y cuatro años, estaba presente en la competencia y miraba desde el segundo andarivel.",
+      "La entrevista que dio después se hizo brevemente célebre por su falta de emoción. Cuando le preguntaron cómo se sentía, dijo que el récord había sido prestado y ahora se devolvía. Cuando le preguntaron si intentaría recuperarlo, dijo que probablemente no. Cuando le preguntaron si se retiraría, dijo que no tenía intención de retirarse y pareció desconcertada de que la pregunta se dedujera de las anteriores.",
+      "Esa confusión es reveladora. La cobertura deportiva tiende a tratar los récords como la razón por la que los atletas compiten, así que perder uno se narra como una crisis que exige o bien una remontada o bien una despedida. Vos ha sido coherente durante una década en que el récord era un subproducto. Lo que describe querer es el entrenamiento, en torno al cual ha organizado su vida desde los once años.",
+      "Su entrenador lo corrobora, aunque con reservas. Señala que Vos entrena más duro que atletas de la mitad de su edad, que su técnica ha mejorado de forma medible en las últimas tres temporadas y que, sin embargo, es más lenta de lo que era a los veintiséis. También dice, con cuidado, que una atleta a la que de verdad no le importaran los tiempos no miraría el tablero tan rápido como ella lo hace.",
+      "El patrón más amplio está bien documentado en los estudios longitudinales sobre atletas veteranos. El rendimiento en las pruebas de resistencia decae desde el final de los veinte años, pero el ritmo es modesto hasta aproximadamente mediados de los cuarenta, después de lo cual se acentúa. Muchos competidores informan que su satisfacción se vuelve menos comparativa en ese mismo período, pasando de la posición al proceso.",
+      "Si esto es un ajuste genuino o una acomodación sensata al declive es difícil de separar, y los propios atletas entrevistados para tales estudios lo dicen. Vos, preguntada directamente, respondió que la distinción da por sentado que alguna vez se comparó principalmente con los demás, algo que rebate sin poder demostrarlo.",
+      "Nadó la misma prueba de nuevo en noviembre y terminó cuarta. La joven de diecinueve años ganó. El tiempo de Vos quedó cuatro segundos por fuera de su propio récord anterior y dos segundos más rápido de lo que había logrado esa primavera, algo que describió después como la más interesante de las dos comparaciones."
+    ]
+  },
+  {
+    "title": "What happened when a clinic stopped sending reminders",
+    "body": [
+      "A general practice in a mid-sized town spent four years sending automated text reminders before appointments. Missed appointments fell from fourteen per cent to nine. When the messaging contract expired in 2022 and the supplier raised its price sharply, the practice manager decided, partly out of irritation, to stop sending them for six months and see what happened.",
+      "The rate rose, but only to eleven per cent, not the fourteen the practice had expected. This was interesting enough that the manager, who has no research training, wrote it up in a short note that was eventually published in a primary care journal after a good deal of editorial assistance.",
+      "The likely explanation offered by the reviewers was habituation. Patients who had received reminders for four years had built the appointments into their routines, and many had independently set their own alarms, calendar entries or notes. The reminders had done work that no longer needed doing, at least for existing patients.",
+      "The distribution mattered more than the average. Missed appointments among patients registered before 2018 barely changed at all. Among those registered in the previous eighteen months, they rose steeply. The intervention was still working, but only for the group that had not yet developed its own habits, which is not how the service had been costed or described.",
+      "This has an obvious implication and a less obvious one. The obvious one is that reminders could be targeted at newer patients at a fraction of the cost. The less obvious one is that the original evaluation, which compared reminders against no reminders across the whole list, could not have detected this and would have been read as justifying permanent universal coverage.",
+      "The practice now sends reminders for the first year of registration and for a small number of appointment types where the consequences of absence are serious. Missed appointments sit at ten per cent, marginally worse than under the universal scheme, at roughly a fifth of the cost. The manager describes this trade as obviously acceptable and acknowledges that not everyone agrees.",
+      "The note has been cited more often than its author expected, mostly by people making a broader argument about evaluation design rather than about text messages. Its central point is not really about reminders at all: an intervention that works can stop being necessary for the people it has already helped, and averages will hide this indefinitely."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Missed appointments returned to their original level when reminders stopped.",
+        "a": "False",
+        "why": "They rose to eleven per cent, not the fourteen expected."
+      },
+      {
+        "q": "The practice manager had formal research training.",
+        "a": "False",
+        "why": "The manager is described as having no research training."
+      },
+      {
+        "q": "Long-registered patients were largely unaffected by the change.",
+        "a": "True",
+        "why": "Missed appointments among patients registered before 2018 barely changed."
+      },
+      {
+        "q": "The current scheme is cheaper than the universal one.",
+        "a": "True",
+        "why": "It costs roughly a fifth as much."
+      },
+      {
+        "q": "The journal initially rejected the manager's note.",
+        "a": "Not Given",
+        "why": "Editorial assistance is mentioned but no rejection."
+      }
+    ],
+    "short": [
+      {
+        "q": "What explanation did reviewers offer for the small increase?",
+        "a": "habituation"
+      },
+      {
+        "q": "For how long do new patients now receive reminders?",
+        "a": "the first year"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why did missed appointments rise less than expected?",
+        "options": [
+          "Established patients had developed their own prompts.",
+          "Fewer patients required appointments that year.",
+          "The practice reduced the number of available slots.",
+          "Staff telephoned patients instead."
+        ],
+        "a": 0,
+        "why": "Habituation: patients had built appointments into routines and set their own reminders."
+      },
+      {
+        "q": "What did the breakdown by registration date reveal?",
+        "options": [
+          "That the reminders had never worked at all.",
+          "That the effect was concentrated among recently registered patients.",
+          "That older patients were the most likely to miss appointments.",
+          "That the data had been recorded inconsistently."
+        ],
+        "a": 1,
+        "why": "Rates rose steeply only among those registered in the previous eighteen months."
+      },
+      {
+        "q": "What criticism does the writer make of the original evaluation?",
+        "options": [
+          "It was funded by the messaging supplier.",
+          "It used too small a sample of patients.",
+          "Its whole-list comparison could not reveal the difference between groups.",
+          "It measured the wrong outcome entirely."
+        ],
+        "a": 2,
+        "why": "Comparing reminders against none across the whole list could not detect the distribution."
+      },
+      {
+        "q": "What is the note's central point, according to the final paragraph?",
+        "options": [
+          "Practice managers should conduct their own research.",
+          "Text reminders are an ineffective use of resources.",
+          "Journals should publish more work by non-specialists.",
+          "Interventions may become unnecessary for those they have already helped."
+        ],
+        "a": 3,
+        "why": "An intervention that works can stop being necessary for the people it has helped, and averages hide this."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Missed appointments returned to their original level when reminders stopped.",
-          "a": "False",
-          "why": "They rose to eleven per cent, not the fourteen expected."
+          "t": "A general practice in a mid-sized town spent four years sending",
+          "p": "a yeneral praktáik in a mid-sáist tóun spent for yirs sending"
         },
         {
-          "q": "The practice manager had formal research training.",
-          "a": "False",
-          "why": "The manager is described as having no research training."
+          "t": "automated text reminders before appointments.",
+          "p": "otoméited tekst rimáinders bifór apóintments."
         },
         {
-          "q": "Long-registered patients were largely unaffected by the change.",
-          "a": "True",
-          "why": "Missed appointments among patients registered before 2018 barely changed."
+          "t": "Missed appointments fell from fourteen per cent to nine.",
+          "p": "mist apóintments fel from fortín per sent tu náin."
         },
         {
-          "q": "The current scheme is cheaper than the universal one.",
-          "a": "True",
-          "why": "It costs roughly a fifth as much."
+          "t": "When the messaging contract expired in 2022 and the supplier raised its",
+          "p": "uén de meséiying kontrakt ekspáerd in 2022 end de sapláiar raáist its"
         },
         {
-          "q": "The journal initially rejected the manager's note.",
-          "a": "Not Given",
-          "why": "Editorial assistance is mentioned but no rejection."
+          "t": "price sharply, the practice manager decided,",
+          "p": "práik sharpli, de praktáik manéiyer dekáided,"
+        },
+        {
+          "t": "partly out of irritation, to stop sending them for six months and see",
+          "p": "partli áut ov eritashon, tu stop sending dem for siks manzs end si"
+        },
+        {
+          "t": "what happened.",
+          "p": "uót japend."
         }
       ],
-      "short": [
+      [
         {
-          "q": "What explanation did reviewers offer for the small increase?",
-          "a": "habituation"
+          "t": "The rate rose, but only to eleven per cent, not the fourteen the",
+          "p": "de réit róus, bat óunli tu iléven per sent, not de fortín de"
         },
         {
-          "q": "For how long do new patients now receive reminders?",
-          "a": "the first year"
+          "t": "practice had expected. This was interesting enough that the manager,",
+          "p": "praktáik jad ekspekted. dis uós interesting ináf dat de manéiyer,"
+        },
+        {
+          "t": "who has no research training, wrote it up in a short note that was",
+          "p": "ju jas nóu resíarch traáining, róut it ap in a short nóut dat uós"
+        },
+        {
+          "t": "eventually published in a primary care journal after a good deal of",
+          "p": "eventuali published in a primari kéer yóurnal áfter a gud dil ov"
+        },
+        {
+          "t": "editorial assistance.",
+          "p": "editorial asistans."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why did missed appointments rise less than expected?",
-          "options": [
-            "Established patients had developed their own prompts.",
-            "Fewer patients required appointments that year.",
-            "The practice reduced the number of available slots.",
-            "Staff telephoned patients instead."
-          ],
-          "a": 0,
-          "why": "Habituation: patients had built appointments into routines and set their own reminders."
+          "t": "The likely explanation offered by the reviewers was habituation.",
+          "p": "de likeli eksplanashon oferd bái de riviúers uós jabituéishon."
         },
         {
-          "q": "What did the breakdown by registration date reveal?",
-          "options": [
-            "That the reminders had never worked at all.",
-            "That the effect was concentrated among recently registered patients.",
-            "That older patients were the most likely to miss appointments.",
-            "That the data had been recorded inconsistently."
-          ],
-          "a": 1,
-          "why": "Rates rose steeply only among those registered in the previous eighteen months."
+          "t": "Patients who had received reminders for four years had built the",
+          "p": "patints ju jad resáivd rimáinders for for yirs jad bilt de"
         },
         {
-          "q": "What criticism does the writer make of the original evaluation?",
-          "options": [
-            "It was funded by the messaging supplier.",
-            "It used too small a sample of patients.",
-            "Its whole-list comparison could not reveal the difference between groups.",
-            "It measured the wrong outcome entirely."
-          ],
-          "a": 2,
-          "why": "Comparing reminders against none across the whole list could not detect the distribution."
+          "t": "appointments into their routines, and many had independently set their",
+          "p": "apóintments íntu déar rutíns, end méni jad independentli set déar"
         },
         {
-          "q": "What is the note's central point, according to the final paragraph?",
-          "options": [
-            "Practice managers should conduct their own research.",
-            "Text reminders are an ineffective use of resources.",
-            "Journals should publish more work by non-specialists.",
-            "Interventions may become unnecessary for those they have already helped."
-          ],
-          "a": 3,
-          "why": "An intervention that works can stop being necessary for the people it has helped, and averages hide this."
+          "t": "own alarms, calendar entries or notes. The reminders had done work that",
+          "p": "óun alárms, cálendar entris or nóuts. de rimáinders jad dan uérk dat"
+        },
+        {
+          "t": "no longer needed doing, at least for existing patients.",
+          "p": "nóu lonyer nided doing, at list for eksisting patints."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "A general practice in a mid-sized town spent four years sending",
-            "p": "a yeneral praktáik in a mid-sáist tóun spent for yirs sending"
-          },
-          {
-            "t": "automated text reminders before appointments.",
-            "p": "otoméited tekst rimáinders bifór apóintments."
-          },
-          {
-            "t": "Missed appointments fell from fourteen per cent to nine.",
-            "p": "mist apóintments fel from fortín per sent tu náin."
-          },
-          {
-            "t": "When the messaging contract expired in 2022 and the supplier raised its",
-            "p": "uén de meséiying kontrakt ekspáerd in 2022 end de sapláiar raáist its"
-          },
-          {
-            "t": "price sharply, the practice manager decided,",
-            "p": "práik sharpli, de praktáik manéiyer dekáided,"
-          },
-          {
-            "t": "partly out of irritation, to stop sending them for six months and see",
-            "p": "partli áut ov eritashon, tu stop sending dem for siks manzs end si"
-          },
-          {
-            "t": "what happened.",
-            "p": "uót japend."
-          }
-        ],
-        [
-          {
-            "t": "The rate rose, but only to eleven per cent, not the fourteen the",
-            "p": "de réit róus, bat óunli tu iléven per sent, not de fortín de"
-          },
-          {
-            "t": "practice had expected. This was interesting enough that the manager,",
-            "p": "praktáik jad ekspekted. dis uós interesting ináf dat de manéiyer,"
-          },
-          {
-            "t": "who has no research training, wrote it up in a short note that was",
-            "p": "ju jas nóu resíarch traáining, róut it ap in a short nóut dat uós"
-          },
-          {
-            "t": "eventually published in a primary care journal after a good deal of",
-            "p": "eventuali published in a primari kéer yóurnal áfter a gud dil ov"
-          },
-          {
-            "t": "editorial assistance.",
-            "p": "editorial asistans."
-          }
-        ],
-        [
-          {
-            "t": "The likely explanation offered by the reviewers was habituation.",
-            "p": "de likeli eksplanashon oferd bái de riviúers uós jabituéishon."
-          },
-          {
-            "t": "Patients who had received reminders for four years had built the",
-            "p": "patints ju jad resáivd rimáinders for for yirs jad bilt de"
-          },
-          {
-            "t": "appointments into their routines, and many had independently set their",
-            "p": "apóintments íntu déar rutíns, end méni jad independentli set déar"
-          },
-          {
-            "t": "own alarms, calendar entries or notes. The reminders had done work that",
-            "p": "óun alárms, cálendar entris or nóuts. de rimáinders jad dan uérk dat"
-          },
-          {
-            "t": "no longer needed doing, at least for existing patients.",
-            "p": "nóu lonyer nided doing, at list for eksisting patints."
-          }
-        ],
-        [
-          {
-            "t": "The distribution mattered more than the average.",
-            "p": "de distribushon materd mor dan de averéig."
-          },
-          {
-            "t": "Missed appointments among patients registered before 2018 barely changed",
-            "p": "mist apóintments amáng patints reyisterd bifór 2018 bareli chéinchd"
-          },
-          {
-            "t": "at all. Among those registered in the previous eighteen months,",
-            "p": "at ol. amáng dóus reyisterd in de previas eáitin manzs,"
-          },
-          {
-            "t": "they rose steeply. The intervention was still working,",
-            "p": "déi róus stipli. de intervénshon uós stil uérking,"
-          },
-          {
-            "t": "but only for the group that had not yet developed its own habits,",
-            "p": "bat óunli for de grup dat jad not yet develóupt its óun jabits,"
-          },
-          {
-            "t": "which is not how the service had been costed or described.",
-            "p": "uích is not jáu de sérvis jad bin kosted or deskráibd."
-          }
-        ],
-        [
-          {
-            "t": "This has an obvious implication and a less obvious one.",
-            "p": "dis jas an óbvias implikashon end a les óbvias uán."
-          },
-          {
-            "t": "The obvious one is that reminders could be targeted at newer patients at",
-            "p": "de óbvias uán is dat rimáinders cud bi taryeted at neuer patints at"
-          },
-          {
-            "t": "a fraction of the cost. The less obvious one is that the original",
-            "p": "a frakshon ov de cost. de les óbvias uán is dat de oriyinal"
-          },
-          {
-            "t": "evaluation, which compared reminders against no reminders across the",
-            "p": "evaluashon, uích kompéerd rimáinders eguénst nóu rimáinders acrós de"
-          },
-          {
-            "t": "whole list, could not have detected this and would have been read as",
-            "p": "uóul list, cud not jav detekted dis end vud jav bin rid as"
-          },
-          {
-            "t": "justifying permanent universal coverage.",
-            "p": "yustifying permanent universal kóuveréig."
-          }
-        ],
-        [
-          {
-            "t": "The practice now sends reminders for the first year of registration and",
-            "p": "de praktáik náu sends rimáinders for de férst íar ov reyistrashon end"
-          },
-          {
-            "t": "for a small number of appointment types where the consequences of",
-            "p": "for a smal number ov apóintment types uér de konskuenses ov"
-          },
-          {
-            "t": "absence are serious. Missed appointments sit at ten per cent,",
-            "p": "absens ar serias. mist apóintments sit at ten per sent,"
-          },
-          {
-            "t": "marginally worse than under the universal scheme,",
-            "p": "maryinali uors dan ánder de universal skím,"
-          },
-          {
-            "t": "at roughly a fifth of the cost. The manager describes this trade as",
-            "p": "at ráfli a fifs ov de cost. de manéiyer deskráibs dis tréid as"
-          },
-          {
-            "t": "obviously acceptable and acknowledges that not everyone agrees.",
-            "p": "obviasli akseptabol end aknóulchs dat not everióun agris."
-          }
-        ],
-        [
-          {
-            "t": "The note has been cited more often than its author expected,",
-            "p": "de nóut jas bin káited mor ófen dan its osor ekspekted,"
-          },
-          {
-            "t": "mostly by people making a broader argument about evaluation design",
-            "p": "mostli bái pípol méiking a broéider argument abáut evaluashon disáin"
-          },
-          {
-            "t": "rather than about text messages. Its central point is not really about",
-            "p": "ráder dan abáut tekst meséigs. its sentral point is not rili abáut"
-          },
-          {
-            "t": "reminders at all: an intervention that works can stop being necessary",
-            "p": "rimáinders at ol: an intervénshon dat uérks can stop bing nesesari"
-          },
-          {
-            "t": "for the people it has already helped, and averages will hide this",
-            "p": "for de pípol it jas alridi jelpt, end éiveréigs uíl jáid dis"
-          },
-          {
-            "t": "indefinitely.",
-            "p": "indefiniteli."
-          }
-        ]
+      [
+        {
+          "t": "The distribution mattered more than the average.",
+          "p": "de distribushon materd mor dan de averéig."
+        },
+        {
+          "t": "Missed appointments among patients registered before 2018 barely changed",
+          "p": "mist apóintments amáng patints reyisterd bifór 2018 bareli chéinchd"
+        },
+        {
+          "t": "at all. Among those registered in the previous eighteen months,",
+          "p": "at ol. amáng dóus reyisterd in de previas eáitin manzs,"
+        },
+        {
+          "t": "they rose steeply. The intervention was still working,",
+          "p": "déi róus stipli. de intervénshon uós stil uérking,"
+        },
+        {
+          "t": "but only for the group that had not yet developed its own habits,",
+          "p": "bat óunli for de grup dat jad not yet develóupt its óun jabits,"
+        },
+        {
+          "t": "which is not how the service had been costed or described.",
+          "p": "uích is not jáu de sérvis jad bin kosted or deskráibd."
+        }
+      ],
+      [
+        {
+          "t": "This has an obvious implication and a less obvious one.",
+          "p": "dis jas an óbvias implikashon end a les óbvias uán."
+        },
+        {
+          "t": "The obvious one is that reminders could be targeted at newer patients at",
+          "p": "de óbvias uán is dat rimáinders cud bi taryeted at neuer patints at"
+        },
+        {
+          "t": "a fraction of the cost. The less obvious one is that the original",
+          "p": "a frakshon ov de cost. de les óbvias uán is dat de oriyinal"
+        },
+        {
+          "t": "evaluation, which compared reminders against no reminders across the",
+          "p": "evaluashon, uích kompéerd rimáinders eguénst nóu rimáinders acrós de"
+        },
+        {
+          "t": "whole list, could not have detected this and would have been read as",
+          "p": "uóul list, cud not jav detekted dis end vud jav bin rid as"
+        },
+        {
+          "t": "justifying permanent universal coverage.",
+          "p": "yustifying permanent universal kóuveréig."
+        }
+      ],
+      [
+        {
+          "t": "The practice now sends reminders for the first year of registration and",
+          "p": "de praktáik náu sends rimáinders for de férst íar ov reyistrashon end"
+        },
+        {
+          "t": "for a small number of appointment types where the consequences of",
+          "p": "for a smal number ov apóintment types uér de konskuenses ov"
+        },
+        {
+          "t": "absence are serious. Missed appointments sit at ten per cent,",
+          "p": "absens ar serias. mist apóintments sit at ten per sent,"
+        },
+        {
+          "t": "marginally worse than under the universal scheme,",
+          "p": "maryinali uors dan ánder de universal skím,"
+        },
+        {
+          "t": "at roughly a fifth of the cost. The manager describes this trade as",
+          "p": "at ráfli a fifs ov de cost. de manéiyer deskráibs dis tréid as"
+        },
+        {
+          "t": "obviously acceptable and acknowledges that not everyone agrees.",
+          "p": "obviasli akseptabol end aknóulchs dat not everióun agris."
+        }
+      ],
+      [
+        {
+          "t": "The note has been cited more often than its author expected,",
+          "p": "de nóut jas bin káited mor ófen dan its osor ekspekted,"
+        },
+        {
+          "t": "mostly by people making a broader argument about evaluation design",
+          "p": "mostli bái pípol méiking a broéider argument abáut evaluashon disáin"
+        },
+        {
+          "t": "rather than about text messages. Its central point is not really about",
+          "p": "ráder dan abáut tekst meséigs. its sentral point is not rili abáut"
+        },
+        {
+          "t": "reminders at all: an intervention that works can stop being necessary",
+          "p": "rimáinders at ol: an intervénshon dat uérks can stop bing nesesari"
+        },
+        {
+          "t": "for the people it has already helped, and averages will hide this",
+          "p": "for de pípol it jas alridi jelpt, end éiveréigs uíl jáid dis"
+        },
+        {
+          "t": "indefinitely.",
+          "p": "indefiniteli."
+        }
       ]
-    },
-    {
-      "title": "The phone that was designed to be dull",
-      "body": [
-        "The device is grey, weighs slightly more than its competitors, and has a screen that displays only black and white. It makes calls, sends messages, provides maps and plays audio. It cannot install social applications, browse the open web, or display video. Its manufacturer has sold considerably more units than anyone predicted, including the manufacturer.",
-        "The design brief was explicit about what it excluded and vague about who would want it. Early market research suggested the buyer would be a parent purchasing a first phone for a child, and this group does exist, but it has turned out to be a minority. The largest group is adults between twenty-five and forty buying the device for themselves as a second phone.",
-        "That second-phone pattern was not anticipated and complicates the marketing considerably. These buyers are not rejecting smartphones; they are partitioning their week. They carry the grey device at weekends, on holiday, or during working hours when concentration matters, and return to a conventional phone the rest of the time. The company had imagined conversion and is instead supplying an accessory.",
-        "Reviewers have found the product difficult to assess. Judged on specifications it is poor value, since a cheap conventional handset offers more capability for less money. Judged on what buyers say they want, it performs well, but that assessment relies on self-report from a group unusually invested in believing the purchase was wise. Neither method is satisfactory.",
-        "The company's own data is more useful and less flattering. Roughly a third of devices show almost no activity after the first two months, a figure the founder mentions unprompted in interviews. He argues that a phone bought to reduce phone use has an unusual relationship with its own usage statistics, which is a fair point and also an unfalsifiable one.",
-        "Competitors have responded not by copying the hardware but by adding restriction features to conventional phones: greyscale modes, application timers and focus settings. These are cheaper, more flexible and, by most accounts, less effective, because a restriction that can be lifted in two taps is a different kind of commitment from one that requires carrying a separate object.",
-        "The manufacturer's stated ambition is to become unnecessary, which is the sort of thing companies say and rarely mean. In this case it is at least coherent: if conventional devices became less demanding of attention, the grey phone would have no purpose. The founder has said he would consider that a success, and has also continued to expand production."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Un consultorio médico de un pueblo de tamaño mediano pasó cuatro años enviando recordatorios automáticos por mensaje de texto antes de las citas. Las ausencias cayeron del catorce al nueve por ciento. Cuando el contrato de mensajería venció en 2022 y el proveedor subió mucho su precio, la gerente del consultorio decidió, en parte por fastidio, dejar de enviarlos durante seis meses y ver qué pasaba.",
+      "La tasa subió, pero solo al once por ciento, no al catorce que el consultorio había esperado. Esto resultó lo bastante interesante como para que la gerente, que no tiene formación en investigación, lo redactara en una nota breve que finalmente se publicó en una revista de atención primaria tras bastante ayuda editorial.",
+      "La explicación probable que ofrecieron los revisores fue la habituación. Los pacientes que habían recibido recordatorios durante cuatro años habían incorporado las citas a sus rutinas, y muchos habían fijado por su cuenta sus propias alarmas, entradas de calendario o notas. Los recordatorios habían hecho un trabajo que ya no hacía falta hacer, al menos para los pacientes existentes.",
+      "La distribución importaba más que el promedio. Las ausencias entre los pacientes registrados antes de 2018 apenas cambiaron. Entre los registrados en los dieciocho meses anteriores, subieron de forma pronunciada. La intervención seguía funcionando, pero solo para el grupo que todavía no había desarrollado sus propios hábitos, que no es como se había presupuestado ni descrito el servicio.",
+      "Esto tiene una implicación obvia y otra menos obvia. La obvia es que los recordatorios podrían dirigirse a los pacientes más nuevos por una fracción del costo. La menos obvia es que la evaluación original, que comparó recordatorios frente a ningún recordatorio en toda la lista, no habría podido detectar esto y se habría leído como una justificación de una cobertura universal permanente.",
+      "El consultorio ahora envía recordatorios durante el primer año de registro y para un pequeño número de tipos de cita en los que las consecuencias de una ausencia son graves. Las ausencias se sitúan en el diez por ciento, marginalmente peor que bajo el esquema universal, a alrededor de una quinta parte del costo. La gerente describe este intercambio como obviamente aceptable y reconoce que no todos están de acuerdo.",
+      "La nota se ha citado más a menudo de lo que su autora esperaba, sobre todo por personas que exponen un argumento más amplio sobre el diseño de las evaluaciones y no sobre los mensajes de texto. Su punto central no trata en realidad de los recordatorios en absoluto: una intervención que funciona puede dejar de ser necesaria para las personas a las que ya ha ayudado, y los promedios ocultarán esto indefinidamente."
+    ]
+  },
+  {
+    "title": "The phone that was designed to be dull",
+    "body": [
+      "The device is grey, weighs slightly more than its competitors, and has a screen that displays only black and white. It makes calls, sends messages, provides maps and plays audio. It cannot install social applications, browse the open web, or display video. Its manufacturer has sold considerably more units than anyone predicted, including the manufacturer.",
+      "The design brief was explicit about what it excluded and vague about who would want it. Early market research suggested the buyer would be a parent purchasing a first phone for a child, and this group does exist, but it has turned out to be a minority. The largest group is adults between twenty-five and forty buying the device for themselves as a second phone.",
+      "That second-phone pattern was not anticipated and complicates the marketing considerably. These buyers are not rejecting smartphones; they are partitioning their week. They carry the grey device at weekends, on holiday, or during working hours when concentration matters, and return to a conventional phone the rest of the time. The company had imagined conversion and is instead supplying an accessory.",
+      "Reviewers have found the product difficult to assess. Judged on specifications it is poor value, since a cheap conventional handset offers more capability for less money. Judged on what buyers say they want, it performs well, but that assessment relies on self-report from a group unusually invested in believing the purchase was wise. Neither method is satisfactory.",
+      "The company's own data is more useful and less flattering. Roughly a third of devices show almost no activity after the first two months, a figure the founder mentions unprompted in interviews. He argues that a phone bought to reduce phone use has an unusual relationship with its own usage statistics, which is a fair point and also an unfalsifiable one.",
+      "Competitors have responded not by copying the hardware but by adding restriction features to conventional phones: greyscale modes, application timers and focus settings. These are cheaper, more flexible and, by most accounts, less effective, because a restriction that can be lifted in two taps is a different kind of commitment from one that requires carrying a separate object.",
+      "The manufacturer's stated ambition is to become unnecessary, which is the sort of thing companies say and rarely mean. In this case it is at least coherent: if conventional devices became less demanding of attention, the grey phone would have no purpose. The founder has said he would consider that a success, and has also continued to expand production."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "The device can display video content.",
+        "a": "False",
+        "why": "It cannot display video, browse the open web or install social applications."
+      },
+      {
+        "q": "Parents buying a child's first phone are the largest group of purchasers.",
+        "a": "False",
+        "why": "That group exists but is a minority; adults aged twenty-five to forty buying a second phone are largest."
+      },
+      {
+        "q": "Many buyers use the device alongside a conventional phone.",
+        "a": "True",
+        "why": "They partition their week, carrying it at weekends or when concentration matters."
+      },
+      {
+        "q": "The founder conceals data about low usage.",
+        "a": "False",
+        "why": "He mentions the inactive third unprompted in interviews."
+      },
+      {
+        "q": "The company plans to release a colour version.",
+        "a": "Not Given",
+        "why": "No future models are mentioned."
+      }
+    ],
+    "short": [
+      {
+        "q": "What fraction of devices show almost no activity after two months?",
+        "a": "a third"
+      },
+      {
+        "q": "How have competitors responded to the product?",
+        "a": "by adding restriction features"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why does the second-phone pattern complicate the company's position?",
+        "options": [
+          "The product functions as an addition rather than a replacement.",
+          "It attracts customers who cannot afford smartphones.",
+          "It means buyers are keeping devices for shorter periods.",
+          "It requires a different distribution network."
+        ],
+        "a": 0,
+        "why": "The company imagined conversion and is instead supplying an accessory."
+      },
+      {
+        "q": "What makes the product hard for reviewers to evaluate?",
+        "options": [
+          "There are no comparable products on the market.",
+          "Both specification-based and self-report methods are flawed.",
+          "Its price changes frequently.",
+          "The manufacturer refuses to supply test units."
+        ],
+        "a": 1,
+        "why": "Specifications make it poor value; self-report comes from a group invested in believing the purchase wise."
+      },
+      {
+        "q": "What does the writer say about the founder's defence of the usage figures?",
+        "options": [
+          "It is dishonest and contradicted by the data.",
+          "It repeats a claim made by competitors.",
+          "It is reasonable but impossible to test.",
+          "It has convinced most independent reviewers."
+        ],
+        "a": 2,
+        "why": "The argument is called a fair point and also an unfalsifiable one."
+      },
+      {
+        "q": "Why are software restrictions considered less effective?",
+        "options": [
+          "They cannot convert a screen to greyscale.",
+          "They are unavailable on cheaper handsets.",
+          "They drain the battery more quickly.",
+          "A limit that is easy to undo represents a weaker commitment."
+        ],
+        "a": 3,
+        "why": "A restriction liftable in two taps differs from one requiring a separate object."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "The device can display video content.",
-          "a": "False",
-          "why": "It cannot display video, browse the open web or install social applications."
+          "t": "The device is grey, weighs slightly more than its competitors,",
+          "p": "de diváis is gréi, uéis sláitli mor dan its compétitors,"
         },
         {
-          "q": "Parents buying a child's first phone are the largest group of purchasers.",
-          "a": "False",
-          "why": "That group exists but is a minority; adults aged twenty-five to forty buying a second phone are largest."
+          "t": "and has a screen that displays only black and white.",
+          "p": "end jas a skrin dat displéis óunli blak end uáit."
         },
         {
-          "q": "Many buyers use the device alongside a conventional phone.",
-          "a": "True",
-          "why": "They partition their week, carrying it at weekends or when concentration matters."
+          "t": "It makes calls, sends messages, provides maps and plays audio.",
+          "p": "it méiks kals, sends meséigs, prováids maps end pléis odio."
         },
         {
-          "q": "The founder conceals data about low usage.",
-          "a": "False",
-          "why": "He mentions the inactive third unprompted in interviews."
+          "t": "It cannot install social applications, browse the open web,",
+          "p": "it kanot instal soshal aplikashons, bróus de open ueb,"
         },
         {
-          "q": "The company plans to release a colour version.",
-          "a": "Not Given",
-          "why": "No future models are mentioned."
+          "t": "or display video. Its manufacturer has sold considerably more units than",
+          "p": "or displéi video. its maniufákcherer jas sóuld konsiderabli mor units dan"
+        },
+        {
+          "t": "anyone predicted, including the manufacturer.",
+          "p": "anióun predikted, inkluding de maniufákcherer."
         }
       ],
-      "short": [
+      [
         {
-          "q": "What fraction of devices show almost no activity after two months?",
-          "a": "a third"
+          "t": "The design brief was explicit about what it excluded and vague about who",
+          "p": "de disáin brif uós eksplisit abáut uót it ekskluded end vague abáut ju"
         },
         {
-          "q": "How have competitors responded to the product?",
-          "a": "by adding restriction features"
+          "t": "would want it. Early market research suggested the buyer would be a",
+          "p": "vud uónt it. irli market resíarch sagchésted de buyer vud bi a"
+        },
+        {
+          "t": "parent purchasing a first phone for a child,",
+          "p": "parent perchéising a férst fóun for a cháild,"
+        },
+        {
+          "t": "and this group does exist, but it has turned out to be a minority.",
+          "p": "end dis grup das eksist, bat it jas ternd áut tu bi a minoriti."
+        },
+        {
+          "t": "The largest group is adults between twenty-five and forty buying the",
+          "p": "de laryest grup is adults bituín tuenti-fáiv end forti buying de"
+        },
+        {
+          "t": "device for themselves as a second phone.",
+          "p": "diváis for demsélvs as a sécond fóun."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why does the second-phone pattern complicate the company's position?",
-          "options": [
-            "The product functions as an addition rather than a replacement.",
-            "It attracts customers who cannot afford smartphones.",
-            "It means buyers are keeping devices for shorter periods.",
-            "It requires a different distribution network."
-          ],
-          "a": 0,
-          "why": "The company imagined conversion and is instead supplying an accessory."
+          "t": "That second-phone pattern was not anticipated and complicates the",
+          "p": "dat sekond-fóun pátern uós not antisipéited end komplikéits de"
         },
         {
-          "q": "What makes the product hard for reviewers to evaluate?",
-          "options": [
-            "There are no comparable products on the market.",
-            "Both specification-based and self-report methods are flawed.",
-            "Its price changes frequently.",
-            "The manufacturer refuses to supply test units."
-          ],
-          "a": 1,
-          "why": "Specifications make it poor value; self-report comes from a group invested in believing the purchase wise."
+          "t": "marketing considerably. These buyers are not rejecting smartphones;",
+          "p": "marketing konsiderabli. dís buyers ar not reyekting smartfóuns;"
         },
         {
-          "q": "What does the writer say about the founder's defence of the usage figures?",
-          "options": [
-            "It is dishonest and contradicted by the data.",
-            "It repeats a claim made by competitors.",
-            "It is reasonable but impossible to test.",
-            "It has convinced most independent reviewers."
-          ],
-          "a": 2,
-          "why": "The argument is called a fair point and also an unfalsifiable one."
+          "t": "they are partitioning their week. They carry the grey device at",
+          "p": "déi ar partitióuning déar uik. déi kari de gréi diváis at"
         },
         {
-          "q": "Why are software restrictions considered less effective?",
-          "options": [
-            "They cannot convert a screen to greyscale.",
-            "They are unavailable on cheaper handsets.",
-            "They drain the battery more quickly.",
-            "A limit that is easy to undo represents a weaker commitment."
-          ],
-          "a": 3,
-          "why": "A restriction liftable in two taps differs from one requiring a separate object."
+          "t": "weekends, on holiday, or during working hours when concentration",
+          "p": "uikends, on jolidéi, or dering uérking áuars uén konsentrashon"
+        },
+        {
+          "t": "matters, and return to a conventional phone the rest of the time.",
+          "p": "maters, end retern tu a convénshonal fóun de rest ov de táim."
+        },
+        {
+          "t": "The company had imagined conversion and is instead supplying an",
+          "p": "de kompani jad imagáind konvershon end is instid suplying an"
+        },
+        {
+          "t": "accessory.",
+          "p": "aksesori."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "The device is grey, weighs slightly more than its competitors,",
-            "p": "de diváis is gréi, uéis sláitli mor dan its compétitors,"
-          },
-          {
-            "t": "and has a screen that displays only black and white.",
-            "p": "end jas a skrin dat displéis óunli blak end uáit."
-          },
-          {
-            "t": "It makes calls, sends messages, provides maps and plays audio.",
-            "p": "it méiks kals, sends meséigs, prováids maps end pléis odio."
-          },
-          {
-            "t": "It cannot install social applications, browse the open web,",
-            "p": "it kanot instal soshal aplikashons, bróus de open ueb,"
-          },
-          {
-            "t": "or display video. Its manufacturer has sold considerably more units than",
-            "p": "or displéi video. its maniufákcherer jas sóuld konsiderabli mor units dan"
-          },
-          {
-            "t": "anyone predicted, including the manufacturer.",
-            "p": "anióun predikted, inkluding de maniufákcherer."
-          }
-        ],
-        [
-          {
-            "t": "The design brief was explicit about what it excluded and vague about who",
-            "p": "de disáin brif uós eksplisit abáut uót it ekskluded end vague abáut ju"
-          },
-          {
-            "t": "would want it. Early market research suggested the buyer would be a",
-            "p": "vud uónt it. irli market resíarch sagchésted de buyer vud bi a"
-          },
-          {
-            "t": "parent purchasing a first phone for a child,",
-            "p": "parent perchéising a férst fóun for a cháild,"
-          },
-          {
-            "t": "and this group does exist, but it has turned out to be a minority.",
-            "p": "end dis grup das eksist, bat it jas ternd áut tu bi a minoriti."
-          },
-          {
-            "t": "The largest group is adults between twenty-five and forty buying the",
-            "p": "de laryest grup is adults bituín tuenti-fáiv end forti buying de"
-          },
-          {
-            "t": "device for themselves as a second phone.",
-            "p": "diváis for demsélvs as a sécond fóun."
-          }
-        ],
-        [
-          {
-            "t": "That second-phone pattern was not anticipated and complicates the",
-            "p": "dat sekond-fóun pátern uós not antisipéited end komplikéits de"
-          },
-          {
-            "t": "marketing considerably. These buyers are not rejecting smartphones;",
-            "p": "marketing konsiderabli. dís buyers ar not reyekting smartfóuns;"
-          },
-          {
-            "t": "they are partitioning their week. They carry the grey device at",
-            "p": "déi ar partitióuning déar uik. déi kari de gréi diváis at"
-          },
-          {
-            "t": "weekends, on holiday, or during working hours when concentration",
-            "p": "uikends, on jolidéi, or dering uérking áuars uén konsentrashon"
-          },
-          {
-            "t": "matters, and return to a conventional phone the rest of the time.",
-            "p": "maters, end retern tu a convénshonal fóun de rest ov de táim."
-          },
-          {
-            "t": "The company had imagined conversion and is instead supplying an",
-            "p": "de kompani jad imagáind konvershon end is instid suplying an"
-          },
-          {
-            "t": "accessory.",
-            "p": "aksesori."
-          }
-        ],
-        [
-          {
-            "t": "Reviewers have found the product difficult to assess.",
-            "p": "riviúers jav fond de produkt difikult tu ases."
-          },
-          {
-            "t": "Judged on specifications it is poor value, since a cheap conventional",
-            "p": "yuchd on spesifikashons it is púar value, sins a chip convénshonal"
-          },
-          {
-            "t": "handset offers more capability for less money.",
-            "p": "jandset ofers mor kapabiliti for les máni."
-          },
-          {
-            "t": "Judged on what buyers say they want, it performs well,",
-            "p": "yuchd on uót buyers séi déi uónt, it performs uel,"
-          },
-          {
-            "t": "but that assessment relies on self-report from a group unusually",
-            "p": "bat dat asesment relis on self-report from a grup unusuali"
-          },
-          {
-            "t": "invested in believing the purchase was wise.",
-            "p": "invested in beliving de perchéis uós uáis."
-          },
-          {
-            "t": "Neither method is satisfactory.",
-            "p": "niser mézod is satisfaktori."
-          }
-        ],
-        [
-          {
-            "t": "The company's own data is more useful and less flattering.",
-            "p": "de kompani's óun déita is mor useful end les flatering."
-          },
-          {
-            "t": "Roughly a third of devices show almost no activity after the first two",
-            "p": "ráfli a zerd ov diváises shóu ólmoust nóu aktiviti áfter de férst tu"
-          },
-          {
-            "t": "months, a figure the founder mentions unprompted in interviews.",
-            "p": "manzs, a fíguer de fonder menshons unprompted in ínterviús."
-          },
-          {
-            "t": "He argues that a phone bought to reduce phone use has an unusual",
-            "p": "ji argues dat a fóun bot tu rediúk fóun iús jas an unusual"
-          },
-          {
-            "t": "relationship with its own usage statistics, which is a fair point and",
-            "p": "relationship uíd its óun uséig statistiks, uích is a féar point end"
-          },
-          {
-            "t": "also an unfalsifiable one.",
-            "p": "ólsou an unfalsifiabol uán."
-          }
-        ],
-        [
-          {
-            "t": "Competitors have responded not by copying the hardware but by adding",
-            "p": "compétitors jav responded not bái kopying de jarduéer bat bái ading"
-          },
-          {
-            "t": "restriction features to conventional phones:",
-            "p": "restrikshon fichers tu convénshonal fóuns:"
-          },
-          {
-            "t": "greyscale modes, application timers and focus settings.",
-            "p": "gréiskeil móuds, aplikashon táimers end fokus setings."
-          },
-          {
-            "t": "These are cheaper, more flexible and, by most accounts,",
-            "p": "dís ar cheéiper, mor fleksibol end, bái móust akkonts,"
-          },
-          {
-            "t": "less effective, because a restriction that can be lifted in two taps is",
-            "p": "les iféktiv, bicós a restrikshon dat can bi lifted in tu taps is"
-          },
-          {
-            "t": "a different kind of commitment from one that requires carrying a",
-            "p": "a dífrent káind ov komitment from uán dat rkuáers karying a"
-          },
-          {
-            "t": "separate object.",
-            "p": "separéit obyekt."
-          }
-        ],
-        [
-          {
-            "t": "The manufacturer's stated ambition is to become unnecessary,",
-            "p": "de maniufákcherers stéited ambishon is tu bicám unesesari,"
-          },
-          {
-            "t": "which is the sort of thing companies say and rarely mean.",
-            "p": "uích is de sort ov sing kompanis séi end rareli min."
-          },
-          {
-            "t": "In this case it is at least coherent: if conventional devices became",
-            "p": "in dis kéis it is at list kojerent: if convénshonal diváises bikéim"
-          },
-          {
-            "t": "less demanding of attention, the grey phone would have no purpose.",
-            "p": "les demanding ov atenshon, de gréi fóun vud jav nóu perpóus."
-          },
-          {
-            "t": "The founder has said he would consider that a success,",
-            "p": "de fonder jas sed ji vud konsáider dat a sukses,"
-          },
-          {
-            "t": "and has also continued to expand production.",
-            "p": "end jas ólsou kontinued tu ekspand produkshon."
-          }
-        ]
+      [
+        {
+          "t": "Reviewers have found the product difficult to assess.",
+          "p": "riviúers jav fond de produkt difikult tu ases."
+        },
+        {
+          "t": "Judged on specifications it is poor value, since a cheap conventional",
+          "p": "yuchd on spesifikashons it is púar value, sins a chip convénshonal"
+        },
+        {
+          "t": "handset offers more capability for less money.",
+          "p": "jandset ofers mor kapabiliti for les máni."
+        },
+        {
+          "t": "Judged on what buyers say they want, it performs well,",
+          "p": "yuchd on uót buyers séi déi uónt, it performs uel,"
+        },
+        {
+          "t": "but that assessment relies on self-report from a group unusually",
+          "p": "bat dat asesment relis on self-report from a grup unusuali"
+        },
+        {
+          "t": "invested in believing the purchase was wise.",
+          "p": "invested in beliving de perchéis uós uáis."
+        },
+        {
+          "t": "Neither method is satisfactory.",
+          "p": "niser mézod is satisfaktori."
+        }
+      ],
+      [
+        {
+          "t": "The company's own data is more useful and less flattering.",
+          "p": "de kompani's óun déita is mor useful end les flatering."
+        },
+        {
+          "t": "Roughly a third of devices show almost no activity after the first two",
+          "p": "ráfli a zerd ov diváises shóu ólmoust nóu aktiviti áfter de férst tu"
+        },
+        {
+          "t": "months, a figure the founder mentions unprompted in interviews.",
+          "p": "manzs, a fíguer de fonder menshons unprompted in ínterviús."
+        },
+        {
+          "t": "He argues that a phone bought to reduce phone use has an unusual",
+          "p": "ji argues dat a fóun bot tu rediúk fóun iús jas an unusual"
+        },
+        {
+          "t": "relationship with its own usage statistics, which is a fair point and",
+          "p": "relationship uíd its óun uséig statistiks, uích is a féar point end"
+        },
+        {
+          "t": "also an unfalsifiable one.",
+          "p": "ólsou an unfalsifiabol uán."
+        }
+      ],
+      [
+        {
+          "t": "Competitors have responded not by copying the hardware but by adding",
+          "p": "compétitors jav responded not bái kopying de jarduéer bat bái ading"
+        },
+        {
+          "t": "restriction features to conventional phones:",
+          "p": "restrikshon fichers tu convénshonal fóuns:"
+        },
+        {
+          "t": "greyscale modes, application timers and focus settings.",
+          "p": "gréiskeil móuds, aplikashon táimers end fokus setings."
+        },
+        {
+          "t": "These are cheaper, more flexible and, by most accounts,",
+          "p": "dís ar cheéiper, mor fleksibol end, bái móust akkonts,"
+        },
+        {
+          "t": "less effective, because a restriction that can be lifted in two taps is",
+          "p": "les iféktiv, bicós a restrikshon dat can bi lifted in tu taps is"
+        },
+        {
+          "t": "a different kind of commitment from one that requires carrying a",
+          "p": "a dífrent káind ov komitment from uán dat rkuáers karying a"
+        },
+        {
+          "t": "separate object.",
+          "p": "separéit obyekt."
+        }
+      ],
+      [
+        {
+          "t": "The manufacturer's stated ambition is to become unnecessary,",
+          "p": "de maniufákcherers stéited ambishon is tu bicám unesesari,"
+        },
+        {
+          "t": "which is the sort of thing companies say and rarely mean.",
+          "p": "uích is de sort ov sing kompanis séi end rareli min."
+        },
+        {
+          "t": "In this case it is at least coherent: if conventional devices became",
+          "p": "in dis kéis it is at list kojerent: if convénshonal diváises bikéim"
+        },
+        {
+          "t": "less demanding of attention, the grey phone would have no purpose.",
+          "p": "les demanding ov atenshon, de gréi fóun vud jav nóu perpóus."
+        },
+        {
+          "t": "The founder has said he would consider that a success,",
+          "p": "de fonder jas sed ji vud konsáider dat a sukses,"
+        },
+        {
+          "t": "and has also continued to expand production.",
+          "p": "end jas ólsou kontinued tu ekspand produkshon."
+        }
       ]
-    },
-    {
-      "title": "The archive nobody could read for forty years",
-      "body": [
-        "When the textile mill at Ravensbeck closed in 1979, its administrative records were moved to a council storeroom and forgotten. They were not lost, precisely: their existence was noted in an inventory, and the inventory was itself catalogued. What nobody recorded was that the ledgers were written in a shorthand system devised in-house, comprehensible to about a dozen clerks, all of whom had left.",
-        "The material sat unread until 2019, when a doctoral student researching women's wages in the region requested access, expecting a routine afternoon. She found four hundred volumes of dense abbreviation, no key, and a note from a 1994 archivist which said only that the contents appeared to be numerical.",
-        "Her supervisor advised abandoning the source. She instead spent eleven months on decipherment, which succeeded for an unglamorous reason: the mill had also submitted quarterly summaries to a government body in ordinary English, and those summaries survived elsewhere. Matching totals against the shorthand ledgers gave her a partial key, and the remainder came from repetition.",
-        "What the ledgers contained turned out to matter. The official quarterly returns recorded average wages by department. The internal ledgers recorded individual payments, including deductions, bonuses and the frequency with which particular workers were moved between departments. Two records that agreed at the level of totals told substantially different stories about how the totals were produced.",
-        "The most significant finding concerned reclassification. Women moved into a higher-paid department were routinely returned to the lower-paid one within a few weeks, a pattern invisible in quarterly averages but obvious in the individual records. Whether this was deliberate policy or an unexamined habit cannot be determined from the ledgers, which record actions rather than reasons.",
-        "The decipherment key has since been deposited with the archive, and three other researchers have used the collection. Two more mills in the same valley are now known to have used related systems, which raises the possibility that a body of comparable material exists elsewhere, uncatalogued in the same way and for the same reason.",
-        "The student, now a lecturer, is careful about the lesson usually drawn from her work. She resists the idea that the archive was suppressed. Nobody hid the ledgers; they were simply written for an internal purpose by people who assumed continuity of staff, and the barrier was ordinary institutional forgetting rather than anything more interesting."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "El dispositivo es gris, pesa algo más que sus competidores y tiene una pantalla que solo muestra blanco y negro. Hace llamadas, envía mensajes, ofrece mapas y reproduce audio. No puede instalar aplicaciones sociales, navegar por la web abierta ni mostrar video. Su fabricante ha vendido bastantes más unidades de las que nadie predijo, incluido el propio fabricante.",
+      "El pliego de diseño era explícito sobre lo que excluía y vago sobre quién lo querría. Los primeros estudios de mercado sugerían que el comprador sería un padre o una madre adquiriendo un primer teléfono para un hijo, y ese grupo existe, pero ha resultado ser una minoría. El grupo más numeroso son adultos de entre veinticinco y cuarenta años que compran el dispositivo para sí mismos como segundo teléfono.",
+      "Ese patrón de segundo teléfono no se anticipó y complica bastante el marketing. Estos compradores no están rechazando los teléfonos inteligentes; están dividiendo su semana. Llevan el dispositivo gris los fines de semana, en vacaciones o durante las horas de trabajo en las que importa la concentración, y vuelven a un teléfono convencional el resto del tiempo. La empresa había imaginado una conversión y en cambio está suministrando un accesorio.",
+      "Los críticos han encontrado difícil de evaluar el producto. Juzgado por sus especificaciones, es de mala relación calidad-precio, ya que un teléfono convencional barato ofrece más prestaciones por menos dinero. Juzgado por lo que los compradores dicen querer, funciona bien, pero esa valoración depende de lo que declara un grupo inusualmente interesado en creer que la compra fue acertada. Ninguno de los dos métodos resulta satisfactorio.",
+      "Los propios datos de la empresa son más útiles y menos halagüeños. Alrededor de un tercio de los dispositivos apenas muestra actividad después de los dos primeros meses, una cifra que el fundador menciona sin que se la pidan en las entrevistas. Sostiene que un teléfono comprado para reducir el uso del teléfono tiene una relación inusual con sus propias estadísticas de uso, lo cual es un argumento justo y también uno imposible de refutar.",
+      "Los competidores han respondido no copiando el hardware, sino añadiendo funciones de restricción a los teléfonos convencionales: modos de escala de grises, temporizadores de aplicaciones y ajustes de concentración. Estos son más baratos, más flexibles y, según la mayoría, menos eficaces, porque una restricción que puede levantarse con dos toques es un tipo de compromiso distinto de una que exige llevar encima un objeto aparte.",
+      "La ambición declarada del fabricante es volverse innecesario, que es la clase de cosa que las empresas dicen y rara vez sienten. En este caso es al menos coherente: si los dispositivos convencionales exigieran menos atención, el teléfono gris no tendría sentido. El fundador ha dicho que lo consideraría un éxito, y también ha seguido ampliando la producción."
+    ]
+  },
+  {
+    "title": "The archive nobody could read for forty years",
+    "body": [
+      "When the textile mill at Ravensbeck closed in 1979, its administrative records were moved to a council storeroom and forgotten. They were not lost, precisely: their existence was noted in an inventory, and the inventory was itself catalogued. What nobody recorded was that the ledgers were written in a shorthand system devised in-house, comprehensible to about a dozen clerks, all of whom had left.",
+      "The material sat unread until 2019, when a doctoral student researching women's wages in the region requested access, expecting a routine afternoon. She found four hundred volumes of dense abbreviation, no key, and a note from a 1994 archivist which said only that the contents appeared to be numerical.",
+      "Her supervisor advised abandoning the source. She instead spent eleven months on decipherment, which succeeded for an unglamorous reason: the mill had also submitted quarterly summaries to a government body in ordinary English, and those summaries survived elsewhere. Matching totals against the shorthand ledgers gave her a partial key, and the remainder came from repetition.",
+      "What the ledgers contained turned out to matter. The official quarterly returns recorded average wages by department. The internal ledgers recorded individual payments, including deductions, bonuses and the frequency with which particular workers were moved between departments. Two records that agreed at the level of totals told substantially different stories about how the totals were produced.",
+      "The most significant finding concerned reclassification. Women moved into a higher-paid department were routinely returned to the lower-paid one within a few weeks, a pattern invisible in quarterly averages but obvious in the individual records. Whether this was deliberate policy or an unexamined habit cannot be determined from the ledgers, which record actions rather than reasons.",
+      "The decipherment key has since been deposited with the archive, and three other researchers have used the collection. Two more mills in the same valley are now known to have used related systems, which raises the possibility that a body of comparable material exists elsewhere, uncatalogued in the same way and for the same reason.",
+      "The student, now a lecturer, is careful about the lesson usually drawn from her work. She resists the idea that the archive was suppressed. Nobody hid the ledgers; they were simply written for an internal purpose by people who assumed continuity of staff, and the barrier was ordinary institutional forgetting rather than anything more interesting."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "The mill's records were missing from official inventories.",
+        "a": "False",
+        "why": "Their existence was noted in an inventory which was itself catalogued."
+      },
+      {
+        "q": "The shorthand system was used by many companies at the time.",
+        "a": "False",
+        "why": "It was devised in-house and understood by about a dozen clerks."
+      },
+      {
+        "q": "Government summaries helped make the decipherment possible.",
+        "a": "True",
+        "why": "Matching quarterly summaries in plain English against the ledgers gave a partial key."
+      },
+      {
+        "q": "The ledgers explain why workers were reclassified.",
+        "a": "False",
+        "why": "They record actions rather than reasons; motive cannot be determined."
+      },
+      {
+        "q": "The student received funding to complete the decipherment.",
+        "a": "Not Given",
+        "why": "No funding is mentioned."
+      }
+    ],
+    "short": [
+      {
+        "q": "How many volumes did the student find?",
+        "a": "four hundred"
+      },
+      {
+        "q": "How long did the decipherment take?",
+        "a": "eleven months"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why had the ledgers remained unread for so long?",
+        "options": [
+          "The private notation they used had no surviving key.",
+          "They were too fragile to be handled.",
+          "Their location was unknown to archivists.",
+          "They had been deliberately concealed by the council."
+        ],
+        "a": 0,
+        "why": "The in-house shorthand was comprehensible to a dozen clerks, all of whom had left, and no key was recorded."
+      },
+      {
+        "q": "What was the crucial difference between the two sets of records?",
+        "options": [
+          "The summaries included departments the ledgers omitted.",
+          "The ledgers showed individual transactions behind the same totals.",
+          "The ledgers covered a longer period.",
+          "The summaries contained deliberate falsifications."
+        ],
+        "a": 1,
+        "why": "Returns gave departmental averages; ledgers gave individual payments, deductions and movements."
+      },
+      {
+        "q": "Why was the reclassification pattern invisible in official data?",
+        "options": [
+          "The affected workers were excluded from the returns.",
+          "The government body did not collect wage information.",
+          "Quarterly averages concealed short-term movements between departments.",
+          "The summaries were compiled annually rather than quarterly."
+        ],
+        "a": 2,
+        "why": "Women returned to lower-paid work within weeks, a pattern averages could not show."
+      },
+      {
+        "q": "How does the researcher characterise the reason for the archive's inaccessibility?",
+        "options": [
+          "As negligence by the 1994 archivist.",
+          "As a consequence of the mill's sudden closure.",
+          "As an attempt to hide evidence of unequal pay.",
+          "As the result of unremarkable institutional forgetting."
+        ],
+        "a": 3,
+        "why": "She resists the suppression reading; the barrier was ordinary institutional forgetting."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "The mill's records were missing from official inventories.",
-          "a": "False",
-          "why": "Their existence was noted in an inventory which was itself catalogued."
+          "t": "When the textile mill at Ravensbeck closed in 1979,",
+          "p": "uén de tekstáil mil at ravensbek klóust in 1979,"
         },
         {
-          "q": "The shorthand system was used by many companies at the time.",
-          "a": "False",
-          "why": "It was devised in-house and understood by about a dozen clerks."
+          "t": "its administrative records were moved to a council storeroom and",
+          "p": "its administratáiv rekords uér muvd tu a konsil storerum end"
         },
         {
-          "q": "Government summaries helped make the decipherment possible.",
-          "a": "True",
-          "why": "Matching quarterly summaries in plain English against the ledgers gave a partial key."
+          "t": "forgotten. They were not lost, precisely: their existence was noted in",
+          "p": "forgoten. déi uér not lost, presiseli: déar eksistens uós nóuted in"
         },
         {
-          "q": "The ledgers explain why workers were reclassified.",
-          "a": "False",
-          "why": "They record actions rather than reasons; motive cannot be determined."
+          "t": "an inventory, and the inventory was itself catalogued.",
+          "p": "an inventori, end de inventori uós itself katalogued."
         },
         {
-          "q": "The student received funding to complete the decipherment.",
-          "a": "Not Given",
-          "why": "No funding is mentioned."
+          "t": "What nobody recorded was that the ledgers were written in a shorthand",
+          "p": "uót nobodi rekorded uós dat de léyers uér riten in a shórtjand"
+        },
+        {
+          "t": "system devised in-house, comprehensible to about a dozen clerks,",
+          "p": "system deváist in-joiús, komprejensibol tu abáut a dosen clarks,"
+        },
+        {
+          "t": "all of whom had left.",
+          "p": "ol ov jum jad left."
         }
       ],
-      "short": [
+      [
         {
-          "q": "How many volumes did the student find?",
-          "a": "four hundred"
+          "t": "The material sat unread until 2019, when a doctoral student researching",
+          "p": "de material sat unrid antíl 2019, uén a doktoral student resíarching"
         },
         {
-          "q": "How long did the decipherment take?",
-          "a": "eleven months"
+          "t": "women's wages in the region requested access,",
+          "p": "uomen's uéiches in de reyion rkuested akses,"
+        },
+        {
+          "t": "expecting a routine afternoon. She found four hundred volumes of dense",
+          "p": "ekspekting a rutín afternun. shi fond for jándred vólioms ov dens"
+        },
+        {
+          "t": "abbreviation, no key, and a note from a 1994 archivist which said only",
+          "p": "abreviashon, nóu ki, end a nóut from a 1994 arkivist uích sed óunli"
+        },
+        {
+          "t": "that the contents appeared to be numerical.",
+          "p": "dat de kontents apéerd tu bi numerikal."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why had the ledgers remained unread for so long?",
-          "options": [
-            "The private notation they used had no surviving key.",
-            "They were too fragile to be handled.",
-            "Their location was unknown to archivists.",
-            "They had been deliberately concealed by the council."
-          ],
-          "a": 0,
-          "why": "The in-house shorthand was comprehensible to a dozen clerks, all of whom had left, and no key was recorded."
+          "t": "Her supervisor advised abandoning the source.",
+          "p": "jer superváisor adváist abandóuning de sóurs."
         },
         {
-          "q": "What was the crucial difference between the two sets of records?",
-          "options": [
-            "The summaries included departments the ledgers omitted.",
-            "The ledgers showed individual transactions behind the same totals.",
-            "The ledgers covered a longer period.",
-            "The summaries contained deliberate falsifications."
-          ],
-          "a": 1,
-          "why": "Returns gave departmental averages; ledgers gave individual payments, deductions and movements."
+          "t": "She instead spent eleven months on decipherment,",
+          "p": "shi instid spent iléven manzs on desiferment,"
         },
         {
-          "q": "Why was the reclassification pattern invisible in official data?",
-          "options": [
-            "The affected workers were excluded from the returns.",
-            "The government body did not collect wage information.",
-            "Quarterly averages concealed short-term movements between departments.",
-            "The summaries were compiled annually rather than quarterly."
-          ],
-          "a": 2,
-          "why": "Women returned to lower-paid work within weeks, a pattern averages could not show."
+          "t": "which succeeded for an unglamorous reason: the mill had also submitted",
+          "p": "uích suksided for an unglamoras ríson: de mil jad ólsou submited"
         },
         {
-          "q": "How does the researcher characterise the reason for the archive's inaccessibility?",
-          "options": [
-            "As negligence by the 1994 archivist.",
-            "As a consequence of the mill's sudden closure.",
-            "As an attempt to hide evidence of unequal pay.",
-            "As the result of unremarkable institutional forgetting."
-          ],
-          "a": 3,
-          "why": "She resists the suppression reading; the barrier was ordinary institutional forgetting."
+          "t": "quarterly summaries to a government body in ordinary English,",
+          "p": "kuarterli sumaris tu a government bodi in ordinari english,"
+        },
+        {
+          "t": "and those summaries survived elsewhere. Matching totals against the",
+          "p": "end dóus sumaris serváivd elseuír. maching tóutals eguénst de"
+        },
+        {
+          "t": "shorthand ledgers gave her a partial key, and the remainder came from",
+          "p": "shórtjand léyers géiv jer a parshal ki, end de reméinder kéim from"
+        },
+        {
+          "t": "repetition.",
+          "p": "repetishon."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "When the textile mill at Ravensbeck closed in 1979,",
-            "p": "uén de tekstáil mil at ravensbek klóust in 1979,"
-          },
-          {
-            "t": "its administrative records were moved to a council storeroom and",
-            "p": "its administratáiv rekords uér muvd tu a konsil storerum end"
-          },
-          {
-            "t": "forgotten. They were not lost, precisely: their existence was noted in",
-            "p": "forgoten. déi uér not lost, presiseli: déar eksistens uós nóuted in"
-          },
-          {
-            "t": "an inventory, and the inventory was itself catalogued.",
-            "p": "an inventori, end de inventori uós itself katalogued."
-          },
-          {
-            "t": "What nobody recorded was that the ledgers were written in a shorthand",
-            "p": "uót nobodi rekorded uós dat de léyers uér riten in a shórtjand"
-          },
-          {
-            "t": "system devised in-house, comprehensible to about a dozen clerks,",
-            "p": "system deváist in-joiús, komprejensibol tu abáut a dosen clarks,"
-          },
-          {
-            "t": "all of whom had left.",
-            "p": "ol ov jum jad left."
-          }
-        ],
-        [
-          {
-            "t": "The material sat unread until 2019, when a doctoral student researching",
-            "p": "de material sat unrid antíl 2019, uén a doktoral student resíarching"
-          },
-          {
-            "t": "women's wages in the region requested access,",
-            "p": "uomen's uéiches in de reyion rkuested akses,"
-          },
-          {
-            "t": "expecting a routine afternoon. She found four hundred volumes of dense",
-            "p": "ekspekting a rutín afternun. shi fond for jándred vólioms ov dens"
-          },
-          {
-            "t": "abbreviation, no key, and a note from a 1994 archivist which said only",
-            "p": "abreviashon, nóu ki, end a nóut from a 1994 arkivist uích sed óunli"
-          },
-          {
-            "t": "that the contents appeared to be numerical.",
-            "p": "dat de kontents apéerd tu bi numerikal."
-          }
-        ],
-        [
-          {
-            "t": "Her supervisor advised abandoning the source.",
-            "p": "jer superváisor adváist abandóuning de sóurs."
-          },
-          {
-            "t": "She instead spent eleven months on decipherment,",
-            "p": "shi instid spent iléven manzs on desiferment,"
-          },
-          {
-            "t": "which succeeded for an unglamorous reason: the mill had also submitted",
-            "p": "uích suksided for an unglamoras ríson: de mil jad ólsou submited"
-          },
-          {
-            "t": "quarterly summaries to a government body in ordinary English,",
-            "p": "kuarterli sumaris tu a government bodi in ordinari english,"
-          },
-          {
-            "t": "and those summaries survived elsewhere. Matching totals against the",
-            "p": "end dóus sumaris serváivd elseuír. maching tóutals eguénst de"
-          },
-          {
-            "t": "shorthand ledgers gave her a partial key, and the remainder came from",
-            "p": "shórtjand léyers géiv jer a parshal ki, end de reméinder kéim from"
-          },
-          {
-            "t": "repetition.",
-            "p": "repetishon."
-          }
-        ],
-        [
-          {
-            "t": "What the ledgers contained turned out to matter.",
-            "p": "uót de léyers kontaáind ternd áut tu mater."
-          },
-          {
-            "t": "The official quarterly returns recorded average wages by department.",
-            "p": "de ofishal kuarterli reterns rekorded averéig uéiches bái department."
-          },
-          {
-            "t": "The internal ledgers recorded individual payments,",
-            "p": "de internal léyers rekorded individual péiments,"
-          },
-          {
-            "t": "including deductions, bonuses and the frequency with which particular",
-            "p": "inkluding didákshons, bóunases end de frkuensi uíd uích partikular"
-          },
-          {
-            "t": "workers were moved between departments. Two records that agreed at the",
-            "p": "uorkers uér muvd bituín departments. tu rekords dat agrid at de"
-          },
-          {
-            "t": "level of totals told substantially different stories about how the",
-            "p": "level ov tóutals tóuld substantiali dífrent storis abáut jáu de"
-          },
-          {
-            "t": "totals were produced.",
-            "p": "tóutals uér produst."
-          }
-        ],
-        [
-          {
-            "t": "The most significant finding concerned reclassification.",
-            "p": "de móust signifikant finding consérnd riclasifikéishon."
-          },
-          {
-            "t": "Women moved into a higher-paid department were routinely returned to the",
-            "p": "uomen muvd íntu a jáir-péid department uér rotineli reternd tu de"
-          },
-          {
-            "t": "lower-paid one within a few weeks, a pattern invisible in quarterly",
-            "p": "lóuer-péid uán uidín a fiú uiks, a pátern invísibol in kuarterli"
-          },
-          {
-            "t": "averages but obvious in the individual records.",
-            "p": "éiveréigs bat óbvias in de individual rekords."
-          },
-          {
-            "t": "Whether this was deliberate policy or an unexamined habit cannot be",
-            "p": "uéder dis uós deliberéit polisi or an uneksamáind jabit kanot bi"
-          },
-          {
-            "t": "determined from the ledgers, which record actions rather than reasons.",
-            "p": "determáind from de léyers, uích récord akshons ráder dan risons."
-          }
-        ],
-        [
-          {
-            "t": "The decipherment key has since been deposited with the archive,",
-            "p": "de desiferment ki jas sins bin deposáited uíd de árkaiv,"
-          },
-          {
-            "t": "and three other researchers have used the collection.",
-            "p": "end zri áder resíarchers jav ust de kolekshon."
-          },
-          {
-            "t": "Two more mills in the same valley are now known to have used related",
-            "p": "tu mor mils in de séim vali ar náu nóun tu jav ust reléited"
-          },
-          {
-            "t": "systems, which raises the possibility that a body of comparable material",
-            "p": "systems, uích réises de posibiliti dat a bodi ov komparabol material"
-          },
-          {
-            "t": "exists elsewhere, uncatalogued in the same way and for the same reason.",
-            "p": "eksists elseuír, unkatalogued in de séim uéi end for de séim ríson."
-          }
-        ],
-        [
-          {
-            "t": "The student, now a lecturer, is careful about the lesson usually drawn",
-            "p": "de student, náu a lekterer, is kareful abáut de leson iúshuali dron"
-          },
-          {
-            "t": "from her work. She resists the idea that the archive was suppressed.",
-            "p": "from jer uérk. shi resists de idi dat de árkaiv uós suprest."
-          },
-          {
-            "t": "Nobody hid the ledgers; they were simply written for an internal purpose",
-            "p": "nobodi jid de léyers; déi uér símpli riten for an internal perpóus"
-          },
-          {
-            "t": "by people who assumed continuity of staff, and the barrier was ordinary",
-            "p": "bái pípol ju asumd kontinuiti ov staf, end de barir uós ordinari"
-          },
-          {
-            "t": "institutional forgetting rather than anything more interesting.",
-            "p": "institushonal foryeting ráder dan énizing mor interesting."
-          }
-        ]
+      [
+        {
+          "t": "What the ledgers contained turned out to matter.",
+          "p": "uót de léyers kontaáind ternd áut tu mater."
+        },
+        {
+          "t": "The official quarterly returns recorded average wages by department.",
+          "p": "de ofishal kuarterli reterns rekorded averéig uéiches bái department."
+        },
+        {
+          "t": "The internal ledgers recorded individual payments,",
+          "p": "de internal léyers rekorded individual péiments,"
+        },
+        {
+          "t": "including deductions, bonuses and the frequency with which particular",
+          "p": "inkluding didákshons, bóunases end de frkuensi uíd uích partikular"
+        },
+        {
+          "t": "workers were moved between departments. Two records that agreed at the",
+          "p": "uorkers uér muvd bituín departments. tu rekords dat agrid at de"
+        },
+        {
+          "t": "level of totals told substantially different stories about how the",
+          "p": "level ov tóutals tóuld substantiali dífrent storis abáut jáu de"
+        },
+        {
+          "t": "totals were produced.",
+          "p": "tóutals uér produst."
+        }
+      ],
+      [
+        {
+          "t": "The most significant finding concerned reclassification.",
+          "p": "de móust signifikant finding consérnd riclasifikéishon."
+        },
+        {
+          "t": "Women moved into a higher-paid department were routinely returned to the",
+          "p": "uomen muvd íntu a jáir-péid department uér rotineli reternd tu de"
+        },
+        {
+          "t": "lower-paid one within a few weeks, a pattern invisible in quarterly",
+          "p": "lóuer-péid uán uidín a fiú uiks, a pátern invísibol in kuarterli"
+        },
+        {
+          "t": "averages but obvious in the individual records.",
+          "p": "éiveréigs bat óbvias in de individual rekords."
+        },
+        {
+          "t": "Whether this was deliberate policy or an unexamined habit cannot be",
+          "p": "uéder dis uós deliberéit polisi or an uneksamáind jabit kanot bi"
+        },
+        {
+          "t": "determined from the ledgers, which record actions rather than reasons.",
+          "p": "determáind from de léyers, uích récord akshons ráder dan risons."
+        }
+      ],
+      [
+        {
+          "t": "The decipherment key has since been deposited with the archive,",
+          "p": "de desiferment ki jas sins bin deposáited uíd de árkaiv,"
+        },
+        {
+          "t": "and three other researchers have used the collection.",
+          "p": "end zri áder resíarchers jav ust de kolekshon."
+        },
+        {
+          "t": "Two more mills in the same valley are now known to have used related",
+          "p": "tu mor mils in de séim vali ar náu nóun tu jav ust reléited"
+        },
+        {
+          "t": "systems, which raises the possibility that a body of comparable material",
+          "p": "systems, uích réises de posibiliti dat a bodi ov komparabol material"
+        },
+        {
+          "t": "exists elsewhere, uncatalogued in the same way and for the same reason.",
+          "p": "eksists elseuír, unkatalogued in de séim uéi end for de séim ríson."
+        }
+      ],
+      [
+        {
+          "t": "The student, now a lecturer, is careful about the lesson usually drawn",
+          "p": "de student, náu a lekterer, is kareful abáut de leson iúshuali dron"
+        },
+        {
+          "t": "from her work. She resists the idea that the archive was suppressed.",
+          "p": "from jer uérk. shi resists de idi dat de árkaiv uós suprest."
+        },
+        {
+          "t": "Nobody hid the ledgers; they were simply written for an internal purpose",
+          "p": "nobodi jid de léyers; déi uér símpli riten for an internal perpóus"
+        },
+        {
+          "t": "by people who assumed continuity of staff, and the barrier was ordinary",
+          "p": "bái pípol ju asumd kontinuiti ov staf, end de barir uós ordinari"
+        },
+        {
+          "t": "institutional forgetting rather than anything more interesting.",
+          "p": "institushonal foryeting ráder dan énizing mor interesting."
+        }
       ]
-    },
-    {
-      "title": "Learning a language nobody speaks at home",
-      "body": [
-        "There are roughly two thousand people who can hold a conversation in Cornish, and none of them learned it from a grandparent who had never stopped speaking it. The last community of native speakers disappeared in the eighteenth century. Every current speaker acquired the language deliberately, from written sources and from other people who had done the same.",
-        "This makes revived languages structurally different from endangered ones. An endangered language has speakers and is losing them; the task is retention. A revived language has documentation and no speakers; the task is manufacture. The methods that work for one are frequently useless for the other, a distinction that funding bodies have historically found difficult to accommodate.",
-        "The gaps in the record cause specific difficulties. Written Cornish survives mainly in religious drama, legal documents and a handful of letters. It contains extensive vocabulary for salvation, land tenure and courtesy, and almost none for cooking, childcare or informal argument. Reviving a language means deciding what to do about the missing register, and every solution is contentious.",
-        "Three approaches compete. Some favour borrowing from Breton and Welsh, on the grounds of linguistic proximity. Others prefer deriving new terms from attested Cornish roots. A third group accepts English borrowings where speakers naturally reach for them. These positions correspond to three competing orthographies and, until a partial settlement in 2008, to genuinely hostile factions.",
-        "Sociolinguists studying the revival note a pattern common to such projects. The proportion of learners who reach conversational fluency is small, but those who do use the language in a much narrower range of situations than a native speaker would. Cornish is spoken at organised events, in classes and online, and comparatively rarely in the circumstances where languages ordinarily live.",
-        "The exception matters more than the rule. A small number of families are raising children in Cornish, producing the first speakers in two centuries who acquired it before literacy. Their Cornish already differs from what the adults were taught: it is faster, uses fewer borrowings than the purists prescribe, and has begun generating slang that appears in no textbook.",
-        "This is generally regarded within the movement as the most encouraging development and by some as a threat. A revived language that begins to change without authorisation is behaving like a living one, which was the objective, and which necessarily means the revivalists lose control of it. Not everyone who wanted the first outcome anticipated the second."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Cuando la fábrica textil de Ravensbeck cerró en 1979, sus registros administrativos se trasladaron a un depósito municipal y se olvidaron. No se perdieron, exactamente: su existencia figuraba en un inventario, y el inventario estaba a su vez catalogado. Lo que nadie anotó fue que los libros de contabilidad estaban escritos en un sistema de taquigrafía ideado internamente, comprensible para alrededor de una docena de oficinistas, todos los cuales se habían marchado.",
+      "El material permaneció sin leer hasta 2019, cuando una estudiante de doctorado que investigaba los salarios de las mujeres en la región solicitó acceso, esperando una tarde de rutina. Encontró cuatrocientos volúmenes de densas abreviaturas, ninguna clave, y una nota de un archivista de 1994 que solo decía que el contenido parecía ser numérico.",
+      "Su director de tesis le aconsejó abandonar la fuente. Ella, en cambio, pasó once meses en el desciframiento, que tuvo éxito por una razón poco vistosa: la fábrica también había presentado resúmenes trimestrales a un organismo estatal en inglés corriente, y esos resúmenes sobrevivían en otro lugar. Cotejar los totales con los libros taquigráficos le dio una clave parcial, y el resto vino de la repetición.",
+      "Lo que contenían los libros resultó importante. Las declaraciones trimestrales oficiales registraban los salarios promedio por departamento. Los libros internos registraban los pagos individuales, incluidas las deducciones, las primas y la frecuencia con que ciertos trabajadores eran trasladados entre departamentos. Dos registros que coincidían en el nivel de los totales contaban historias sustancialmente distintas sobre cómo se producían esos totales.",
+      "El hallazgo más significativo tenía que ver con la reclasificación. A las mujeres trasladadas a un departamento mejor pagado se las devolvía de forma habitual al peor pagado en cuestión de semanas, un patrón invisible en los promedios trimestrales pero evidente en los registros individuales. Si esto era una política deliberada o un hábito sin examinar no puede determinarse a partir de los libros, que registran acciones y no razones.",
+      "La clave de desciframiento se ha depositado desde entonces en el archivo, y otros tres investigadores han utilizado la colección. Ahora se sabe que otras dos fábricas del mismo valle usaron sistemas relacionados, lo que plantea la posibilidad de que exista en otros lugares un cuerpo de material comparable, sin catalogar de la misma manera y por la misma razón.",
+      "La estudiante, hoy profesora, es cuidadosa con la lección que suele extraerse de su trabajo. Se resiste a la idea de que el archivo fuera suprimido. Nadie ocultó los libros; simplemente se escribieron con un fin interno por personas que daban por sentada la continuidad del personal, y la barrera fue el olvido institucional corriente y no algo más interesante."
+    ]
+  },
+  {
+    "title": "Learning a language nobody speaks at home",
+    "body": [
+      "There are roughly two thousand people who can hold a conversation in Cornish, and none of them learned it from a grandparent who had never stopped speaking it. The last community of native speakers disappeared in the eighteenth century. Every current speaker acquired the language deliberately, from written sources and from other people who had done the same.",
+      "This makes revived languages structurally different from endangered ones. An endangered language has speakers and is losing them; the task is retention. A revived language has documentation and no speakers; the task is manufacture. The methods that work for one are frequently useless for the other, a distinction that funding bodies have historically found difficult to accommodate.",
+      "The gaps in the record cause specific difficulties. Written Cornish survives mainly in religious drama, legal documents and a handful of letters. It contains extensive vocabulary for salvation, land tenure and courtesy, and almost none for cooking, childcare or informal argument. Reviving a language means deciding what to do about the missing register, and every solution is contentious.",
+      "Three approaches compete. Some favour borrowing from Breton and Welsh, on the grounds of linguistic proximity. Others prefer deriving new terms from attested Cornish roots. A third group accepts English borrowings where speakers naturally reach for them. These positions correspond to three competing orthographies and, until a partial settlement in 2008, to genuinely hostile factions.",
+      "Sociolinguists studying the revival note a pattern common to such projects. The proportion of learners who reach conversational fluency is small, but those who do use the language in a much narrower range of situations than a native speaker would. Cornish is spoken at organised events, in classes and online, and comparatively rarely in the circumstances where languages ordinarily live.",
+      "The exception matters more than the rule. A small number of families are raising children in Cornish, producing the first speakers in two centuries who acquired it before literacy. Their Cornish already differs from what the adults were taught: it is faster, uses fewer borrowings than the purists prescribe, and has begun generating slang that appears in no textbook.",
+      "This is generally regarded within the movement as the most encouraging development and by some as a threat. A revived language that begins to change without authorisation is behaving like a living one, which was the objective, and which necessarily means the revivalists lose control of it. Not everyone who wanted the first outcome anticipated the second."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Some current Cornish speakers learned the language from native-speaking relatives.",
+        "a": "False",
+        "why": "The last native community disappeared in the eighteenth century; all learned deliberately."
+      },
+      {
+        "q": "Endangered and revived languages require similar methods.",
+        "a": "False",
+        "why": "Methods that work for one are frequently useless for the other."
+      },
+      {
+        "q": "Surviving Cornish texts lack everyday domestic vocabulary.",
+        "a": "True",
+        "why": "There is almost no vocabulary for cooking, childcare or informal argument."
+      },
+      {
+        "q": "The competing approaches were once linked to hostile factions.",
+        "a": "True",
+        "why": "The positions corresponded to rival orthographies and genuinely hostile factions until 2008."
+      },
+      {
+        "q": "The Cornish revival receives more funding than other minority languages.",
+        "a": "Not Given",
+        "why": "Funding bodies are mentioned but no comparison of amounts is given."
+      }
+    ],
+    "short": [
+      {
+        "q": "Roughly how many people can hold a conversation in Cornish?",
+        "a": "two thousand"
+      },
+      {
+        "q": "In what year was a partial settlement over orthography reached?",
+        "a": "2008"
+      }
+    ],
+    "choice": [
+      {
+        "q": "What distinguishes the task facing a revived language?",
+        "options": [
+          "Creating a speaker community where none exists.",
+          "Translating literature into the language.",
+          "Persuading existing speakers not to abandon it.",
+          "Recording the speech of elderly informants."
+        ],
+        "a": 0,
+        "why": "A revived language has documentation and no speakers; the task is manufacture rather than retention."
+      },
+      {
+        "q": "Why do the surviving texts create a practical problem?",
+        "options": [
+          "They are too damaged to be read reliably.",
+          "They cover formal subjects but not ordinary daily life.",
+          "They exist only in private collections.",
+          "They are written in several incompatible alphabets."
+        ],
+        "a": 1,
+        "why": "The record is rich in salvation, land tenure and courtesy but lacks everyday registers."
+      },
+      {
+        "q": "What limitation do sociolinguists observe in the revival?",
+        "options": [
+          "Online material is of poor quality.",
+          "Classes are concentrated in a single region.",
+          "Fluent speakers use the language in unusually few settings.",
+          "Learners rarely progress beyond reading."
+        ],
+        "a": 2,
+        "why": "Cornish is used at events, in classes and online, rarely where languages ordinarily live."
+      },
+      {
+        "q": "Why is the emergence of child speakers seen by some as a threat?",
+        "options": [
+          "Their parents lack formal teaching qualifications.",
+          "Their Cornish contains too many English borrowings.",
+          "They are too few to sustain the language.",
+          "Unplanned change means revivalists no longer direct the language."
+        ],
+        "a": 3,
+        "why": "A language changing without authorisation behaves as a living one, so revivalists lose control."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Some current Cornish speakers learned the language from native-speaking relatives.",
-          "a": "False",
-          "why": "The last native community disappeared in the eighteenth century; all learned deliberately."
+          "t": "There are roughly two thousand people who can hold a conversation in",
+          "p": "déar ar ráfli tu záusand pípol ju can jóuld a konversashon in"
         },
         {
-          "q": "Endangered and revived languages require similar methods.",
-          "a": "False",
-          "why": "Methods that work for one are frequently useless for the other."
+          "t": "Cornish, and none of them learned it from a grandparent who had never",
+          "p": "córnish, end nan ov dem lirnd it from a grandparent ju jad néver"
         },
         {
-          "q": "Surviving Cornish texts lack everyday domestic vocabulary.",
-          "a": "True",
-          "why": "There is almost no vocabulary for cooking, childcare or informal argument."
+          "t": "stopped speaking it. The last community of native speakers disappeared",
+          "p": "stopt spéiking it. de last komuniti ov natáiv spíkers disapéerd"
         },
         {
-          "q": "The competing approaches were once linked to hostile factions.",
-          "a": "True",
-          "why": "The positions corresponded to rival orthographies and genuinely hostile factions until 2008."
+          "t": "in the eighteenth century. Every current speaker acquired the language",
+          "p": "in de eáitins séncheri. évri serent spíker akkuáerd de lánguich"
         },
         {
-          "q": "The Cornish revival receives more funding than other minority languages.",
-          "a": "Not Given",
-          "why": "Funding bodies are mentioned but no comparison of amounts is given."
+          "t": "deliberately, from written sources and from other people who had done",
+          "p": "deliberateli, from riten sóurses end from áder pípol ju jad dan"
+        },
+        {
+          "t": "the same.",
+          "p": "de séim."
         }
       ],
-      "short": [
+      [
         {
-          "q": "Roughly how many people can hold a conversation in Cornish?",
-          "a": "two thousand"
+          "t": "This makes revived languages structurally different from endangered",
+          "p": "dis méiks reváivd lánguiches strukterali dífrent from endanyerd"
         },
         {
-          "q": "In what year was a partial settlement over orthography reached?",
-          "a": "2008"
+          "t": "ones. An endangered language has speakers and is losing them;",
+          "p": "uáns. an endanyerd lánguich jas spíkers end is lóusing dem;"
+        },
+        {
+          "t": "the task is retention. A revived language has documentation and no",
+          "p": "de task is retenshon. a reváivd lánguich jas dokumentashon end nóu"
+        },
+        {
+          "t": "speakers; the task is manufacture. The methods that work for one are",
+          "p": "spíkers; de task is manufakcher. de mézods dat uérk for uán ar"
+        },
+        {
+          "t": "frequently useless for the other, a distinction that funding bodies have",
+          "p": "fríkuentli useles for de áder, a distinkshon dat funding bodis jav"
+        },
+        {
+          "t": "historically found difficult to accommodate.",
+          "p": "jistorikali fond difikult tu akkomodéit."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "What distinguishes the task facing a revived language?",
-          "options": [
-            "Creating a speaker community where none exists.",
-            "Translating literature into the language.",
-            "Persuading existing speakers not to abandon it.",
-            "Recording the speech of elderly informants."
-          ],
-          "a": 0,
-          "why": "A revived language has documentation and no speakers; the task is manufacture rather than retention."
+          "t": "The gaps in the record cause specific difficulties.",
+          "p": "de gaps in de récord kéiús spesifik difikultis."
         },
         {
-          "q": "Why do the surviving texts create a practical problem?",
-          "options": [
-            "They are too damaged to be read reliably.",
-            "They cover formal subjects but not ordinary daily life.",
-            "They exist only in private collections.",
-            "They are written in several incompatible alphabets."
-          ],
-          "a": 1,
-          "why": "The record is rich in salvation, land tenure and courtesy but lacks everyday registers."
+          "t": "Written Cornish survives mainly in religious drama,",
+          "p": "riten córnish serváivs méinli in reliyias drama,"
         },
         {
-          "q": "What limitation do sociolinguists observe in the revival?",
-          "options": [
-            "Online material is of poor quality.",
-            "Classes are concentrated in a single region.",
-            "Fluent speakers use the language in unusually few settings.",
-            "Learners rarely progress beyond reading."
-          ],
-          "a": 2,
-          "why": "Cornish is used at events, in classes and online, rarely where languages ordinarily live."
+          "t": "legal documents and a handful of letters. It contains extensive",
+          "p": "lígal dokuments end a jandful ov leters. it kontéins ekstensáiv"
         },
         {
-          "q": "Why is the emergence of child speakers seen by some as a threat?",
-          "options": [
-            "Their parents lack formal teaching qualifications.",
-            "Their Cornish contains too many English borrowings.",
-            "They are too few to sustain the language.",
-            "Unplanned change means revivalists no longer direct the language."
-          ],
-          "a": 3,
-          "why": "A language changing without authorisation behaves as a living one, so revivalists lose control."
+          "t": "vocabulary for salvation, land tenure and courtesy,",
+          "p": "vokabulari for salvashon, land teniúr end kóurtesi,"
+        },
+        {
+          "t": "and almost none for cooking, childcare or informal argument.",
+          "p": "end ólmoust nan for koóuking, childkéer or informal argument."
+        },
+        {
+          "t": "Reviving a language means deciding what to do about the missing",
+          "p": "reváiving a lánguich mins dekáiding uót tu du abáut de mising"
+        },
+        {
+          "t": "register, and every solution is contentious.",
+          "p": "réyister, end évri solushon is kontenshas."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "There are roughly two thousand people who can hold a conversation in",
-            "p": "déar ar ráfli tu záusand pípol ju can jóuld a konversashon in"
-          },
-          {
-            "t": "Cornish, and none of them learned it from a grandparent who had never",
-            "p": "córnish, end nan ov dem lirnd it from a grandparent ju jad néver"
-          },
-          {
-            "t": "stopped speaking it. The last community of native speakers disappeared",
-            "p": "stopt spéiking it. de last komuniti ov natáiv spíkers disapéerd"
-          },
-          {
-            "t": "in the eighteenth century. Every current speaker acquired the language",
-            "p": "in de eáitins séncheri. évri serent spíker akkuáerd de lánguich"
-          },
-          {
-            "t": "deliberately, from written sources and from other people who had done",
-            "p": "deliberateli, from riten sóurses end from áder pípol ju jad dan"
-          },
-          {
-            "t": "the same.",
-            "p": "de séim."
-          }
-        ],
-        [
-          {
-            "t": "This makes revived languages structurally different from endangered",
-            "p": "dis méiks reváivd lánguiches strukterali dífrent from endanyerd"
-          },
-          {
-            "t": "ones. An endangered language has speakers and is losing them;",
-            "p": "uáns. an endanyerd lánguich jas spíkers end is lóusing dem;"
-          },
-          {
-            "t": "the task is retention. A revived language has documentation and no",
-            "p": "de task is retenshon. a reváivd lánguich jas dokumentashon end nóu"
-          },
-          {
-            "t": "speakers; the task is manufacture. The methods that work for one are",
-            "p": "spíkers; de task is manufakcher. de mézods dat uérk for uán ar"
-          },
-          {
-            "t": "frequently useless for the other, a distinction that funding bodies have",
-            "p": "fríkuentli useles for de áder, a distinkshon dat funding bodis jav"
-          },
-          {
-            "t": "historically found difficult to accommodate.",
-            "p": "jistorikali fond difikult tu akkomodéit."
-          }
-        ],
-        [
-          {
-            "t": "The gaps in the record cause specific difficulties.",
-            "p": "de gaps in de récord kéiús spesifik difikultis."
-          },
-          {
-            "t": "Written Cornish survives mainly in religious drama,",
-            "p": "riten córnish serváivs méinli in reliyias drama,"
-          },
-          {
-            "t": "legal documents and a handful of letters. It contains extensive",
-            "p": "lígal dokuments end a jandful ov leters. it kontéins ekstensáiv"
-          },
-          {
-            "t": "vocabulary for salvation, land tenure and courtesy,",
-            "p": "vokabulari for salvashon, land teniúr end kóurtesi,"
-          },
-          {
-            "t": "and almost none for cooking, childcare or informal argument.",
-            "p": "end ólmoust nan for koóuking, childkéer or informal argument."
-          },
-          {
-            "t": "Reviving a language means deciding what to do about the missing",
-            "p": "reváiving a lánguich mins dekáiding uót tu du abáut de mising"
-          },
-          {
-            "t": "register, and every solution is contentious.",
-            "p": "réyister, end évri solushon is kontenshas."
-          }
-        ],
-        [
-          {
-            "t": "Three approaches compete. Some favour borrowing from Breton and Welsh,",
-            "p": "zri apróuches kompít. sam faváuar boróuing from breton end uelsh,"
-          },
-          {
-            "t": "on the grounds of linguistic proximity. Others prefer deriving new terms",
-            "p": "on de gronds ov linguistik proksimiti. áders prefer deráiving neu terms"
-          },
-          {
-            "t": "from attested Cornish roots. A third group accepts English borrowings",
-            "p": "from atested córnish ruts. a zerd grup aksepts english boróuings"
-          },
-          {
-            "t": "where speakers naturally reach for them. These positions correspond to",
-            "p": "uér spíkers naterali rich for dem. dís posishons korespond tu"
-          },
-          {
-            "t": "three competing orthographies and, until a partial settlement in 2008,",
-            "p": "zri kompeting orzógrafis end, antíl a parshal setlement in 2008,"
-          },
-          {
-            "t": "to genuinely hostile factions.",
-            "p": "tu yenuineli jostáil fakshons."
-          }
-        ],
-        [
-          {
-            "t": "Sociolinguists studying the revival note a pattern common to such",
-            "p": "sosiolinguists studying de riváival nóut a pátern komon tu sach"
-          },
-          {
-            "t": "projects. The proportion of learners who reach conversational fluency is",
-            "p": "próyects. de proporshon ov lirners ju rich konversashonal fluensi is"
-          },
-          {
-            "t": "small, but those who do use the language in a much narrower range of",
-            "p": "smal, bat dóus ju du iús de lánguich in a mach naróuer rany ov"
-          },
-          {
-            "t": "situations than a native speaker would. Cornish is spoken at organised",
-            "p": "situashons dan a natáiv spíker vud. córnish is spoken at organáist"
-          },
-          {
-            "t": "events, in classes and online, and comparatively rarely in the",
-            "p": "events, in klases end onláin, end komparativeli rareli in de"
-          },
-          {
-            "t": "circumstances where languages ordinarily live.",
-            "p": "serkumstanses uér lánguiches ordinarili láiv."
-          }
-        ],
-        [
-          {
-            "t": "The exception matters more than the rule. A small number of families are",
-            "p": "de eksepshon maters mor dan de riúl. a smal number ov familis ar"
-          },
-          {
-            "t": "raising children in Cornish, producing the first speakers in two",
-            "p": "raáising chíldren in córnish, produsing de férst spíkers in tu"
-          },
-          {
-            "t": "centuries who acquired it before literacy. Their Cornish already differs",
-            "p": "séncheris ju akkuáerd it bifór literasi. déar córnish alridi difers"
-          },
-          {
-            "t": "from what the adults were taught: it is faster,",
-            "p": "from uót de adults uér taft: it is faster,"
-          },
-          {
-            "t": "uses fewer borrowings than the purists prescribe,",
-            "p": "iúses feuer boróuings dan de perists preskráib,"
-          },
-          {
-            "t": "and has begun generating slang that appears in no textbook.",
-            "p": "end jas begun yeneréiting slang dat apirs in nóu tekstbuk."
-          }
-        ],
-        [
-          {
-            "t": "This is generally regarded within the movement as the most encouraging",
-            "p": "dis is yenerali regarded uidín de móuvement as de móust enkáuaréiying"
-          },
-          {
-            "t": "development and by some as a threat. A revived language that begins to",
-            "p": "development end bái sam as a srit. a reváivd lánguich dat beyins tu"
-          },
-          {
-            "t": "change without authorisation is behaving like a living one,",
-            "p": "chéinch uidáut osorisashon is bejéiving láik a líving uán,"
-          },
-          {
-            "t": "which was the objective, and which necessarily means the revivalists",
-            "p": "uích uós de obyektáiv, end uích nesesarili mins de revivalists"
-          },
-          {
-            "t": "lose control of it. Not everyone who wanted the first outcome",
-            "p": "lóus kontrol ov it. not everióun ju uanted de férst otkóum"
-          },
-          {
-            "t": "anticipated the second.",
-            "p": "antisipéited de sécond."
-          }
-        ]
+      [
+        {
+          "t": "Three approaches compete. Some favour borrowing from Breton and Welsh,",
+          "p": "zri apróuches kompít. sam faváuar boróuing from breton end uelsh,"
+        },
+        {
+          "t": "on the grounds of linguistic proximity. Others prefer deriving new terms",
+          "p": "on de gronds ov linguistik proksimiti. áders prefer deráiving neu terms"
+        },
+        {
+          "t": "from attested Cornish roots. A third group accepts English borrowings",
+          "p": "from atested córnish ruts. a zerd grup aksepts english boróuings"
+        },
+        {
+          "t": "where speakers naturally reach for them. These positions correspond to",
+          "p": "uér spíkers naterali rich for dem. dís posishons korespond tu"
+        },
+        {
+          "t": "three competing orthographies and, until a partial settlement in 2008,",
+          "p": "zri kompeting orzógrafis end, antíl a parshal setlement in 2008,"
+        },
+        {
+          "t": "to genuinely hostile factions.",
+          "p": "tu yenuineli jostáil fakshons."
+        }
+      ],
+      [
+        {
+          "t": "Sociolinguists studying the revival note a pattern common to such",
+          "p": "sosiolinguists studying de riváival nóut a pátern komon tu sach"
+        },
+        {
+          "t": "projects. The proportion of learners who reach conversational fluency is",
+          "p": "próyects. de proporshon ov lirners ju rich konversashonal fluensi is"
+        },
+        {
+          "t": "small, but those who do use the language in a much narrower range of",
+          "p": "smal, bat dóus ju du iús de lánguich in a mach naróuer rany ov"
+        },
+        {
+          "t": "situations than a native speaker would. Cornish is spoken at organised",
+          "p": "situashons dan a natáiv spíker vud. córnish is spoken at organáist"
+        },
+        {
+          "t": "events, in classes and online, and comparatively rarely in the",
+          "p": "events, in klases end onláin, end komparativeli rareli in de"
+        },
+        {
+          "t": "circumstances where languages ordinarily live.",
+          "p": "serkumstanses uér lánguiches ordinarili láiv."
+        }
+      ],
+      [
+        {
+          "t": "The exception matters more than the rule. A small number of families are",
+          "p": "de eksepshon maters mor dan de riúl. a smal number ov familis ar"
+        },
+        {
+          "t": "raising children in Cornish, producing the first speakers in two",
+          "p": "raáising chíldren in córnish, produsing de férst spíkers in tu"
+        },
+        {
+          "t": "centuries who acquired it before literacy. Their Cornish already differs",
+          "p": "séncheris ju akkuáerd it bifór literasi. déar córnish alridi difers"
+        },
+        {
+          "t": "from what the adults were taught: it is faster,",
+          "p": "from uót de adults uér taft: it is faster,"
+        },
+        {
+          "t": "uses fewer borrowings than the purists prescribe,",
+          "p": "iúses feuer boróuings dan de perists preskráib,"
+        },
+        {
+          "t": "and has begun generating slang that appears in no textbook.",
+          "p": "end jas begun yeneréiting slang dat apirs in nóu tekstbuk."
+        }
+      ],
+      [
+        {
+          "t": "This is generally regarded within the movement as the most encouraging",
+          "p": "dis is yenerali regarded uidín de móuvement as de móust enkáuaréiying"
+        },
+        {
+          "t": "development and by some as a threat. A revived language that begins to",
+          "p": "development end bái sam as a srit. a reváivd lánguich dat beyins tu"
+        },
+        {
+          "t": "change without authorisation is behaving like a living one,",
+          "p": "chéinch uidáut osorisashon is bejéiving láik a líving uán,"
+        },
+        {
+          "t": "which was the objective, and which necessarily means the revivalists",
+          "p": "uích uós de obyektáiv, end uích nesesarili mins de revivalists"
+        },
+        {
+          "t": "lose control of it. Not everyone who wanted the first outcome",
+          "p": "lóus kontrol ov it. not everióun ju uanted de férst otkóum"
+        },
+        {
+          "t": "anticipated the second.",
+          "p": "antisipéited de sécond."
+        }
       ]
-    },
-    {
-      "title": "The case for boring infrastructure",
-      "body": [
-        "Public spending on visible projects is easier to defend than spending on invisible ones. A new bridge can be photographed and opened. A replaced water main cannot, and the officials who authorise it receive no credit for the flooding that consequently does not occur. This asymmetry shapes budgets in most countries and is understood by almost everyone working inside them.",
-        "The consequence is a systematic tilt towards construction and away from maintenance. Capital budgets are typically ring-fenced and politically attractive; maintenance sits in operating budgets, competes with salaries and services, and can be deferred repeatedly without immediate visible consequence. Deferral is not free, but its cost arrives later and usually under a different administration.",
-        "Engineers have quantified the penalty reasonably well. A road resurfaced on schedule costs a fraction of one rebuilt after the base layer has failed. A bridge inspected and painted regularly may last a century; the same structure neglected for twenty years may require replacement outright. The ratios vary by asset type but the direction never does.",
-        "None of this is disputed by the officials who defer maintenance. They are usually aware of the arithmetic and constrained anyway, because a budget shortfall in a given year is a concrete problem and a structural failure in fifteen years is somebody else's. Describing the behaviour as short-sighted misidentifies it: the incentives are functioning exactly as designed.",
-        "Some jurisdictions have attempted structural fixes. Ring-fenced maintenance funds, statutory inspection regimes and asset registers that record condition rather than existence have all been tried. The most effective appear to be those that remove discretion entirely, since any mechanism that permits deferral in a difficult year will eventually meet a difficult year.",
-        "There is a communication problem underneath the budgetary one. Successful maintenance produces an absence of events, and absences are difficult to publicise. A water utility that prevents contamination has nothing to announce. Several agencies have experimented with publishing the failures that did not happen, which reads as either informative or absurd depending largely on the audience.",
-        "The uncomfortable conclusion is that this may not be fully solvable. Democratic accountability rewards attributable achievement, and prevented disasters are unattributable by construction. Institutions can be designed to protect maintenance from political pressure, and several have been, but the underlying asymmetry between what is visible and what is valuable remains where it started."
-      ],
-      "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
-      "questions": [
+    ],
+    "es": [
+      "Hay unas dos mil personas capaces de mantener una conversación en córnico, y ninguna de ellas lo aprendió de un abuelo que nunca hubiera dejado de hablarlo. La última comunidad de hablantes nativos desapareció en el siglo XVIII. Todo hablante actual adquirió el idioma de forma deliberada, a partir de fuentes escritas y de otras personas que habían hecho lo mismo.",
+      "Esto hace que las lenguas revividas sean estructuralmente distintas de las amenazadas. Una lengua amenazada tiene hablantes y los está perdiendo; la tarea es la retención. Una lengua revivida tiene documentación y ningún hablante; la tarea es la fabricación. Los métodos que sirven para una son con frecuencia inútiles para la otra, una distinción que a los organismos de financiación les ha costado históricamente acomodar.",
+      "Los vacíos en el registro provocan dificultades específicas. El córnico escrito sobrevive principalmente en dramas religiosos, documentos legales y un puñado de cartas. Contiene un vocabulario extenso para la salvación, la tenencia de la tierra y la cortesía, y casi ninguno para cocinar, cuidar a los niños o discutir de manera informal. Revivir una lengua significa decidir qué hacer con el registro que falta, y toda solución es motivo de disputa.",
+      "Compiten tres enfoques. Algunos prefieren tomar prestado del bretón y el galés, por razones de proximidad lingüística. Otros prefieren derivar términos nuevos de raíces córnicas atestiguadas. Un tercer grupo acepta préstamos del inglés allí donde los hablantes recurren a ellos de forma natural. Estas posturas se corresponden con tres ortografías rivales y, hasta un acuerdo parcial en 2008, con facciones genuinamente hostiles.",
+      "Los sociolingüistas que estudian el resurgimiento observan un patrón común a este tipo de proyectos. La proporción de aprendices que alcanza una fluidez conversacional es pequeña, pero quienes lo logran usan la lengua en un abanico de situaciones mucho más estrecho del que usaría un hablante nativo. El córnico se habla en eventos organizados, en clases y en internet, y comparativamente poco en las circunstancias en las que las lenguas viven de ordinario.",
+      "La excepción importa más que la regla. Un pequeño número de familias está criando a sus hijos en córnico, produciendo los primeros hablantes en dos siglos que lo adquirieron antes de la alfabetización. Su córnico ya difiere de lo que se les enseñó a los adultos: es más rápido, usa menos préstamos de los que prescriben los puristas y ha empezado a generar jerga que no aparece en ningún libro de texto.",
+      "Dentro del movimiento esto se considera por lo general el avance más alentador, y por algunos como una amenaza. Una lengua revivida que empieza a cambiar sin autorización se está comportando como una viva, que era el objetivo, y lo cual significa necesariamente que los impulsores del resurgimiento pierden el control sobre ella. No todos los que querían el primer resultado anticiparon el segundo."
+    ]
+  },
+  {
+    "title": "The case for boring infrastructure",
+    "body": [
+      "Public spending on visible projects is easier to defend than spending on invisible ones. A new bridge can be photographed and opened. A replaced water main cannot, and the officials who authorise it receive no credit for the flooding that consequently does not occur. This asymmetry shapes budgets in most countries and is understood by almost everyone working inside them.",
+      "The consequence is a systematic tilt towards construction and away from maintenance. Capital budgets are typically ring-fenced and politically attractive; maintenance sits in operating budgets, competes with salaries and services, and can be deferred repeatedly without immediate visible consequence. Deferral is not free, but its cost arrives later and usually under a different administration.",
+      "Engineers have quantified the penalty reasonably well. A road resurfaced on schedule costs a fraction of one rebuilt after the base layer has failed. A bridge inspected and painted regularly may last a century; the same structure neglected for twenty years may require replacement outright. The ratios vary by asset type but the direction never does.",
+      "None of this is disputed by the officials who defer maintenance. They are usually aware of the arithmetic and constrained anyway, because a budget shortfall in a given year is a concrete problem and a structural failure in fifteen years is somebody else's. Describing the behaviour as short-sighted misidentifies it: the incentives are functioning exactly as designed.",
+      "Some jurisdictions have attempted structural fixes. Ring-fenced maintenance funds, statutory inspection regimes and asset registers that record condition rather than existence have all been tried. The most effective appear to be those that remove discretion entirely, since any mechanism that permits deferral in a difficult year will eventually meet a difficult year.",
+      "There is a communication problem underneath the budgetary one. Successful maintenance produces an absence of events, and absences are difficult to publicise. A water utility that prevents contamination has nothing to announce. Several agencies have experimented with publishing the failures that did not happen, which reads as either informative or absurd depending largely on the audience.",
+      "The uncomfortable conclusion is that this may not be fully solvable. Democratic accountability rewards attributable achievement, and prevented disasters are unattributable by construction. Institutions can be designed to protect maintenance from political pressure, and several have been, but the underlying asymmetry between what is visible and what is valuable remains where it started."
+    ],
+    "instruction": "Do the following statements agree with the information in the passage? Choose True, False or Not Given.",
+    "questions": [
+      {
+        "q": "Maintenance spending is easier to justify publicly than new construction.",
+        "a": "False",
+        "why": "Visible projects are easier to defend; maintenance yields no photographable result."
+      },
+      {
+        "q": "Deferring maintenance usually increases total costs eventually.",
+        "a": "True",
+        "why": "Deferral is not free; resurfacing on schedule costs a fraction of rebuilding after failure."
+      },
+      {
+        "q": "Officials who defer maintenance are typically unaware of the long-term costs.",
+        "a": "False",
+        "why": "They are usually aware of the arithmetic and constrained anyway."
+      },
+      {
+        "q": "Mechanisms that allow deferral tend to fail eventually.",
+        "a": "True",
+        "why": "Any mechanism permitting deferral will eventually meet a difficult year."
+      },
+      {
+        "q": "Most countries have now introduced ring-fenced maintenance funds.",
+        "a": "Not Given",
+        "why": "Some jurisdictions have tried them; no proportion is stated."
+      }
+    ],
+    "short": [
+      {
+        "q": "In which budget does maintenance usually sit?",
+        "a": "operating budgets"
+      },
+      {
+        "q": "What have several agencies experimented with publishing?",
+        "a": "the failures that did not happen"
+      }
+    ],
+    "choice": [
+      {
+        "q": "Why does the writer reject the word 'short-sighted'?",
+        "options": [
+          "Because the incentives reward exactly the behaviour observed.",
+          "Because the term is used unfairly by engineers.",
+          "Because maintenance is rarely as urgent as claimed.",
+          "Because officials genuinely cannot predict future failures."
+        ],
+        "a": 0,
+        "why": "The behaviour is not misjudgement; the incentives are functioning as designed."
+      },
+      {
+        "q": "Which structural remedies does the writer consider most effective?",
+        "options": [
+          "Those that increase overall capital budgets.",
+          "Those that eliminate the option to postpone.",
+          "Those that publicise asset condition to the public.",
+          "Those that transfer assets to private operators."
+        ],
+        "a": 1,
+        "why": "The most effective appear to be those that remove discretion entirely."
+      },
+      {
+        "q": "What communication difficulty does successful maintenance create?",
+        "options": [
+          "Its costs are difficult to calculate accurately.",
+          "The public distrusts official safety statistics.",
+          "Its benefits consist of events that never occur.",
+          "Engineers explain it in overly technical language."
+        ],
+        "a": 2,
+        "why": "Successful maintenance produces an absence of events, which is hard to publicise."
+      },
+      {
+        "q": "What is the writer's final assessment?",
+        "options": [
+          "The problem will be solved as asset registers improve.",
+          "Democratic systems should be redesigned entirely.",
+          "Maintenance budgets should be merged with capital budgets.",
+          "The core asymmetry is likely to persist despite institutional fixes."
+        ],
+        "a": 3,
+        "why": "The asymmetry between visible and valuable remains where it started."
+      }
+    ],
+    "lines": [
+      [
         {
-          "q": "Maintenance spending is easier to justify publicly than new construction.",
-          "a": "False",
-          "why": "Visible projects are easier to defend; maintenance yields no photographable result."
+          "t": "Public spending on visible projects is easier to defend than spending on",
+          "p": "publik spending on vísibol próyects is isir tu defend dan spending on"
         },
         {
-          "q": "Deferring maintenance usually increases total costs eventually.",
-          "a": "True",
-          "why": "Deferral is not free; resurfacing on schedule costs a fraction of rebuilding after failure."
+          "t": "invisible ones. A new bridge can be photographed and opened.",
+          "p": "invísibol uáns. a neu brich can bi fotograft end opend."
         },
         {
-          "q": "Officials who defer maintenance are typically unaware of the long-term costs.",
-          "a": "False",
-          "why": "They are usually aware of the arithmetic and constrained anyway."
+          "t": "A replaced water main cannot, and the officials who authorise it receive",
+          "p": "a repléist uóter méin kanot, end de ofisials ju osoráis it ríkáiv"
         },
         {
-          "q": "Mechanisms that allow deferral tend to fail eventually.",
-          "a": "True",
-          "why": "Any mechanism permitting deferral will eventually meet a difficult year."
+          "t": "no credit for the flooding that consequently does not occur.",
+          "p": "nóu kredit for de floóuding dat konskuentli das not okser."
         },
         {
-          "q": "Most countries have now introduced ring-fenced maintenance funds.",
-          "a": "Not Given",
-          "why": "Some jurisdictions have tried them; no proportion is stated."
+          "t": "This asymmetry shapes budgets in most countries and is understood by",
+          "p": "dis asymetri shéips báchets in móust cántris end is understud bái"
+        },
+        {
+          "t": "almost everyone working inside them.",
+          "p": "ólmoust everióun uérking insáid dem."
         }
       ],
-      "short": [
+      [
         {
-          "q": "In which budget does maintenance usually sit?",
-          "a": "operating budgets"
+          "t": "The consequence is a systematic tilt towards construction and away from",
+          "p": "de konskuens is a systematik tilt tóuards konstrukshon end oéi from"
         },
         {
-          "q": "What have several agencies experimented with publishing?",
-          "a": "the failures that did not happen"
+          "t": "maintenance. Capital budgets are typically ring-fenced and politically",
+          "p": "méintenans. kapital báchets ar typikali ring-fenst end politikali"
+        },
+        {
+          "t": "attractive; maintenance sits in operating budgets,",
+          "p": "atraktáiv; méintenans sits in óuperéiting báchets,"
+        },
+        {
+          "t": "competes with salaries and services, and can be deferred repeatedly",
+          "p": "kompetes uíd salaris end sérvises, end can bi deferd repitedli"
+        },
+        {
+          "t": "without immediate visible consequence. Deferral is not free,",
+          "p": "uidáut imediéit vísibol konskuens. diféral is not fri,"
+        },
+        {
+          "t": "but its cost arrives later and usually under a different administration.",
+          "p": "bat its cost aráivs léiter end iúshuali ánder a dífrent administrashon."
         }
       ],
-      "choice": [
+      [
         {
-          "q": "Why does the writer reject the word 'short-sighted'?",
-          "options": [
-            "Because the incentives reward exactly the behaviour observed.",
-            "Because the term is used unfairly by engineers.",
-            "Because maintenance is rarely as urgent as claimed.",
-            "Because officials genuinely cannot predict future failures."
-          ],
-          "a": 0,
-          "why": "The behaviour is not misjudgement; the incentives are functioning as designed."
+          "t": "Engineers have quantified the penalty reasonably well.",
+          "p": "enyinirs jav kuantifáid de penalti risonabli uel."
         },
         {
-          "q": "Which structural remedies does the writer consider most effective?",
-          "options": [
-            "Those that increase overall capital budgets.",
-            "Those that eliminate the option to postpone.",
-            "Those that publicise asset condition to the public.",
-            "Those that transfer assets to private operators."
-          ],
-          "a": 1,
-          "why": "The most effective appear to be those that remove discretion entirely."
+          "t": "A road resurfaced on schedule costs a fraction of one rebuilt after the",
+          "p": "a róud risérfeist on skediúl kosts a frakshon ov uán rebuilt áfter de"
         },
         {
-          "q": "What communication difficulty does successful maintenance create?",
-          "options": [
-            "Its costs are difficult to calculate accurately.",
-            "The public distrusts official safety statistics.",
-            "Its benefits consist of events that never occur.",
-            "Engineers explain it in overly technical language."
-          ],
-          "a": 2,
-          "why": "Successful maintenance produces an absence of events, which is hard to publicise."
+          "t": "base layer has failed. A bridge inspected and painted regularly may last",
+          "p": "béis léir jas faáild. a brich inspékted end péinted regularli méi last"
         },
         {
-          "q": "What is the writer's final assessment?",
-          "options": [
-            "The problem will be solved as asset registers improve.",
-            "Democratic systems should be redesigned entirely.",
-            "Maintenance budgets should be merged with capital budgets.",
-            "The core asymmetry is likely to persist despite institutional fixes."
-          ],
-          "a": 3,
-          "why": "The asymmetry between visible and valuable remains where it started."
+          "t": "a century; the same structure neglected for twenty years may require",
+          "p": "a séncheri; de séim strukcher neglekted for tuénti yirs méi rkuáer"
+        },
+        {
+          "t": "replacement outright. The ratios vary by asset type but the direction",
+          "p": "repléisement otráit. de ratios vari bái áset typ bat de derekshon"
+        },
+        {
+          "t": "never does.",
+          "p": "néver das."
         }
       ],
-      "lines": [
-        [
-          {
-            "t": "Public spending on visible projects is easier to defend than spending on",
-            "p": "publik spending on vísibol próyects is isir tu defend dan spending on"
-          },
-          {
-            "t": "invisible ones. A new bridge can be photographed and opened.",
-            "p": "invísibol uáns. a neu brich can bi fotograft end opend."
-          },
-          {
-            "t": "A replaced water main cannot, and the officials who authorise it receive",
-            "p": "a repléist uóter méin kanot, end de ofisials ju osoráis it ríkáiv"
-          },
-          {
-            "t": "no credit for the flooding that consequently does not occur.",
-            "p": "nóu kredit for de floóuding dat konskuentli das not okser."
-          },
-          {
-            "t": "This asymmetry shapes budgets in most countries and is understood by",
-            "p": "dis asymetri shéips báchets in móust cántris end is understud bái"
-          },
-          {
-            "t": "almost everyone working inside them.",
-            "p": "ólmoust everióun uérking insáid dem."
-          }
-        ],
-        [
-          {
-            "t": "The consequence is a systematic tilt towards construction and away from",
-            "p": "de konskuens is a systematik tilt tóuards konstrukshon end oéi from"
-          },
-          {
-            "t": "maintenance. Capital budgets are typically ring-fenced and politically",
-            "p": "méintenans. kapital báchets ar typikali ring-fenst end politikali"
-          },
-          {
-            "t": "attractive; maintenance sits in operating budgets,",
-            "p": "atraktáiv; méintenans sits in óuperéiting báchets,"
-          },
-          {
-            "t": "competes with salaries and services, and can be deferred repeatedly",
-            "p": "kompetes uíd salaris end sérvises, end can bi deferd repitedli"
-          },
-          {
-            "t": "without immediate visible consequence. Deferral is not free,",
-            "p": "uidáut imediéit vísibol konskuens. diféral is not fri,"
-          },
-          {
-            "t": "but its cost arrives later and usually under a different administration.",
-            "p": "bat its cost aráivs léiter end iúshuali ánder a dífrent administrashon."
-          }
-        ],
-        [
-          {
-            "t": "Engineers have quantified the penalty reasonably well.",
-            "p": "enyinirs jav kuantifáid de penalti risonabli uel."
-          },
-          {
-            "t": "A road resurfaced on schedule costs a fraction of one rebuilt after the",
-            "p": "a róud risérfeist on skediúl kosts a frakshon ov uán rebuilt áfter de"
-          },
-          {
-            "t": "base layer has failed. A bridge inspected and painted regularly may last",
-            "p": "béis léir jas faáild. a brich inspékted end péinted regularli méi last"
-          },
-          {
-            "t": "a century; the same structure neglected for twenty years may require",
-            "p": "a séncheri; de séim strukcher neglekted for tuénti yirs méi rkuáer"
-          },
-          {
-            "t": "replacement outright. The ratios vary by asset type but the direction",
-            "p": "repléisement otráit. de ratios vari bái áset typ bat de derekshon"
-          },
-          {
-            "t": "never does.",
-            "p": "néver das."
-          }
-        ],
-        [
-          {
-            "t": "None of this is disputed by the officials who defer maintenance.",
-            "p": "nan ov dis is disputed bái de ofisials ju difér méintenans."
-          },
-          {
-            "t": "They are usually aware of the arithmetic and constrained anyway,",
-            "p": "déi ar iúshuali oéer ov de arismetik end konstraáind anyuéi,"
-          },
-          {
-            "t": "because a budget shortfall in a given year is a concrete problem and a",
-            "p": "bicós a báchet shortfal in a guíven íar is a konkrít problem end a"
-          },
-          {
-            "t": "structural failure in fifteen years is somebody else's.",
-            "p": "strákchural féiliúr in fiftin yirs is somebodi els's."
-          },
-          {
-            "t": "Describing the behaviour as short-sighted misidentifies it:",
-            "p": "deskráibing de bejaviáuar as short-sáited misidentifis it:"
-          },
-          {
-            "t": "the incentives are functioning exactly as designed.",
-            "p": "de insentáivs ar funktióuning eksaktli as disáind."
-          }
-        ],
-        [
-          {
-            "t": "Some jurisdictions have attempted structural fixes.",
-            "p": "sam yurisdíkshons jav atempted strákchural fikses."
-          },
-          {
-            "t": "Ring-fenced maintenance funds, statutory inspection regimes and asset",
-            "p": "ring-fenst méintenans funds, statutori inspekshon regáims end áset"
-          },
-          {
-            "t": "registers that record condition rather than existence have all been",
-            "p": "réyisters dat récord kondishon ráder dan eksistens jav ol bin"
-          },
-          {
-            "t": "tried. The most effective appear to be those that remove discretion",
-            "p": "tráid. de móust iféktiv apíar tu bi dóus dat remóuv diskrshon"
-          },
-          {
-            "t": "entirely, since any mechanism that permits deferral in a difficult year",
-            "p": "entereli, sins éni mchanism dat permits diféral in a difikult íar"
-          },
-          {
-            "t": "will eventually meet a difficult year.",
-            "p": "uíl eventuali mit a difikult íar."
-          }
-        ],
-        [
-          {
-            "t": "There is a communication problem underneath the budgetary one.",
-            "p": "déar is a komunikashon problem undernis de buchtari uán."
-          },
-          {
-            "t": "Successful maintenance produces an absence of events,",
-            "p": "suksesful méintenans prodiúses an absens ov events,"
-          },
-          {
-            "t": "and absences are difficult to publicise. A water utility that prevents",
-            "p": "end absenses ar difikult tu publikáis. a uóter iutíliti dat prevents"
-          },
-          {
-            "t": "contamination has nothing to announce. Several agencies have",
-            "p": "kontaminashon jas názing tu anons. séveral ayensis jav"
-          },
-          {
-            "t": "experimented with publishing the failures that did not happen,",
-            "p": "eksperimented uíd publishing de féiliúrs dat did not japen,"
-          },
-          {
-            "t": "which reads as either informative or absurd depending largely on the",
-            "p": "uích rids as iser informatáiv or abserd depending laryeli on de"
-          },
-          {
-            "t": "audience.",
-            "p": "odins."
-          }
-        ],
-        [
-          {
-            "t": "The uncomfortable conclusion is that this may not be fully solvable.",
-            "p": "de unkomfortabol konklushon is dat dis méi not bi fuli solvabol."
-          },
-          {
-            "t": "Democratic accountability rewards attributable achievement,",
-            "p": "demokratik acauntabíliti reuards atributabol achivement,"
-          },
-          {
-            "t": "and prevented disasters are unattributable by construction.",
-            "p": "end prevented disásters ar unatributabol bái konstrukshon."
-          },
-          {
-            "t": "Institutions can be designed to protect maintenance from political",
-            "p": "institushons can bi disáind tu protekt méintenans from politikal"
-          },
-          {
-            "t": "pressure, and several have been, but the underlying asymmetry between",
-            "p": "pressher, end séveral jav bin, bat de underlying asymetri bituín"
-          },
-          {
-            "t": "what is visible and what is valuable remains where it started.",
-            "p": "uót is vísibol end uót is valuabol reméins uér it started."
-          }
-        ]
+      [
+        {
+          "t": "None of this is disputed by the officials who defer maintenance.",
+          "p": "nan ov dis is disputed bái de ofisials ju difér méintenans."
+        },
+        {
+          "t": "They are usually aware of the arithmetic and constrained anyway,",
+          "p": "déi ar iúshuali oéer ov de arismetik end konstraáind anyuéi,"
+        },
+        {
+          "t": "because a budget shortfall in a given year is a concrete problem and a",
+          "p": "bicós a báchet shortfal in a guíven íar is a konkrít problem end a"
+        },
+        {
+          "t": "structural failure in fifteen years is somebody else's.",
+          "p": "strákchural féiliúr in fiftin yirs is somebodi els's."
+        },
+        {
+          "t": "Describing the behaviour as short-sighted misidentifies it:",
+          "p": "deskráibing de bejaviáuar as short-sáited misidentifis it:"
+        },
+        {
+          "t": "the incentives are functioning exactly as designed.",
+          "p": "de insentáivs ar funktióuning eksaktli as disáind."
+        }
+      ],
+      [
+        {
+          "t": "Some jurisdictions have attempted structural fixes.",
+          "p": "sam yurisdíkshons jav atempted strákchural fikses."
+        },
+        {
+          "t": "Ring-fenced maintenance funds, statutory inspection regimes and asset",
+          "p": "ring-fenst méintenans funds, statutori inspekshon regáims end áset"
+        },
+        {
+          "t": "registers that record condition rather than existence have all been",
+          "p": "réyisters dat récord kondishon ráder dan eksistens jav ol bin"
+        },
+        {
+          "t": "tried. The most effective appear to be those that remove discretion",
+          "p": "tráid. de móust iféktiv apíar tu bi dóus dat remóuv diskrshon"
+        },
+        {
+          "t": "entirely, since any mechanism that permits deferral in a difficult year",
+          "p": "entereli, sins éni mchanism dat permits diféral in a difikult íar"
+        },
+        {
+          "t": "will eventually meet a difficult year.",
+          "p": "uíl eventuali mit a difikult íar."
+        }
+      ],
+      [
+        {
+          "t": "There is a communication problem underneath the budgetary one.",
+          "p": "déar is a komunikashon problem undernis de buchtari uán."
+        },
+        {
+          "t": "Successful maintenance produces an absence of events,",
+          "p": "suksesful méintenans prodiúses an absens ov events,"
+        },
+        {
+          "t": "and absences are difficult to publicise. A water utility that prevents",
+          "p": "end absenses ar difikult tu publikáis. a uóter iutíliti dat prevents"
+        },
+        {
+          "t": "contamination has nothing to announce. Several agencies have",
+          "p": "kontaminashon jas názing tu anons. séveral ayensis jav"
+        },
+        {
+          "t": "experimented with publishing the failures that did not happen,",
+          "p": "eksperimented uíd publishing de féiliúrs dat did not japen,"
+        },
+        {
+          "t": "which reads as either informative or absurd depending largely on the",
+          "p": "uích rids as iser informatáiv or abserd depending laryeli on de"
+        },
+        {
+          "t": "audience.",
+          "p": "odins."
+        }
+      ],
+      [
+        {
+          "t": "The uncomfortable conclusion is that this may not be fully solvable.",
+          "p": "de unkomfortabol konklushon is dat dis méi not bi fuli solvabol."
+        },
+        {
+          "t": "Democratic accountability rewards attributable achievement,",
+          "p": "demokratik acauntabíliti reuards atributabol achivement,"
+        },
+        {
+          "t": "and prevented disasters are unattributable by construction.",
+          "p": "end prevented disásters ar unatributabol bái konstrukshon."
+        },
+        {
+          "t": "Institutions can be designed to protect maintenance from political",
+          "p": "institushons can bi disáind tu protekt méintenans from politikal"
+        },
+        {
+          "t": "pressure, and several have been, but the underlying asymmetry between",
+          "p": "pressher, end séveral jav bin, bat de underlying asymetri bituín"
+        },
+        {
+          "t": "what is visible and what is valuable remains where it started.",
+          "p": "uót is vísibol end uót is valuabol reméins uér it started."
+        }
       ]
-    }
-  ];
+    ],
+    "es": [
+      "El gasto público en proyectos visibles es más fácil de defender que el gasto en los invisibles. Un puente nuevo puede fotografiarse e inaugurarse. Una cañería maestra reemplazada no, y los funcionarios que la autorizan no reciben ningún mérito por las inundaciones que, en consecuencia, no ocurren. Esta asimetría moldea los presupuestos en la mayoría de los países y la entiende casi todo el que trabaja dentro de ellos.",
+      "La consecuencia es una inclinación sistemática hacia la construcción y en contra del mantenimiento. Los presupuestos de inversión suelen estar protegidos y son políticamente atractivos; el mantenimiento se ubica en los presupuestos operativos, compite con los sueldos y los servicios, y puede posponerse una y otra vez sin consecuencias visibles inmediatas. Posponer no es gratis, pero su costo llega más tarde y por lo general bajo otra administración.",
+      "Los ingenieros han cuantificado la penalización razonablemente bien. Una carretera repavimentada a tiempo cuesta una fracción de otra reconstruida después de que ha fallado la capa base. Un puente inspeccionado y pintado con regularidad puede durar un siglo; la misma estructura descuidada durante veinte años puede requerir un reemplazo total. Las proporciones varían según el tipo de activo, pero la dirección nunca lo hace.",
+      "Nada de esto lo discuten los funcionarios que posponen el mantenimiento. Suelen ser conscientes de la aritmética y estar limitados de todos modos, porque un déficit presupuestario en un año dado es un problema concreto y una falla estructural dentro de quince años es de otro. Describir la conducta como miope la identifica mal: los incentivos funcionan exactamente como fueron diseñados.",
+      "Algunas jurisdicciones han intentado soluciones estructurales. Se han probado fondos de mantenimiento protegidos, regímenes de inspección obligatorios y registros de activos que consignan el estado y no la mera existencia. Los más eficaces parecen ser los que eliminan por completo la discrecionalidad, ya que cualquier mecanismo que permita posponer en un año difícil acabará por toparse con un año difícil.",
+      "Debajo del problema presupuestario hay un problema de comunicación. Un mantenimiento exitoso produce una ausencia de acontecimientos, y las ausencias son difíciles de publicitar. Una empresa de agua que evita una contaminación no tiene nada que anunciar. Varios organismos han experimentado con publicar las fallas que no ocurrieron, lo que se lee como informativo o como absurdo según, en gran medida, el público.",
+      "La conclusión incómoda es que esto quizá no tenga solución completa. La rendición de cuentas democrática premia los logros atribuibles, y los desastres evitados son inatribuibles por su propia naturaleza. Las instituciones pueden diseñarse para proteger el mantenimiento de la presión política, y varias lo han hecho, pero la asimetría de fondo entre lo que es visible y lo que es valioso permanece donde empezó."
+    ]
+  }
+];
 
   let rState = { passage: null, tfng: {}, choice: {} };
-  let rIndex = 0;
+  let rIndex = Math.min(
+    Math.max(Number(store.get("readingIndex", 0)) || 0, 0),
+    Math.max(readingPassages.length - 1, 0)
+  );
   let rPronOn = false;
+  let rTransOn = false;
 
   function renderReadingBody(p) {
+    // Modo traducción: mismos párrafos, mismo formato, pero en español.
+    if (rTransOn && p.es && p.es.length) {
+      $("rBody").innerHTML = p.es
+        .map((par) => `<p class="r-para">${esc(par)}</p>`)
+        .join("");
+      $("rBody").classList.remove("show-pron");
+      return;
+    }
     // Cada oración va en su propia línea; debajo, la pronunciación entre paréntesis.
     $("rBody").innerHTML = (p.lines || []).map((para) => {
       // Un espacio real entre fragmentos: así el párrafo fluye y se copia bien
@@ -12047,14 +12531,133 @@
     b.classList.toggle("is-on", rPronOn);
   }
 
-  // Llena el desplegable con los títulos, numerados para orientarse.
-  function populateReadingSelect() {
-    const sel = $("rSelect");
-    if (!sel) return;
-    sel.innerHTML = readingPassages
-      .map((p, i) => `<option value="${i}">${i + 1}. ${esc(p.title)}</option>`)
-      .join("");
-    sel.value = String(rIndex);
+  function updateTransButton() {
+    const b = $("rTrans");
+    if (!b) return;
+    b.textContent = rTransOn ? "Ocultar traducción" : "Mostrar traducción";
+    b.setAttribute("aria-pressed", rTransOn ? "true" : "false");
+    b.classList.toggle("is-on", rTransOn);
+  }
+
+  /* ---------- Line Sidebar de textos ---------- */
+  const READING_FALLOFF = {
+    linear: (p) => p,
+    smooth: (p) => p * p * (3 - 2 * p),
+    sharp: (p) => p * p * p
+  };
+  const readingSidebarFx = {
+    items: [], targets: [], current: [], raf: null, last: 0,
+    proximityRadius: 92, smoothing: 85, falloff: "sharp"
+  };
+
+  function populateReadingSidebar() {
+    const list = $("rLineSidebarList");
+    if (!list) return;
+    list.innerHTML = readingPassages.map((p, i) =>
+      `<li class="line-sidebar__item" data-reading-index="${i}" style="--effect:0">` +
+        `<span class="line-sidebar__marker" aria-hidden="true"></span>` +
+        `<button class="line-sidebar__button" type="button" data-reading-index="${i}" ` +
+          `aria-controls="rPassageCard" aria-label="Texto ${i + 1}: ${esc(p.title)}">` +
+          `<span class="line-sidebar__index">${String(i + 1).padStart(2, "0")}</span>` +
+          `<span class="line-sidebar__text">${esc(p.title)}</span>` +
+        `</button>` +
+      `</li>`
+    ).join("");
+
+    readingSidebarFx.items = Array.from(list.querySelectorAll(".line-sidebar__item"));
+    readingSidebarFx.targets = readingSidebarFx.items.map(() => 0);
+    readingSidebarFx.current = readingSidebarFx.items.map(() => 0);
+
+    list.addEventListener("pointermove", handleReadingSidebarPointer);
+    list.addEventListener("pointerleave", () => {
+      readingSidebarFx.targets.fill(0);
+      startReadingSidebarLoop();
+    });
+    list.addEventListener("click", (event) => {
+      const button = event.target.closest(".line-sidebar__button");
+      if (!button) return;
+      selectReadingFromSidebar(Number(button.dataset.readingIndex), button);
+    });
+    list.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+      const buttons = Array.from(list.querySelectorAll(".line-sidebar__button"));
+      const current = Math.max(buttons.indexOf(document.activeElement), 0);
+      let next = current;
+      if (event.key === "ArrowDown") next = Math.min(current + 1, buttons.length - 1);
+      if (event.key === "ArrowUp") next = Math.max(current - 1, 0);
+      if (event.key === "Home") next = 0;
+      if (event.key === "End") next = buttons.length - 1;
+      event.preventDefault();
+      buttons[next]?.focus();
+    });
+    updateReadingSidebarActive(false);
+  }
+
+  function selectReadingFromSidebar(index, button) {
+    if (!Number.isInteger(index) || index < 0 || index >= readingPassages.length) return;
+    rIndex = index;
+    store.set("readingIndex", rIndex);
+    newReading();
+    button?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (window.matchMedia("(max-width: 1100px)").matches) {
+      $("rPassageCard")?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  }
+
+  function updateReadingSidebarActive(scrollActive = true) {
+    const list = $("rLineSidebarList");
+    if (!list) return;
+    list.querySelectorAll(".line-sidebar__item").forEach((item, i) => {
+      const active = i === rIndex;
+      item.classList.toggle("is-active", active);
+      const button = item.querySelector(".line-sidebar__button");
+      if (button) button.setAttribute("aria-current", active ? "true" : "false");
+      if (active && scrollActive) item.scrollIntoView({ block: "nearest" });
+    });
+    startReadingSidebarLoop();
+  }
+
+  function handleReadingSidebarPointer(event) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const list = $("rLineSidebarList");
+    if (!list) return;
+    const rect = list.getBoundingClientRect();
+    const pointerY = event.clientY - rect.top;
+    const ease = READING_FALLOFF[readingSidebarFx.falloff] || READING_FALLOFF.linear;
+    readingSidebarFx.items.forEach((item, i) => {
+      const center = item.offsetTop + item.offsetHeight / 2;
+      const distance = Math.abs(pointerY - center);
+      readingSidebarFx.targets[i] = ease(Math.max(0, 1 - distance / readingSidebarFx.proximityRadius));
+    });
+    startReadingSidebarLoop();
+  }
+
+  function startReadingSidebarLoop() {
+    if (readingSidebarFx.raf != null) return;
+    readingSidebarFx.last = performance.now();
+    readingSidebarFx.raf = requestAnimationFrame(runReadingSidebarFrame);
+  }
+
+  function runReadingSidebarFrame(now) {
+    const dt = Math.min((now - readingSidebarFx.last) / 1000, 0.05);
+    readingSidebarFx.last = now;
+    const tau = Math.max(readingSidebarFx.smoothing, 1) / 1000;
+    const k = 1 - Math.exp(-dt / tau);
+    let moving = false;
+
+    readingSidebarFx.items.forEach((item, i) => {
+      const active = i === rIndex;
+      const target = Math.max(readingSidebarFx.targets[i] || 0, active ? 1 : 0);
+      const current = readingSidebarFx.current[i] || 0;
+      const next = current + (target - current) * k;
+      const settled = Math.abs(target - next) < 0.0015;
+      const value = settled ? target : next;
+      readingSidebarFx.current[i] = value;
+      item.style.setProperty("--effect", value.toFixed(4));
+      if (!settled) moving = true;
+    });
+
+    readingSidebarFx.raf = moving ? requestAnimationFrame(runReadingSidebarFrame) : null;
   }
 
   function newReading() {
@@ -12065,9 +12668,10 @@
     rState = { passage: p, tfng: {}, choice: {} };
 
     $("rTitle").textContent = p.title;
-    if ($("rSelect")) $("rSelect").value = String(rIndex);
+    updateReadingSidebarActive();
     renderReadingBody(p);
     updatePronButton();
+    updateTransButton();
     $("rInstruction").textContent = p.instruction;
     $("rScore").textContent = "";
 
@@ -12190,17 +12794,22 @@
     logActivity();
   }
 
-  $("rSelect").addEventListener("change", (e) => {
-    rIndex = Number(e.target.value) || 0;
-    newReading();
-  });
   $("rPron").addEventListener("click", () => {
     rPronOn = !rPronOn;
-    $("rBody").classList.toggle("show-pron", rPronOn);
+    if (rPronOn && rTransOn) { rTransOn = false; updateTransButton(); }
+    // Al cambiar de modo hay que re-renderizar el cuerpo (traducción vs original).
+    if (rState.passage) renderReadingBody(rState.passage);
+    $("rBody").classList.toggle("show-pron", rPronOn && !rTransOn);
     updatePronButton();
   });
+  $("rTrans").addEventListener("click", () => {
+    rTransOn = !rTransOn;
+    if (rTransOn && rPronOn) { rPronOn = false; updatePronButton(); }
+    if (rState.passage) renderReadingBody(rState.passage);
+    updateTransButton();
+  });
   $("rCheck").addEventListener("click", checkReading);
-  populateReadingSelect();
+  populateReadingSidebar();
   $("rClearAns").addEventListener("click", newReading);
   newReading();
 
@@ -14437,20 +15046,539 @@
     { name: "Third Conditional", level: "Avanzado", summary: "Situación irreal en el pasado y su resultado imaginario.", aff: "If + past perfect, would have + past participle", neg: "If + past perfect, wouldn’t have + p.p.", q: "Would + subject + have + p.p. + if…?", uses: ["Arrepentimiento", "Hipótesis pasada", "Resultado imaginario"], ex: [["If I had studied, I would have passed.", "Si hubiera estudiado, habría aprobado."], ["She would have come if she had known.", "Habría venido si hubiera sabido."]] },
     { name: "Modal verbs", level: "Intermedio", summary: "Habilidad, permiso, obligación, posibilidad y consejo.", aff: "Subject + modal + base verb", neg: "Subject + modal + not + base verb", q: "Modal + subject + base verb?", uses: ["Habilidad (can)", "Consejo (should)", "Obligación (must)", "Posibilidad (might)", "Permiso (may)"], ex: [["You should review before the exam.", "Deberías repasar antes del examen."], ["She can speak three languages.", "Ella habla tres idiomas."], ["We must be on time.", "Tenemos que llegar a horario."]] }
   ];
+  const TENSE_TIMELINES = {
+    "Present Simple": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"78\" y1=\"16\" x2=\"78\" y2=\"30\" stroke=\"#2e7d5b\" stroke-width=\"2.4\"/><polygon points=\"78,33 74.8,26.5 81.2,26.5\" fill=\"#2e7d5b\"/></svg>",
+    "Present Continuous": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><path d=\"M 69 16 L 78 30 L 87 16\" fill=\"none\" stroke=\"#2e7d5b\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+    "Present Perfect": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"40\" y1=\"18\" x2=\"78\" y2=\"32\" stroke=\"#2e7d5b\" stroke-width=\"2.4\"/><polygon points=\"78,32 70.8,32.8 73.0,26.8\" fill=\"#2e7d5b\"/></svg>",
+    "Present Perfect Continuous": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><path d=\"M 26 31 L 78 31 L 78 20 Z\" fill=\"#2e7d5b\" fill-opacity=\"0.5\" stroke=\"#2e7d5b\" stroke-width=\"1.2\"/></svg>",
+    "Past Simple": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"20\" y1=\"16\" x2=\"20\" y2=\"30\" stroke=\"#b0472a\" stroke-width=\"2.4\"/><polygon points=\"20,33 16.8,26.5 23.2,26.5\" fill=\"#b0472a\"/></svg>",
+    "Past Continuous": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><path d=\"M 11 16 L 20 30 L 29 16\" fill=\"none\" stroke=\"#b0472a\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+    "Past Perfect": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"14\" y1=\"18\" x2=\"42\" y2=\"31\" stroke=\"#b0472a\" stroke-width=\"2.4\"/><polygon points=\"42,31 34.8,31.2 37.5,25.4\" fill=\"#b0472a\"/></svg>",
+    "Past Perfect Continuous": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><path d=\"M 20 20 L 20 31 L 54 31 Z\" fill=\"#b0472a\" fill-opacity=\"0.5\" stroke=\"#b0472a\" stroke-width=\"1.2\"/></svg>",
+    "Future Simple (will)": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"136\" y1=\"16\" x2=\"136\" y2=\"30\" stroke=\"#2f6fb0\" stroke-width=\"2.4\"/><polygon points=\"136,33 132.8,26.5 139.2,26.5\" fill=\"#2f6fb0\"/></svg>",
+    "Be going to": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><path d=\"M 78 30 Q 107.0 10 136 30\" fill=\"none\" stroke=\"#2f6fb0\" stroke-width=\"2.2\"/><polygon points=\"136,30 128.8,30.1 131.5,24.3\" fill=\"#2f6fb0\"/></svg>",
+    "Future Continuous": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><path d=\"M 127 16 L 136 30 L 145 16\" fill=\"none\" stroke=\"#2f6fb0\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+    "Future Perfect": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"90\" y1=\"18\" x2=\"136\" y2=\"31\" stroke=\"#2f6fb0\" stroke-width=\"2.4\"/><polygon points=\"136,31 128.9,32.3 130.6,26.2\" fill=\"#2f6fb0\"/></svg>",
+    "Future Perfect Continuous": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><path d=\"M 14 31 L 136 31 L 136 20 Z\" fill=\"#2f6fb0\" fill-opacity=\"0.5\" stroke=\"#2f6fb0\" stroke-width=\"1.2\"/></svg>",
+    "Zero Conditional": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"20\" y1=\"24\" x2=\"136\" y2=\"24\" stroke=\"#6b6f7a\" stroke-width=\"2.4\"/><polygon points=\"136,24 129.5,27.2 129.5,20.8\" fill=\"#6b6f7a\"/></svg>",
+    "First Conditional": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"78\" y1=\"20\" x2=\"136\" y2=\"30\" stroke=\"#2e7d5b\" stroke-width=\"2.2\" stroke-dasharray=\"3 3\"/><polygon points=\"136,30 129.1,32.0 130.1,25.7\" fill=\"#2e7d5b\"/></svg>",
+    "Second Conditional": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"104\" y1=\"22\" x2=\"112\" y2=\"30\" stroke=\"#6b6f7a\" stroke-width=\"2.2\"/><line x1=\"112\" y1=\"22\" x2=\"104\" y2=\"30\" stroke=\"#6b6f7a\" stroke-width=\"2.2\"/><line x1=\"78\" y1=\"18\" x2=\"104\" y2=\"31\" stroke=\"#6b6f7a\" stroke-width=\"2.4\"/><polygon points=\"104,31 96.8,31.0 99.6,25.2\" fill=\"#6b6f7a\"/></svg>",
+    "Third Conditional": "<svg viewBox=\"0 0 156 54\" class=\"tl-svg\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><line x1=\"6\" y1=\"34\" x2=\"150\" y2=\"34\" stroke=\"var(--tl-axis)\" stroke-width=\"1.6\"/><polygon points=\"150,34 143.5,30.8 143.5,37.2\" fill=\"var(--tl-axis)\"/><line x1=\"20\" y1=\"30\" x2=\"20\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"78\" y1=\"30\" x2=\"78\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><line x1=\"136\" y1=\"30\" x2=\"136\" y2=\"38\" stroke=\"var(--tl-axis)\" stroke-width=\"1.4\"/><text x=\"20\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">past</text><text x=\"78\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">present</text><text x=\"136\" y=\"48\" text-anchor=\"middle\" class=\"tl-label\">future</text><line x1=\"12\" y1=\"22\" x2=\"20\" y2=\"30\" stroke=\"#b0472a\" stroke-width=\"2.2\"/><line x1=\"20\" y1=\"22\" x2=\"12\" y2=\"30\" stroke=\"#b0472a\" stroke-width=\"2.2\"/><path d=\"M 22 26 Q 38 12 54 26\" fill=\"none\" stroke=\"#b0472a\" stroke-width=\"2.2\" stroke-dasharray=\"3 3\"/><polygon points=\"54,26 46.9,24.7 50.7,19.5\" fill=\"#b0472a\"/></svg>"
+  };
+
+  function tenseGroup(name) {
+    if (/^Present/.test(name)) return "present";
+    if (/^Past/.test(name)) return "past";
+    if (/^Future|^Be going/.test(name)) return "future";
+    if (/Conditional/.test(name)) return "cond";
+    if (/Modal/.test(name)) return "modal";
+    return "present";
+  }
+  /* ============================================================
+     MICRO-LEARNING · OPTION WHEEL
+     Adaptación en JavaScript puro del componente OptionWheel.
+     ============================================================ */
+  const MICRO_TOPIC_MODULES = {"module1":[{"id":"m1-01","module":1,"number":1,"label":"Suffix -Less","title":"Suffix: -Less","rule":"Less no siempre significa \"menos\".","context":"Pegado al final de un sustantivo, destruye su presencia: significa \"sin\" o \"que carece de\". Cuando usas less de forma aislada, estás comparando cantidades (less sugar). Pero como sufijo (-less), transforma un sustantivo en un adjetivo que denota ausencia total de esa cualidad.","bullets":[],"examples":["Careless: \"He made a careless mistake on the report.\" (Cometió un error por falta de cuidado/descuido).","Homeless: \"The charity helps homeless families during winter.\" (La organización ayuda a familias sin hogar).","Endless: \"We had an endless discussion about politics.\" (Tuvimos una discusión interminable / sin fin).","Priceless: \"Her reaction when she saw the gift was priceless.\" (Su reacción fue invaluable / no tiene precio)."],"keywords":["Suffix","Less"],"wordCount":2},{"id":"m1-02","module":1,"number":2,"label":"Up To vs Until","title":"Up to vs. Until","rule":"Until marca la hora de corte (cuándo termina algo).","context":"Up to marca el techo (cuánto es el máximo o en manos de quién está). Usa until (o su forma corta till) para referirte puramente a la línea de tiempo. Usa up to para límites cuantitativos, capacidades o delegación de responsabilidad.","bullets":[],"examples":["Until (Límite de tiempo): \"I will be working until 6:00 PM.\" (Trabajaré hasta las 6).","Up to (Límite numérico): \"This room can hold up to 50 people.\" (Esta sala soporta hasta 50 personas).","Up to (Responsabilidad): \"Where should we eat? It’s up to you.\" (¿Dónde comemos? Depende de vos)."],"keywords":["Up","vs.","Until"],"wordCount":4},{"id":"m1-03","module":1,"number":3,"label":"To Me / For Me","title":"To me vs. For me","rule":"To me es para dar tu opinión (desde mi perspectiva).","context":"For me es para señalar un beneficio, un daño o un favor (en mi beneficio). El error habitual es usar for me para decir \"para mí es una buena idea\". En inglés, la opinión personal va con to me. Reserva for me para cosas que impactan tu bienestar o tu esfuerzo.","bullets":[],"examples":["To me (Opinión): \"To me, this design looks much cleaner.\" (Para mí / A mi parecer, este diseño se ve más limpio).","For me (Beneficio/Favor): \"Eating vegetables is good for me.\" (Comer verduras es bueno para mí/mi salud).","For me (Asistencia): \"Could you translate this email for me?\" (¿Podrías traducir este correo por mí/haciéndome el favor?)."],"keywords":["vs."],"wordCount":4},{"id":"m1-04","module":1,"number":4,"label":"Look vs Seem","title":"Look vs. Seem","rule":"Look entra por los ojos (lo ves físicamente).","context":"Seem entra por la intuición o la evaluación de una situación. Si alguien tiene la cara roja y está despeinado, looks tired. Pero si lees un correo con un tono extraño o ves que el proyecto se demora, it seems there is a problem.","bullets":[],"examples":["Look (Apariencia visual): \"You look great in that suit!\" (Te ves genial con ese traje).","Seem (Impresión general): \"He seems like a nice guy, but I don't know him well.\" (Parece un buen tipo, pero no lo conozco bien).","Contraste: \"She looks happy (sonríe), but it seems she is actually stressed (su carga de trabajo es alta).\""],"keywords":["Look","vs.","Seem"],"wordCount":3},{"id":"m1-05","module":1,"number":5,"label":"Under vs Below","title":"Under vs. Below","rule":"Under implica estar justo debajo, casi siempre cubierto o tocando.","context":"Below es estar más abajo en una escala, nivel o mapa. Si hay algo encima físico haciéndole sombra o cobertura, usa under. Si estás comparando mediciones (temperatura, nivel del mar, ranking), usa below.","bullets":[],"examples":["Under (Físico/Cubierto): \"The cat is sleeping under the bed.\" (El gato duerme debajo de la cama).","Under (Edad/Límite): \"Children under 12 enter for free.\" (Menores de 12 entran gratis).","Below (Escala/Nivel): \"The valley is 200 meters below sea level.\" (El valle está a 200m bajo el nivel del mar).","Below (En un documento): \"Please sign in the space below.\" (Por favor firme en el espacio de abajo)."],"keywords":["Under","vs.","Below"],"wordCount":3},{"id":"m1-06","module":1,"number":6,"label":"Nothing vs Anything","title":"Nothing vs. Anything","rule":"En inglés no existe la doble negación.","context":"Si la frase ya tiene un not, usas anything. Si el verbo es afirmativo, usas nothing. En español decimos \"No tengo nada\". En inglés dices \"I have nothing\" (Tengo nada) o \"I don't have anything\" (No tengo ninguna cosa). Decir \"I don't have nothing\" es un error grave.","bullets":[],"examples":["Nothing (Verbo positivo): \"There is nothing in the fridge.\" (No hay nada en la heladera).","Anything (Verbo negativo): \"I didn't see anything unusual.\" (No vi nada fuera de lo común).","Anything (En preguntas): \"Do you need anything else?\" (¿Necesitás alguna otra cosa?)."],"keywords":["Nothing","vs.","Anything"],"wordCount":3},{"id":"m1-07","module":1,"number":7,"label":"Say vs Tell","title":"Say vs. Tell","rule":"Tell exige poner la persona a la que le hablas inmediatamente después.","context":"Say se enfoca en el mensaje, sin importar quién escucha. La estructura es el secreto: TELL + Persona + Mensaje vs. SAY + Mensaje (+ TO + Persona).","bullets":[],"examples":["Tell: \"Please tell me the truth.\" (Por favor decime la verdad → Tell + me).","Say: \"What did you say?\" (¿Qué dijiste? → No hay persona).","Say + to: \"He said hello to everyone.\" (Le dijo hola a todos)."],"keywords":["Say","vs.","Tell"],"wordCount":3},{"id":"m1-08","module":1,"number":8,"label":"Everything vs All","title":"Everything vs. All","rule":"Everything trata las cosas de forma individual para formar un todo (\"cada cosa\").","context":"All agrupa la masa o la totalidad de elementos. Everything concuerda siempre en singular (Everything is fine). All suele requerir un sustantivo o un conector para sonar natural (All of the students, All the money).","bullets":[],"examples":["Everything: \"Everything is going according to plan.\" (Todo está saliendo según el plan).","All: \"All the doors were locked.\" (Todas las puertas estaban cerradas).","All + Sustantivo incontable: \"He spent all his money.\" (Gastó todo su dinero)."],"keywords":["Everything","vs.","All"],"wordCount":3},{"id":"m1-09","module":1,"number":9,"label":"Photo Picture Image","title":"Photo vs. Picture vs. Image","rule":"Photo = cámara fotográfica.","context":"Picture = dibujo, pintura o foto impresa. Image = archivo digital, concepto mental o reputación. Tienen áreas donde se cruzan, pero técnicamente abarcan distintos soportes.","bullets":[],"examples":["Photo: \"Take a photo of this document with your smartphone.\" (Saca una foto...).","Picture: \"The museum has a famous picture painted by Monet.\" (Un cuadro/pintura).","Image: \"You can upload a PNG image to your profile.\" (Una imagen digital).","Image (Reputación): \"The company is trying to improve its public image.\" (Su imagen pública)."],"keywords":["Photo","vs.","Picture","Image"],"wordCount":3},{"id":"m1-10","module":1,"number":10,"label":"We Our Us","title":"We vs. Our vs. Us","rule":"We ejecuta la acción (Sujeto).","context":"Our indica posesión (Adjetivo). Us recibe la acción (Objeto). Es la Santísima Trinidad de la primera persona del plural. Conocer su posición en la frase te evita titubear.","bullets":[],"examples":["We (Sujeto): \"We launched a new product this week.\" (Nosotros lanzamos...).","Our (Posesivo): \"Welcome to our office!\" (Bienvenido a nuestra oficina).","Us (Objeto): \"The manager asked us to send the report.\" (El gerente nos pidió a nosotros...)."],"keywords":["We","vs.","Our","Us"],"wordCount":3},{"id":"m1-11","module":1,"number":11,"label":"Just vs Only","title":"Just vs. Only","rule":"Only es rígido y exclusivo (\"únicamente\").","context":"Just es más amplio: sirve para \"únicamente\", pero también para \"hace un segundo\" o \"simplemente\". Si quieres decir \"acabo de llegar\", usas just. Si quieres limitar una cantidad estricta, puedes usar cualquiera, pero only suena más formal.","bullets":[],"examples":["Just (Inmediatez): \"I just finished the meeting.\" (Acabo de terminar la reunión).","Just (Suavizar un pedido): \"I’m just calling to ask a quick question.\" (Simplemente llamo para...).","Only (Exclusividad estricta): \"This access is for members only.\" (Solo para miembros)."],"keywords":["Just","vs.","Only"],"wordCount":3},{"id":"m1-12","module":1,"number":12,"label":"Hear vs Listen","title":"Hear vs. Listen","rule":"Hear es una capacidad pasiva (los sonidos entran a tus oídos).","context":"Listen (to) es una acción activa y voluntaria (pones atención). No puedes apagar tus oídos; por eso, si hay un trueno, you hear it. Pero si pones un podcast para aprender algo, you listen to it.","bullets":[],"examples":["Hear: \"Speak louder, I can't hear you very well.\" (Hablá más fuerte, no te oigo).","Listen: \"Are you listening to the instructions?\" (¿Estás escuchando/prestando atención a las instrucciones?).","Diferencia clave: \"I heard the music playing next door, so I stopped to listen.\" (Oí la música y me detuve a escucharla)."],"keywords":["Hear","vs.","Listen"],"wordCount":3},{"id":"m1-13","module":1,"number":13,"label":"Would Should Might Could","title":"Would vs. Should vs. Might vs. Could","rule":"Los cuatro fantásticos del tono y la posibilidad:","context":"Son verbos modales: nunca llevan \"to\" después, ni agregan \"-s\" en tercera persona.","bullets":["Would: Plantea un escenario hipotético (-ía).","Should: Da un consejo o recomendación (debería).","Might: Expresa una posibilidad remota o duda (quizás).","Could: Expresa capacidad en pasado o una opción disponible (podría)."],"examples":["Would: \"I would buy that car if I had enough money.\" (Compraría ese auto si...).","Should: \"You should double-check your spelling before sending.\" (Deberías revisar la ortografía).","Might: \"Take an umbrella. It might rain later.\" (Llevá paraguas. Quizás/Puede que llueva).","Could: \"We could schedule the call for Thursday if you prefer.\" (Podríamos programar la llamada...)."],"keywords":["Would","vs.","Should","Might","Could"],"wordCount":4},{"id":"m1-14","module":1,"number":14,"label":"Instead Of","title":"En vez de (Instead of)","rule":"Si le pones un verbo después a instead of, ese verbo debe llevar -ING obligatoriamente.","context":"Esta es una de las mayores trampas para hispanohablantes. Decir \"Instead of go\" es un error muy común.","bullets":[],"examples":["Con verbo en -ING: \"Instead of complaining, let's find a solution.\" (En vez de quejarnos, encontremos una solución).","Con sustantivo: \"I ordered water instead of soda.\" (Pedí agua en vez de gaseosa)."],"keywords":["En","vez","de","Instead"],"wordCount":2},{"id":"m1-15","module":1,"number":15,"label":"Pass Hand Spend","title":"Pass vs. Hand vs. Spend","rule":"Pass = mover algo hacia alguien.","context":"Hand = entregarlo en la mano físicamente. Spend = consumir tiempo o dinero.","bullets":[],"examples":["Pass: \"Can you pass me the salt, please?\" (¿Me pasás la sal?).","Hand: \"Please hand in your test sheets when you finish.\" (Entreguen sus hojas de examen en mano).","Spend (Tiempo): \"I spend two hours commuting every day.\" (Paso/Invierto dos horas viajando).","Spend (Dinero): \"Don't spend all your money on clothes.\" (No gastes todo tu dinero)."],"keywords":["Pass","vs.","Hand","Spend"],"wordCount":3},{"id":"m1-16","module":1,"number":16,"label":"Lose vs Miss","title":"Lose vs. Miss","rule":"Lose es perder la posesión de un objeto o perder un partido.","context":"Miss es perderse un transporte, un evento o extrañar a alguien. Nunca dices \"I lost the train\", porque el tren no era tuyo ni se te cayó del bolsillo. Dices \"I missed the train\".","bullets":[],"examples":["Lose (Objeto/Juego): \"I always lose my glasses.\" / \"Our team lost the match.\" (Pierdo mis anteojos / Perdió el partido).","Miss (Transporte/Oportunidad): \"Hurry up or we will miss the flight!\" (¡Apurate o perderemos el vuelo!).","Miss (Afectivo): \"I miss my friends from university.\" (Extraño a mis amigos)."],"keywords":["Lose","vs.","Miss"],"wordCount":3},{"id":"m1-17","module":1,"number":17,"label":"Borrow vs Lend","title":"Borrow vs. Lend","rule":"Borrow = pedir prestado (la cosa viene hacia ti).","context":"Lend = dar prestado (la cosa sale de ti). Piensa en la dirección del flujo del objeto.","bullets":["BORROW FROM (Tomar prestado de)","LEND TO (Prestar a)"],"examples":["Borrow: \"Can I borrow your charger for ten minutes?\" (¿Puedo pedirte prestado el cargador?).","Lend: \"I can lend you my book if you need it.\" (Te puedo prestar mi libro)."],"keywords":["Borrow","vs.","Lend"],"wordCount":3},{"id":"m1-18","module":1,"number":18,"label":"Get On vs In","title":"Get on vs. Get in","rule":"Get on = Vehículos donde podés caminar de pie (colectivo, tren, avión, barco).","context":"Get in = Vehículos pequeños donde tenés que agacharte (auto, taxi). La misma regla aplica para bajar: usarás Get off para el colectivo/tren y Get out of para el auto/taxi.","bullets":[],"examples":["Get on: \"We got on the train just in time.\" (Subimos al tren justo a tiempo).","Get in: \"Step away from the curb and get in the cab.\" (Subite al taxi)."],"keywords":["vs."],"wordCount":4},{"id":"m1-19","module":1,"number":19,"label":"She's: Is vs Has","title":"She's (She is vs. She has)","rule":"Si le sigue un adjetivo, lugar o verbo con -ING, es She IS.","context":"Si le sigue un verbo en participio (3ra columna), es She HAS. La contracción 's confunde a primera vista, pero el elemento que viene inmediatamente después te da la pista definitiva.","bullets":[],"examples":["She IS + Adjetivo: \"She's very talented.\" (Ella es muy talentosa).","She IS + Verbo -ING: \"She's working right now.\" (Ella está trabajando).","She HAS + Participio: \"She's lived here for five years.\" (Ella ha vivido aquí por cinco años)."],"keywords":["She's","vs."],"wordCount":4},{"id":"m1-20","module":1,"number":20,"label":"Travel Trip Journey","title":"Travel vs. Trip vs. Journey","rule":"Travel es la acción/verbo.","context":"Trip es el evento completo de ir y volver. Journey es el trayecto o el camino físico. Travel rara vez se usa como sustantivo contable (no dices \"a travel\"). Si fuiste a un lugar el fin de semana y volviste, hiciste a trip.","bullets":[],"examples":["Travel (Verbo general): \"I love to travel abroad.\" (Amo viajar al exterior).","Trip (Viaje puntual): \"How was your business trip to New York?\" (¿Cómo fue tu viaje de negocios?).","Journey (Trayecto/Proceso): \"The train journey across the mountains took eight hours.\" (El trayecto en tren tomó 8 horas)."],"keywords":["Travel","vs.","Trip","Journey"],"wordCount":3},{"id":"m1-21","module":1,"number":21,"label":"Someone vs Anyone","title":"Someone vs. Anyone","rule":"Someone para afirmaciones donde sabes que alguien existe.","context":"Anyone para preguntas, negaciones o para decir \"cualquiera\". Son intercambiables en significado directo (\"alguien\"), pero la estructura gramatical manda.","bullets":[],"examples":["Someone (Afirmativa): \"Someone left their jacket on the chair.\" (Alguien dejó su campera).","Anyone (Pregunta): \"Is anyone using this laptop?\" (¿Hay alguien usando esta laptop?).","Anyone (Sentido \"Cualquiera\"): \"Anyone can learn how to code with practice.\" (Cualquiera puede aprender...)."],"keywords":["Someone","vs.","Anyone"],"wordCount":3},{"id":"m1-22","module":1,"number":22,"label":"Of vs From","title":"Of vs. From","rule":"Of expresa pertenencia, contenido o relación directa.","context":"From expresa origen, punto de partida o procedencia. Confundirlos es habitual por la traducción directa del español \"de\". Piensa en From como una flecha que sale de una fuente.","bullets":[],"examples":["Of (Contenido/Pertenencia): \"This is a map of the city.\" (Un mapa de la ciudad).","From (Origen): \"This wine is imported from France.\" (Importado desde/de Francia).","From (Punto de partida): \"The store is open from 9 AM to 5 PM.\" (Abierto desde las 9)."],"keywords":["vs.","From"],"wordCount":3},{"id":"m1-23","module":1,"number":23,"label":"Good vs Well","title":"Good vs. Well","rule":"Good describe cosas o personas (es un adjetivo).","context":"Well describe acciones (es un adverbio) o tu estado de salud. Dices \"He is a good driver\" (calificas al conductor), pero \"He drives well\" (calificas la forma en que maneja).","bullets":[],"examples":["Good: \"That was a good presentation.\" (Una buena presentación).","Well: \"You did very well on the exam.\" (Lo hiciste muy bien en el examen).","Well (Salud): \"I don't feel well today.\" (No me siento bien de salud)."],"keywords":["Good","vs.","Well"],"wordCount":3},{"id":"m1-24","module":1,"number":24,"label":"If vs Whether","title":"If vs. Whether","rule":"If plantea una condición simple.","context":"Whether se usa cuando hay dos alternativas claras en juego o después de una preposición. Si puedes agregar mentalmente \"or not\" al final de la duda, el estándar correcto es usar whether.","bullets":[],"examples":["If (Condición): \"Call me if you need any help.\" (Llamame si necesitás ayuda).","Whether (Dos alternativas): \"I am not sure whether we should stay or leave.\" (No estoy seguro de si deberíamos quedarnos o irnos).","Whether + preposición: \"We talked about whether to hire more staff.\" (Hablamos sobre si contratar más personal)."],"keywords":["If","vs.","Whether"],"wordCount":3},{"id":"m1-25","module":1,"number":25,"label":"Much Many A Lot","title":"Much vs. A lot of vs. Many","rule":"Many: Cosas que se pueden contar en plural (libros, horas). Much: Cosas incontables (dinero, tiempo, agua), usado en preguntas y negaciones. A lot of: El comodín seguro para oraciones afirmativas con todo.","context":"En oraciones afirmativas cotidianas, usar much suena antinatural (\"I have much money\" → suena robótico). Usa a lot of.","bullets":["Many: Cosas que se pueden contar en plural (libros, horas).","Much: Cosas incontables (dinero, tiempo, agua), usado en preguntas y negaciones.","A lot of: El comodín seguro para oraciones afirmativas con todo."],"examples":["Many (Contable): \"There aren't many options available.\" (No hay muchas opciones).","Much (Incontable): \"Do you have much work today?\" (¿Tenés mucho trabajo hoy?).","A lot of (Comodín afirmativo): \"We made a lot of progress this week.\" (Hicimos mucho progreso)."],"keywords":["Much","vs.","lot","Many","Lot"],"wordCount":4},{"id":"m1-26","module":1,"number":26,"label":"Change vs Switch","title":"Change vs. Switch","rule":"Change es modificar o transformar algo.","context":"Switch es alternar, permutar o cambiar una opción por otra equivalente. Si le cambias el color a un logo, lo estás modificando (changing). Si cambias del modo claro al modo oscuro, estás haciendo un switch.","bullets":[],"examples":["Change: \"I need to change my password.\" (Cambiar/modificar mi contraseña).","Switch: \"Let's switch roles for this exercise.\" (Intercambiemos roles).","Switch (Dispositivos/Canales): \"He switched the TV off.\" (Apagó la tele accionando el interruptor)."],"keywords":["Change","vs.","Switch"],"wordCount":3},{"id":"m1-27","module":1,"number":27,"label":"Will vs Going To","title":"Will vs. Going to","rule":"Will para decisiones instantáneas o promesas.","context":"Going to para planes previamente organizados o evidencias obvias. Si suena el timbre y dices \"I'll get it\", fue instantáneo (Will). Si compraste los pasajes hace un mes, \"I'm going to travel\" (Going to).","bullets":[],"examples":["Will (Espontáneo): \"I'm tired. I think I will go to bed now.\" (Creo que me iré a dormir).","Going to (Plan estructurado): \"We are going to launch the website next month.\" (Vamos a lanzar el sitio el mes que viene).","Going to (Evidencia clara): \"Look at those dark clouds! It's going to rain.\" (¡Mira esas nubes! Va a llover)."],"keywords":["Will","vs.","Going"],"wordCount":4},{"id":"m1-28","module":1,"number":28,"label":"Rob vs Steal","title":"Rob vs. Steal","rule":"Rob recae sobre la víctima o el lugar.","context":"Steal recae sobre el objeto sustraído. ROB + Persona / Lugar vs. STEAL + Objeto.","bullets":[],"examples":["Rob: \"A gunman tried to rob the jewelry store.\" (Intentaron robar la joyería).","Steal: \"The thief managed to steal three diamond rings.\" (Logró robar tres anillos de diamante)."],"keywords":["Rob","vs.","Steal"],"wordCount":3},{"id":"m1-29","module":1,"number":29,"label":"Tell Say Speak Talk","title":"Tell, Speak, Say, Talk","rule":"Tell: Transmitir información/instrucción a una persona. Say: Expresar palabras directas. Speak: Dominio de idiomas o tono formal/unilateral. Talk: Conversar o chatear con alguien de forma bidireccional.","context":"","bullets":["Tell: Transmitir información/instrucción a una persona.","Say: Expresar palabras directas.","Speak: Dominio de idiomas o tono formal/unilateral.","Talk: Conversar o chatear con alguien de forma bidireccional."],"examples":["Tell: \"Tell him to send the file.\" (Decile que mande el archivo).","Say: \"She said that she was busy.\" (Ella dijo que estaba ocupada).","Speak: \"Can you speak German?\" / \"The CEO will speak at the conference.\" (¿Hablás alemán? / El CEO dará una charla).","Talk: \"We need to talk about the budget.\" (Tenemos que hablar/discutir sobre el presupuesto)."],"keywords":["Tell","Speak","Say","Talk"],"wordCount":4},{"id":"m1-30","module":1,"number":30,"label":"So vs Such","title":"So vs. Such","rule":"So va pegado a un adjetivo suelto.","context":"Such va seguido de un sustantivo (con o sin adjetivo). La presencia del sustantivo es el único desencadenante que te obliga a usar such.","bullets":[],"examples":["So + Adjetivo: \"This lesson is so easy!\" (¡Esta lección es tan fácil!).","Such + Sustantivo: \"It was such a difficult test.\" (Fue un examen tan difícil).","Such + Plural: \"They are such nice people.\" (Son gente tan agradable)."],"keywords":["So","vs.","Such"],"wordCount":3},{"id":"m1-31","module":1,"number":31,"label":"Remember vs Remain","title":"Remember vs. Remain","rule":"Remember es un proceso mental (recordar).","context":"Remain es quedarse en un sitio o mantener un estado. No los confundas por la similitud fonética.","bullets":[],"examples":["Remember: \"Do you remember where we parked?\" (¿Te acordás dónde estacionamos?).","Remain: \"Please remain seated until the plane stops completely.\" (Permanezca sentado hasta que...)."],"keywords":["Remember","vs.","Remain"],"wordCount":3},{"id":"m1-32","module":1,"number":32,"label":"This That These Those","title":"This, That, These, Those","rule":"This: 1 cosa → Cerca.","context":"","bullets":["This: 1 cosa → Cerca.","That: 1 cosa → Lejos.","These: 2+ cosas → Cerca.","Those: 2+ cosas → Lejos. Sirve tanto para distancia física como para distancia temporal (esta semana = this week; aquellos días = those days)."],"examples":["This: \"This coffee in my hand is cold.\" (Este café que tengo en la mano).","That: \"Who is that guy over there?\" (¿Quién es aquel tipo de allá?).","These: \"These documents need your signature.\" (Estos documentos de aquí).","Those: \"Look at those cars in the parking lot.\" (Mira esos/aquellos autos)."],"keywords":["This","That","These","Those"],"wordCount":4},{"id":"m1-33","module":1,"number":33,"label":"Keep + Prepositions","title":"Keep + Preposición","rule":"Modifica radicalmente el significado del verbo base keep (mantener/guardar).","context":"","bullets":[],"examples":["Keep on (+ ING): \"Keep on trying, you will get it.\" (Sigue intentándolo).","Keep up (with): \"It's hard to keep up with all the technological changes.\" (Es difícil mantenerse al día / seguir el ritmo).","Keep away (from): \"Keep away from the construction area.\" (Manténgase alejado de...)."],"keywords":["Keep","Preposición","Prepositions"],"wordCount":2},{"id":"m1-34","module":1,"number":34,"label":"Used To Variants","title":"Used to / Be used to / Get used to","rule":"Used to + Infinitivo: Solía hacer algo (hábito pasado extinto).","context":"","bullets":["Used to + Infinitivo: Solía hacer algo (hábito pasado extinto).","Be used to + ING/Sustantivo: Estar acostumbrado a algo (estado actual).","Get used to + ING/Sustantivo: Proceso de acostumbrarse a algo nuevo. Presta atención a la forma del verbo posterior en las últimas dos variantes: siempre lleva -ING."],"examples":["Used to: \"I used to play video games every night.\" (Solía jugar... pero ya no).","Be used to: \"She is used to working under pressure.\" (Ella está acostumbrada a trabajar bajo presión).","Get used to: \"Don't worry, you will get used to the new software quickly.\" (Te acostumbrarás al nuevo software rápido)."],"keywords":["Variants"],"wordCount":3}],"module2":[{"id":"m2-01","module":2,"number":1,"label":"-IR & -OUS","title":"Pronunciación de terminaciones: -IR y -OUS","rule":"No leas con acento en español. La terminación -ous suena suave como /əs/ y la terminación -ir se reduce a una vocal neutra o suave.","context":"El español da el mismo peso vocálico a cada sílaba. En inglés, las sílabas no acentuadas sufren una \"reducción\". Decir \"fam-ous\" con la O fuerte suena antinatural; la pronunciación correcta relaja la boca por completo.","bullets":[],"examples":["Famous: Suena /féɪ.məs/ (no \"famos\").","Dangerous: Suena /déɪn.dʒər.əs/.","Curious: Suena /kjʊər.i.əs/.","First / Bird / Girl: La combinación -ir- no suena como la \"i\" latina, sino con el sonido cerrado /ɜːr/."],"keywords":["Pronunciación","de","terminaciones","IR","OUS"],"wordCount":2},{"id":"m2-02","module":2,"number":2,"label":"Short & Long Vowels","title":"Vocales: ¿Cuándo usar cada uno de los 2 sonidos principales?","rule":"Cada vocal tiene un sonido Corto (relajado) y uno Largo (su nombre en el abecedario). La presencia de una \"E\" muda al final de la palabra suele activar el sonido largo.","context":"","bullets":["Sílaba cerrada (Vocal atrapada entre consonantes) → Sonido Corto.","Sílaba abierta o con Magic \"E\" (Vocal + Consonante + E) → Sonido Largo."],"examples":[],"keywords":["Vocales","¿Cuándo","usar","cada","uno","de","los","sonidos","principales?","Short","Long","Vowels"],"visual":"vowels","table":[["A","Hat /hæt/ (sombrero - A corta)","Hate /heɪt/ (odiar - A suena como en el abecedario)"],["E","Pet /pet/ (mascota)","Pete /piːt/ (nombre propio - E larga)"],["I","Bit /bɪt/ (un poco)","Bite /baɪt/ (morder - I suena \"ai\")"],["O","Not /nɒt/ (no)","Note /nəʊt/ (nota - O suena \"ou\")"],["U","Cut /kʌt/ (cortar)","Cute /kjuːt/ (tierno - U suena \"iu\")"]],"wordCount":3},{"id":"m2-03","module":2,"number":3,"label":"SVO Sentences","title":"Oraciones SVO (Sujeto + Verbo + Objeto)","rule":"En inglés nunca se omite el sujeto.","context":"El orden rígido de una frase estándar es Sujeto + Verbo + Complemento. En español es común decir \"Llovió ayer\" (sujeto tácito) o \"Me gusta mucho el café\". En inglés necesitas poner un sujeto explícito siempre (\"It rained yesterday\" / \"I really like coffee\").","bullets":[],"examples":["Incorrecto: \"Is important to study.\" → Falta el sujeto.","Correcto: \"It is important to study.\"","Incorrecto: \"Likes chocolate.\" → ¿Quién?","Correcto: \"She likes chocolate.\""],"keywords":["Oraciones","SVO","Sujeto","Verbo","Objeto","Sentences"],"wordCount":2},{"id":"m2-04","module":2,"number":4,"label":"Silent Letters","title":"Silent Letters (Letras Mudas)","rule":"Hay patrones fijos donde ciertas consonantes se escriben pero jamás se pronuncian.","context":"Conocer estos patrones previene el error clásico de leer \"literalmente\" lo que está escrito.","bullets":["Patrones clave con ejemplos:","K muda antes de N: Know /nəʊ/, Knife /naɪf/, Knight /naɪt/. (La K no se emite).","B muda después de M: Climb /klaɪm/, Thumb /θʌm/, Comb /kəʊm/. (La B final no suena).","W muda antes de R: Write /raɪt/, Wrong /rɒŋ/, Wrist /rɪst/.","L muda antes de K/M/F: Talk /tɔːk/, Walk /wɔːk/, Half /hɑːf/, Calm /kɑːm/."],"examples":[],"keywords":["Silent","Letters","Letras","Mudas"],"wordCount":2},{"id":"m2-05","module":2,"number":5,"label":"In On At","title":"Preposiciones de tiempo y lugar (In, On, At)","rule":"Usa la regla de la pirámide invertida: de lo más general (IN) a lo más específico (AT).","context":"","bullets":[],"examples":["IN (General): \"In 2026\", \"in July\", \"in Argentina\", \"in the morning\".","ON (Específico): \"On Monday\", \"on July 4th\", \"on Oxford Street\".","AT (Ultra preciso): \"At 5:30 PM\", \"at 123 Main Street\", \"at the entrance\"."],"keywords":["Preposiciones","de","tiempo","lugar"],"visual":"prepositions","wordCount":3},{"id":"m2-06","module":2,"number":6,"label":"A An The","title":"Artículos (A, An, The)","rule":"Usa A / AN para presentar algo por primera vez (indefinido).","context":"Usa THE cuando ambas partes ya saben exactamente de qué objeto o persona se habla.","bullets":["A: Antes de sonidos de consonante (a book, a university → \"university\" empieza con sonido consonántico /j/).","AN: Antes de sonidos de vocal (an apple, an hour → \"hour\" tiene H muda)."],"examples":["\"I bought a jacket yesterday.\" (Una campera cualquiera, recién te cuento de ella).","\"The jacket is black.\" (La campera específica que mencioné en la frase anterior)."],"keywords":["Artículos"],"wordCount":3},{"id":"m2-07","module":2,"number":7,"label":"Linking Words","title":"Conectores Lógicos (Linking Words)","rule":"Son los rieles que le dan estructura y elegancia a tu discurso escrito y hablado.","context":"Usar siempre but o because limita tu nivel. Eleva la calidad de tu redacción sustituyéndolos por conectores avanzados.","bullets":["Contraste (Sin embargo / Aunque): However, Although.","Causa y Efecto (Por lo tanto / En consecuencia): Therefore, As a result.","Adición (Además): Furthermore, In addition."],"examples":["\"The strategy was risky. However, it yielded great results.\"","\"Sales dropped; therefore, we adjusted the pricing model.\"","\"The software is fast. Furthermore, it is very easy to use.\""],"keywords":["Conectores","Lógicos","Linking","Words"],"wordCount":2},{"id":"m2-08","module":2,"number":8,"label":"Question Forms","title":"Question Forms (Estructura de Preguntas)","rule":"Para hacer una pregunta en inglés, necesitas el esquema (Question Word) + Auxiliar + Sujeto + Verbo.","context":"A diferencia del español, no basta con cambiar la entonación. Tienes que alterar la estructura agregando el auxiliar correcto (do, does, did, have, can, etc.).","bullets":["Fórmula: [ QW ] + [ AUX ] + [ SUJETO ] + [ VERBO BASE ]"],"examples":["Afirmativa: \"You work here.\"","Pregunta: \"Do you work here?\"","Pregunta con Question Word: \"Where do you work?\"","Pregunta en pasado: \"Why did you call him?\""],"keywords":["Question","Forms","Estructura","de","Preguntas"],"visual":"question-formula","wordCount":2},{"id":"m2-09","module":2,"number":9,"label":"OSASCOMP","title":"Adjetivos Múltiples (OSASCOMP)","rule":"Cuando acumulas adjetivos antes de un sustantivo, hay un orden natural obligatorio que ningún hablante nativo rompe.","context":"Decir \"A red big car\" suena instintivamente mal para un nativo. La regla OSASCOMP dicta el orden exacto de aparición.","bullets":[],"examples":["\"A lovely (Opinión) small (Tamaño) old (Edad) square (Forma) wooden (Material) table.\"","\"An expensive (Opinión) new (Edad) German (Origen) car.\""],"keywords":["Adjetivos","Múltiples","OSASCOMP"],"visual":"osascomp","osascomp":[["O","Opinion","beautiful, horrible"],["S","Size","large, tiny"],["A","Age","old, modern"],["S","Shape","round, square"],["C","Color","black, yellow"],["O","Origin","Italian, Japanese"],["M","Material","wooden, leather"],["P","Purpose","sleeping, running"]],"wordCount":1}]};
+  const MICRO_WHEEL_ITEMS = MICRO_TOPIC_MODULES.module1;
+  const MICRO_RULES_ITEMS = MICRO_TOPIC_MODULES.module2;
+  let activeMicroTopic = null;
+
+  function microTopicById(id) {
+    return [...MICRO_WHEEL_ITEMS, ...MICRO_RULES_ITEMS].find((topic) => topic.id === id) || null;
+  }
+
+  const MICRO_LABEL_OVERRIDES = {
+    "m1-09": "Photo / Picture / Image",
+    "m1-10": "We / Our / Us",
+    "m1-13": "Would / Should / Might / Could",
+    "m1-15": "Pass / Hand / Spend",
+    "m1-19": "She is / She has",
+    "m1-20": "Travel / Trip / Journey",
+    "m1-29": "Tell / Speak / Say / Talk",
+    "m1-32": "This / That / These / Those",
+    "m1-34": "Used to / Be used / Get used",
+    "m2-05": "In / On / At",
+    "m2-06": "A / An / The"
+  };
+
+  function microWheelDisplayLabel(topic) {
+    if (!topic) return "";
+    if (MICRO_LABEL_OVERRIDES[topic.id]) return MICRO_LABEL_OVERRIDES[topic.id];
+
+    const title = String(topic.title || topic.label || "");
+    if (/\bvs\.?\b/i.test(title)) {
+      return title
+        .replace(/\bvs\.?\b/gi, "/")
+        .replace(/\s*\/\s*/g, " / ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    if (/^Pronunciación de terminaciones:/i.test(title)) return "-IR / -OUS";
+    return String(topic.label || title).replace(/\s+/g, " ").trim();
+  }
+
+  function microFormatText(value, topic) {
+    let html = esc(value || "").replace(/→/g, '<span class="micro-arrow">→</span>');
+    html = html.replace(/&quot;([^&]*?)&quot;/g, '<em class="micro-quote">“$1”</em>');
+    const ignored = new Set(["de","del","y","vs","vs.","the","to","for","in","on","at","a","an","is","has","be","get","used"]);
+    const terms = (topic?.keywords || [])
+      .map((term) => String(term).trim())
+      .filter((term) => term.length > 1 && !ignored.has(term.toLowerCase()))
+      .sort((a,b) => b.length-a.length);
+    terms.forEach((term) => {
+      const safe = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      html = html.replace(new RegExp(`\\b(${safe})\\b`, "gi"), '<strong>$1</strong>');
+    });
+    return html;
+  }
+
+  function microListItem(value, topic) {
+    const colon = value.indexOf(":");
+    if (colon > 0 && colon < 48) {
+      const lead = value.slice(0, colon + 1);
+      const rest = value.slice(colon + 1).trim();
+      return `<strong class="micro-list-lead">${esc(lead)}</strong> ${microFormatText(rest, topic)}`;
+    }
+    return microFormatText(value, topic);
+  }
+
+  const MICRO_HERO_SUMMARIES = {
+    "m1-02": "Until marca el momento en que una acción termina; up to expresa un máximo, una capacidad o que una decisión depende de alguien.",
+    "m1-03": "To me introduce una opinión personal; for me señala un beneficio, un perjuicio, un destinatario o un favor.",
+    "m1-04": "Look describe una apariencia que se percibe visualmente; seem expresa una impresión o conclusión basada en el contexto.",
+    "m1-05": "Under indica que algo está justo debajo, cubierto o próximo; below ubica algo en un nivel inferior de una escala, mapa o documento.",
+    "m1-06": "Nothing se usa con un verbo afirmativo; anything aparece en preguntas y negativas, evitando la doble negación.",
+    "m1-07": "Tell se construye con la persona que recibe el mensaje; say se centra en las palabras y sólo añade to cuando se menciona al destinatario.",
+    "m1-08": "Everything reúne cada elemento como un todo y lleva verbo singular; all agrupa la totalidad y suele acompañar a un sustantivo.",
+    "m1-09": "Photo es una toma de cámara; picture puede ser una foto, dibujo o pintura; image abarca archivos digitales, conceptos mentales o reputación.",
+    "m1-10": "We funciona como sujeto, our expresa posesión y us actúa como objeto de la oración.",
+    "m1-11": "Only marca exclusividad estricta; just puede significar solamente, hace un instante o simplemente, y también suaviza pedidos.",
+    "m1-12": "Hear es percibir sonidos de manera pasiva; listen es prestar atención de forma voluntaria y normalmente se construye con to.",
+    "m1-13": "Would plantea hipótesis, should aconseja, might expresa posibilidad incierta y could indica capacidad u opción disponible.",
+    "m1-15": "Pass mueve algo hacia otra persona, hand lo entrega físicamente y spend consume tiempo o dinero.",
+    "m1-16": "Lose se usa para objetos, posesiones o competencias; miss para transportes, eventos, oportunidades o personas que extrañamos.",
+    "m1-17": "Borrow significa recibir algo prestado; lend significa darlo temporalmente a otra persona.",
+    "m1-18": "Get on se usa con transportes grandes en los que podés moverte de pie; get in con vehículos pequeños como autos o taxis.",
+    "m1-19": "She is aparece antes de adjetivos, lugares o verbos en -ing; she has aparece antes de un participio pasado.",
+    "m1-20": "Travel nombra la acción general de viajar, trip el viaje completo y journey el trayecto o proceso recorrido.",
+    "m1-21": "Someone suele usarse en afirmaciones cuando se presupone que alguien existe; anyone en preguntas, negativas o con sentido de cualquiera.",
+    "m1-22": "Of expresa pertenencia, contenido o relación; from indica origen, procedencia o punto de partida.",
+    "m1-23": "Good es un adjetivo que describe personas o cosas; well es un adverbio que describe acciones y también puede referirse a la salud.",
+    "m1-24": "If introduce una condición; whether presenta alternativas, equivale a si… o no y se usa después de preposiciones.",
+    "m1-25": "Many acompaña sustantivos contables, much sustantivos incontables en preguntas o negativas y a lot of funciona naturalmente en afirmativas.",
+    "m1-26": "Change modifica o transforma algo; switch intercambia alternativas, cambia de opción o acciona un dispositivo.",
+    "m1-27": "Will expresa decisiones espontáneas y promesas; going to comunica planes previos o predicciones basadas en evidencia.",
+    "m1-28": "Rob se aplica a la persona o lugar víctima del robo; steal al objeto que fue sustraído.",
+    "m1-29": "Tell transmite información a alguien, say expresa palabras, speak se usa para idiomas o situaciones formales y talk para una conversación recíproca.",
+    "m1-30": "So intensifica un adjetivo o adverbio; such introduce un sustantivo, con o sin adjetivo.",
+    "m1-31": "Remember significa recordar; remain significa permanecer en un lugar o conservar un estado.",
+    "m1-32": "This y these señalan cercanía en singular y plural; that y those señalan distancia en singular y plural.",
+    "m1-34": "Used to describe un hábito pasado, be used to un estado de costumbre y get used to el proceso de acostumbrarse.",
+    "m2-01": "La terminación -ous se reduce a /əs/ y la combinación -ir suele producir el sonido central /ɜːr/, sin vocales españolas marcadas.",
+    "m2-02": "Las vocales cortas aparecen en sílabas cerradas; las largas suelen activarse en sílabas abiertas o con una E muda final.",
+    "m2-05": "IN abarca períodos y lugares generales, ON días, fechas y superficies, y AT horas o puntos extremadamente precisos.",
+    "m2-06": "A precede sonidos consonánticos, AN sonidos vocálicos y THE identifica algo específico o ya conocido por quienes hablan.",
+    "m2-07": "However y although expresan contraste, therefore y as a result consecuencia, y furthermore e in addition agregan información.",
+    "m2-08": "Las preguntas siguen el orden Question Word + auxiliar + sujeto + verbo base; el auxiliar cambia según tiempo y modalidad.",
+    "m2-09": "OSASCOMP ordena los adjetivos como opinión, tamaño, edad, forma, color, origen, material y propósito."
+  };
+
+  function microHeroSummary(topic) {
+    return MICRO_HERO_SUMMARIES[topic?.id] || topic?.rule || "";
+  }
+
+  function renderMicroVisual(topic) {
+    if (topic.visual === "vowels") {
+      return `<section class="micro-visual-card">
+        <div class="micro-section-heading"><span>Mapa de sonidos</span><h3>Vocal corta vs. vocal larga</h3></div>
+        <div class="micro-vowel-table" role="table" aria-label="Sonidos cortos y largos de las vocales">
+          <div class="micro-vowel-row micro-vowel-head" role="row"><span>Vocal</span><span>Sonido corto</span><span>Sonido largo · Magic E</span></div>
+          ${topic.table.map((row) => `<div class="micro-vowel-row" role="row"><strong>${esc(row[0])}</strong><span>${microFormatText(row[1],topic)}</span><span>${microFormatText(row[2],topic)}</span></div>`).join("")}
+        </div>
+      </section>`;
+    }
+    if (topic.visual === "prepositions") {
+      return `<section class="micro-visual-card micro-prep-card">
+        <div class="micro-section-heading"><span>De lo general a lo preciso</span><h3>In · On · At</h3></div>
+        <div class="micro-prep-visual" role="img" aria-label="Círculos concéntricos: IN general, ON específico y AT ultra preciso">
+          <div class="micro-prep-circle micro-prep-in">
+            <span class="micro-prep-label micro-prep-label--in"><strong>IN</strong><small>años · meses · países · partes del día</small></span>
+            <div class="micro-prep-circle micro-prep-on">
+              <span class="micro-prep-label micro-prep-label--on"><strong>ON</strong><small>días · fechas · calles</small></span>
+              <div class="micro-prep-circle micro-prep-at">
+                <span class="micro-prep-label micro-prep-label--at"><strong>AT</strong><small>hora · dirección · punto exacto</small></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>`;
+    }
+    if (topic.visual === "question-formula") {
+      return `<section class="micro-visual-card">
+        <div class="micro-section-heading"><span>Fórmula base</span><h3>Construcción de preguntas</h3></div>
+        <div class="micro-formula" aria-label="Question Word más auxiliar más sujeto más verbo base">
+          <span>QW</span><b>+</b><span>AUX</span><b>+</b><span>SUJETO</span><b>+</b><span>VERBO BASE</span>
+        </div>
+      </section>`;
+    }
+    if (topic.visual === "osascomp") {
+      return `<section class="micro-visual-card">
+        <div class="micro-section-heading"><span>Orden natural</span><h3>OSASCOMP</h3></div>
+        <div class="micro-osascomp-grid">
+          ${topic.osascomp.map((row) => `<article><strong>${esc(row[0])}</strong><h4>${esc(row[1])}</h4><p>${esc(row[2])}</p></article>`).join("")}
+        </div>
+      </section>`;
+    }
+    return "";
+  }
+
+  function renderMicroModuleOne(topic) {
+    const context = topic.context ? `<section class="micro-reading-block"><div class="micro-section-heading"><span>Cómo usarlo</span><h3>Contexto y diferencia</h3></div><p>${microFormatText(topic.context,topic)}</p></section>` : "";
+    const bullets = topic.bullets?.length ? `<section class="micro-reading-block"><div class="micro-section-heading"><span>Claves</span><h3>Reglas rápidas</h3></div><ul class="micro-key-list">${topic.bullets.map((item) => `<li>${microListItem(item,topic)}</li>`).join("")}</ul></section>` : "";
+    const examples = topic.examples?.length ? `<section class="micro-example-section"><div class="micro-section-heading"><span>En contexto</span><h3>Ejemplos</h3></div><ul class="micro-example-list">${topic.examples.map((item) => `<li><p>${microListItem(item,topic)}</p></li>`).join("")}</ul></section>` : "";
+    return context + bullets + renderMicroVisual(topic) + examples;
+  }
+
+  function renderMicroModuleTwo(topic) {
+    const context = topic.context ? `<details class="micro-rule-card" open><summary>Explicación</summary><div><p>${microFormatText(topic.context,topic)}</p></div></details>` : "";
+    const bullets = topic.bullets?.length ? `<details class="micro-rule-card" open><summary>Claves de lectura rápida</summary><div><ul class="micro-key-list">${topic.bullets.map((item) => `<li>${microListItem(item,topic)}</li>`).join("")}</ul></div></details>` : "";
+    const examples = topic.examples?.length ? `<details class="micro-rule-card" open><summary>Ejemplos en contexto</summary><div><ul class="micro-example-list micro-example-list--compact">${topic.examples.map((item) => `<li><p>${microListItem(item,topic)}</p></li>`).join("")}</ul></div></details>` : "";
+    return `<div class="micro-rules-stack">${context}${bullets}${renderMicroVisual(topic)}${examples}</div>`;
+  }
+
+  function renderMicroTopic(topic) {
+    if (!topic) return;
+    activeMicroTopic = topic;
+    store.set("microLastTopic", topic.id);
+    $("microTopicTitle").textContent = topic.title;
+    $("microTopicRule").innerHTML = microFormatText(microHeroSummary(topic),topic);
+    $("microTopicBody").innerHTML = topic.module === 1 ? renderMicroModuleOne(topic) : renderMicroModuleTwo(topic);
+
+    document.querySelector("#view-micro-detail .micro-topic-shell")?.classList.toggle("is-rules", topic.module === 2);
+  }
+
+  function openMicroTopic(topic) {
+    if (!topic) return;
+    renderMicroTopic(topic);
+    go("micro-detail");
+  }
+
+  function showMicroPreview(topic) {
+    if (!topic || !$("microWheelPreview")) return;
+    $("microWheelPreview").dataset.topicId = topic.id;
+    $("microWheelPreview").classList.toggle("is-rules",topic.module === 2);
+    $("microPreviewModule").textContent = topic.module === 1 ? `Concepto ${String(topic.number).padStart(2,"0")}` : `Regla ${String(topic.number).padStart(2,"0")}`;
+    $("microPreviewTitle").textContent = topic.title;
+    $("microPreviewRule").innerHTML = microFormatText(microHeroSummary(topic),topic);
+    const example = topic.examples?.[0] || topic.bullets?.[0] || topic.context || "";
+    $("microPreviewExample").innerHTML = example ? microListItem(example,topic) : "";
+  }
+
+  function initOptionWheel(el, items, storageKey, config = {}) {
+    if (!el || !Array.isArray(items) || !items.length) return null;
+    const side = config.side === "right" ? "right" : "left";
+    el.innerHTML = items.map((topic,index) => {
+      const compact = topic.wordCount >= 3 ? " is-compact" : "";
+      const tight = topic.wordCount >= 4 ? " is-tight" : "";
+      return `<button id="${storageKey}-item-${index}" class="option-wheel__item${compact}${tight}" type="button" role="option" aria-selected="false" data-micro-index="${index}" data-topic-id="${topic.id}">${esc(microWheelDisplayLabel(topic))}</button>`;
+    }).join("");
+
+    const itemEls = Array.from(el.querySelectorAll(".option-wheel__item"));
+    const saved = Number(store.get(storageKey, config.defaultIndex ?? 0));
+    const initial = Number.isFinite(saved) ? Math.min(Math.max(Math.round(saved),0),items.length-1) : 0;
+    const state = {position:initial,target:initial,selected:initial,raf:null,lastFrame:0,wheelTimer:null,drag:null,dragMoved:false,rowHeight:58,tilt:10.5,curve:1,blur:1.02,fade:.18,minOpacity:.065,smoothing:190};
+
+    function updateMeasurements() {
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const compact = window.matchMedia("(max-width: 820px)").matches;
+      const fontRem = compact ? 1.75 : 2.35;
+      state.rowHeight = Math.max(fontRem * 1.34 * rem,42);
+      renderNow();
+    }
+    function setSelected(index, preview = true) {
+      const next = Math.min(Math.max(Math.round(index),0),items.length-1);
+      state.selected = next;
+      store.set(storageKey,next);
+      itemEls.forEach((itemEl,i) => {
+        const active=i===next;
+        itemEl.setAttribute("aria-selected",String(active));
+        itemEl.classList.toggle("option-wheel__item--selected",active);
+        itemEl.tabIndex=active?0:-1;
+      });
+      el.setAttribute("aria-activedescendant",`${storageKey}-item-${next}`);
+      if (preview) showMicroPreview(items[next]);
+    }
+    function renderFrame(now) {
+      const dt=Math.min((now-state.lastFrame)/1000,.05); state.lastFrame=now;
+      const k=1-Math.exp(-dt/(Math.max(state.smoothing,1)/1000));
+      let next=state.position+(state.target-state.position)*k;
+      const settled=Math.abs(state.target-next)<.001; if(settled) next=state.target; state.position=next;
+      const tiltRad=state.tilt*Math.PI/180, radius=state.rowHeight/tiltRad;
+      const xDirection=side==="right"?1:-1, rotationDirection=side==="right"?-1:1, origin=side==="right"?"right center":"left center";
+      itemEls.forEach((itemEl,index) => {
+        const d=index-state.position, distance=Math.abs(d), angle=Math.max(-Math.PI/2,Math.min(Math.PI/2,d*tiltRad));
+        const y=radius*Math.sin(angle), x=xDirection*radius*(1-Math.cos(angle))*state.curve, rotation=rotationDirection*angle*180/Math.PI;
+        const proximity=Math.max(0,1-Math.min(distance,1));
+        itemEl.style.transformOrigin=origin;
+        itemEl.style.transform=`translate(${x.toFixed(2)}px, calc(${y.toFixed(2)}px - 50%)) rotate(${rotation.toFixed(3)}deg)`;
+        itemEl.style.opacity=String(Math.max(state.minOpacity,1-distance*state.fade));
+        itemEl.style.filter=state.blur>0?`blur(${(distance*state.blur).toFixed(2)}px)`:"none";
+        itemEl.style.setProperty("--ow-p",proximity.toFixed(4));
+        itemEl.style.pointerEvents=distance>5.4?"none":"auto";
+      });
+      state.raf=settled?null:requestAnimationFrame(renderFrame);
+    }
+    function startAnimation() { if(state.raf!==null)return; state.lastFrame=performance.now(); state.raf=requestAnimationFrame(renderFrame); }
+    function renderNow() { if(state.raf!==null)cancelAnimationFrame(state.raf); state.raf=null; state.lastFrame=performance.now()-16; renderFrame(performance.now()); }
+    function applyTarget(value,snap=true,focus=false) {
+      let next=Math.min(Math.max(value,0),items.length-1); if(snap)next=Math.round(next); state.target=next; setSelected(Math.round(next)); startAnimation();
+      if(focus&&itemEls[state.selected]) setTimeout(()=>itemEls[state.selected].focus({preventScroll:true}),210);
+    }
+
+    setSelected(initial,false); renderNow(); window.addEventListener("resize",updateMeasurements,{passive:true});
+    el.addEventListener("wheel",(event)=>{event.preventDefault();const delta=event.deltaMode===1?event.deltaY*24:event.deltaY;const step=Math.max(-1,Math.min(1,delta/state.rowHeight));applyTarget(state.target+step,false);if(state.wheelTimer)clearTimeout(state.wheelTimer);state.wheelTimer=setTimeout(()=>applyTarget(state.target,true),120);},{passive:false});
+    el.addEventListener("pointerdown",(event)=>{state.drag={y:event.clientY,start:state.target,pointerId:event.pointerId};state.dragMoved=false;});
+    el.addEventListener("pointermove",(event)=>{if(!state.drag)return;const dy=event.clientY-state.drag.y;if(!state.dragMoved&&Math.abs(dy)>4){state.dragMoved=true;el.classList.add("is-dragging");try{el.setPointerCapture(state.drag.pointerId);}catch(err){}}if(state.dragMoved)applyTarget(state.drag.start-dy/state.rowHeight,false);});
+    function finishDrag(){if(!state.drag)return;state.drag=null;el.classList.remove("is-dragging");if(state.dragMoved)applyTarget(state.target,true);setTimeout(()=>{state.dragMoved=false;},0);}
+    el.addEventListener("pointerup",finishDrag);el.addEventListener("pointercancel",finishDrag);el.addEventListener("lostpointercapture",finishDrag);
+    el.addEventListener("pointerover",(event)=>{const item=event.target.closest("[data-micro-index]");if(item)showMicroPreview(items[Number(item.dataset.microIndex)]);});
+    el.addEventListener("focusin",(event)=>{const item=event.target.closest("[data-micro-index]");if(item)showMicroPreview(items[Number(item.dataset.microIndex)]);});
+    el.addEventListener("pointerleave",()=>showMicroPreview(items[state.selected]));
+    el.addEventListener("click",(event)=>{const item=event.target.closest("[data-micro-index]");if(!item||state.dragMoved)return;const index=Number(item.dataset.microIndex);applyTarget(index,true);openMicroTopic(items[index]);});
+    el.addEventListener("keydown",(event)=>{
+      let next=null;
+      if(event.key==="ArrowUp"||event.key==="ArrowLeft")next=state.selected-1;
+      else if(event.key==="ArrowDown"||event.key==="ArrowRight")next=state.selected+1;
+      else if(event.key==="Home")next=0;
+      else if(event.key==="End")next=items.length-1;
+      else if(event.key==="Enter"||event.key===" "){event.preventDefault();openMicroTopic(items[state.selected]);return;}
+      if(next===null)return;event.preventDefault();applyTarget(next,true,true);
+    });
+    updateMeasurements();
+    return {applyTarget,get selected(){return state.selected;}};
+  }
+
+  function initMicroTitleFlip() {
+    const container=$("microTitleFlip"),wordEl=$("microTitleFlipWord");
+    if(!container||!wordEl||container.dataset.initialized==="true")return;container.dataset.initialized="true";
+    const titleWords=["Cápsulas de estudio","Study Pills"],reduceMotion=window.matchMedia("(prefers-reduced-motion: reduce)").matches;let currentIndex=0,timer=null;
+    function measureAndSetWidth(){const horizontalPadding=parseFloat(getComputedStyle(container).paddingLeft)*2||48;container.style.width=`${Math.ceil(wordEl.scrollWidth+horizontalPadding+2)}px`;}
+    function renderTitle(value,animate=true){if(reduceMotion){wordEl.textContent=value;measureAndSetWidth();return;}wordEl.innerHTML=Array.from(value).map((character,index)=>`<span class="micro-title-flip__letter" style="--letter-delay:${index*20}ms">${character===" "?"&nbsp;":esc(character)}</span>`).join("");if(!animate)wordEl.querySelectorAll(".micro-title-flip__letter").forEach((letter)=>{letter.style.animationDelay="0ms";});requestAnimationFrame(measureAndSetWidth);}
+    if(reduceMotion){renderTitle("Cápsulas de estudio · Study Pills",false);return;}renderTitle(titleWords[currentIndex],false);
+    const startRotation=()=>{if(timer)clearInterval(timer);timer=setInterval(()=>{currentIndex=(currentIndex+1)%titleWords.length;renderTitle(titleWords[currentIndex]);},3200);};
+    if(document.fonts?.ready)document.fonts.ready.then(()=>{measureAndSetWidth();startRotation();}).catch(startRotation);else startRotation();
+    window.addEventListener("resize",measureAndSetWidth,{passive:true});
+  }
+
+  let microInit=false;
+  function initMicro() {
+    microInit=true;initMicroTitleFlip();
+    const leftWheel=initOptionWheel($("microOptionWheel"),MICRO_WHEEL_ITEMS,"microWheelIndex",{side:"left"});
+    const rightWheel=initOptionWheel($("microRulesWheel"),MICRO_RULES_ITEMS,"microRulesWheelIndex",{side:"right"});
+  }
+
+  /* ============================================================
+     DAILY QUIZ
+     Ronda breve de 4 preguntas con distintos formatos:
+     calentamiento (opción múltiple), concepto clave (V/F),
+     aplicación (caso práctico) y desafío final con tiempo límite.
+     ============================================================ */
+  const DAILY_QUESTIONS = [
+    {
+      stage: "Calentamiento",
+      type: "mc",
+      q: "¿Cuál es la forma correcta del pasado simple de \"go\"?",
+      options: ["goed", "went", "gone", "going"],
+      answer: 1,
+      why: "El pasado simple de \"go\" es irregular: \"went\". \"gone\" es el participio."
+    },
+    {
+      stage: "Concepto clave",
+      type: "tf",
+      q: "El present perfect (\"I have eaten\") se usa para acciones con conexión con el presente.",
+      options: ["Verdadero", "Falso"],
+      answer: 0,
+      why: "Correcto: el present perfect conecta una acción pasada con el momento actual."
+    },
+    {
+      stage: "Aplicación",
+      type: "mc",
+      scenario: "Querés decir que empezaste a estudiar inglés hace tres años y todavía lo hacés.",
+      q: "¿Qué opción es la correcta?",
+      options: [
+        "I study English for three years.",
+        "I am studying English since three years.",
+        "I have been studying English for three years.",
+        "I studied English since three years."
+      ],
+      answer: 2,
+      why: "Una acción que empezó en el pasado y continúa usa present perfect continuous + \"for\" para la duración."
+    },
+    {
+      stage: "Desafío",
+      type: "mc",
+      timed: 15,
+      q: "Elegí la oración sin errores:",
+      options: [
+        "She don't like coffee.",
+        "She doesn't likes coffee.",
+        "She doesn't like coffee.",
+        "She not like coffee."
+      ],
+      answer: 2,
+      why: "Con tercera persona en negativo: \"doesn't\" + verbo en forma base (\"like\")."
+    }
+  ];
+
+  let dailyInit = false;
+  let dqIndex = 0, dqScore = 0, dqAnswered = false, dqTimerId = null;
+
+  function initDaily() {
+    dailyInit = true;
+    $("dqNext").addEventListener("click", () => {
+      if (!dqAnswered) return;
+      dqIndex++;
+      if (dqIndex >= DAILY_QUESTIONS.length) showDailyResult();
+      else renderDailyQuestion();
+    });
+    $("dqRestart").addEventListener("click", startDaily);
+    startDaily();
+  }
+
+  function startDaily() {
+    dqIndex = 0; dqScore = 0; dqAnswered = false;
+    $("dqResult").classList.add("hidden");
+    $("dqCard").classList.remove("hidden");
+    $("dqScorePill").textContent = "";
+    renderDailyQuestion();
+  }
+
+  function stopDailyTimer() {
+    if (dqTimerId) { clearInterval(dqTimerId); dqTimerId = null; }
+  }
+
+  function renderDailyQuestion() {
+    stopDailyTimer();
+    dqAnswered = false;
+    const item = DAILY_QUESTIONS[dqIndex];
+    const total = DAILY_QUESTIONS.length;
+    $("dqProgress").textContent = `Pregunta ${dqIndex + 1} de ${total}`;
+    $("dqBar").style.width = `${(dqIndex / total) * 100}%`;
+    $("dqStage").textContent = item.stage;
+    $("dqStage").className = "daily-stage daily-stage--" + (dqIndex + 1);
+    $("dqQuestion").textContent = item.q;
+    // Escenario opcional (caso práctico)
+    const scen = $("dqScenario");
+    if (item.scenario) { scen.textContent = item.scenario; scen.classList.remove("hidden"); }
+    else { scen.textContent = ""; scen.classList.add("hidden"); }
+    $("dqFeedback").textContent = "";
+    $("dqFeedback").className = "daily-feedback";
+    $("dqNext").disabled = true;
+    $("dqNext").textContent = dqIndex === total - 1 ? "Ver resultado" : "Siguiente";
+
+    // Opciones
+    $("dqOptions").innerHTML = item.options.map((op, i) =>
+      `<button class="daily-opt" data-oi="${i}" type="button">${esc(op)}</button>`
+    ).join("");
+    $("dqOptions").querySelectorAll(".daily-opt").forEach((btn) => {
+      btn.addEventListener("click", () => answerDaily(Number(btn.dataset.oi)));
+    });
+
+    // Temporizador para preguntas tipo "ronda relámpago"
+    const timerEl = $("dqTimer");
+    if (item.timed) {
+      let remaining = item.timed;
+      timerEl.classList.remove("hidden");
+      timerEl.textContent = `⏱ ${remaining}s`;
+      dqTimerId = setInterval(() => {
+        remaining--;
+        timerEl.textContent = `⏱ ${remaining}s`;
+        if (remaining <= 0) {
+          stopDailyTimer();
+          if (!dqAnswered) answerDaily(-1); // se acabó el tiempo
+        }
+      }, 1000);
+    } else {
+      timerEl.classList.add("hidden");
+      timerEl.textContent = "";
+    }
+  }
+
+  function answerDaily(choice) {
+    if (dqAnswered) return;
+    dqAnswered = true;
+    stopDailyTimer();
+    const item = DAILY_QUESTIONS[dqIndex];
+    const correct = choice === item.answer;
+    if (correct) dqScore++;
+    // marcar opciones
+    $("dqOptions").querySelectorAll(".daily-opt").forEach((btn) => {
+      const oi = Number(btn.dataset.oi);
+      btn.disabled = true;
+      if (oi === item.answer) btn.classList.add("is-right");
+      else if (oi === choice) btn.classList.add("is-wrong");
+    });
+    const fb = $("dqFeedback");
+    if (choice === -1) {
+      fb.textContent = "⏱ Se acabó el tiempo. " + item.why;
+      fb.className = "daily-feedback is-wrong";
+    } else if (correct) {
+      fb.textContent = "✓ ¡Correcto! " + item.why;
+      fb.className = "daily-feedback is-right";
+    } else {
+      fb.textContent = "✗ " + item.why;
+      fb.className = "daily-feedback is-wrong";
+    }
+    $("dqNext").disabled = false;
+  }
+
+  function showDailyResult() {
+    stopDailyTimer();
+    const total = DAILY_QUESTIONS.length;
+    $("dqCard").classList.add("hidden");
+    $("dqResult").classList.remove("hidden");
+    $("dqBar").style.width = "100%";
+    $("dqProgress").textContent = `Completado`;
+    $("dqScorePill").textContent = `${dqScore} / ${total}`;
+    const pct = dqScore / total;
+    $("dqResultTitle").textContent = pct === 1 ? "¡Ronda perfecta!" : pct >= 0.5 ? "¡Buen repaso!" : "Seguí practicando";
+    $("dqResultText").textContent = `Respondiste bien ${dqScore} de ${total} preguntas. Volvé mañana para una nueva ronda.`;
+    if (typeof logActivity === "function") logActivity();
+  }
+
   let tensesInit = false;
   function initTenses() {
     tensesInit = true;
-    $("tGrid").innerHTML = tenses.map((t, i) => `<button class="tense-btn" data-ti="${i}">${esc(t.name)}<small>${esc(t.level)}</small></button>`).join("");
-    $("tGrid").addEventListener("click", (e) => { const b = e.target.closest(".tense-btn"); if (b) showTense(Number(b.dataset.ti)); });
+    $("tGrid").innerHTML = tenses.map((t, i) => {
+      const tl = TENSE_TIMELINES[t.name] || "";
+      const group = tenseGroup(t.name);
+      return `<button class="tense-card tense-card--${group}${tl ? "" : " tense-card--noline"}" data-ti="${i}" role="tab" aria-selected="false">` +
+        `<span class="tc-head"><span class="tc-name">${esc(t.name)}</span>` +
+        `<span class="tc-level">${esc(t.level)}</span></span>` +
+        (tl ? `<span class="tc-timeline">${tl}</span>` : "") + `</button>`;
+    }).join("");
+    $("tGrid").addEventListener("click", (e) => { const b = e.target.closest(".tense-card"); if (b) showTense(Number(b.dataset.ti)); });
     showTense(0);
   }
   function showTense(i) {
     const t = tenses[i];
-    document.querySelectorAll(".tense-btn").forEach((b, k) => b.classList.toggle("active", k === i));
+    document.querySelectorAll(".tense-card").forEach((b, k) => {
+      const on = k === i;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const group = tenseGroup(t.name);
+    const detail = $("tDetail");
+    detail.className = "tense-detail tense-detail--" + group;
     $("tLevel").textContent = t.level; $("tName").textContent = t.name; $("tSummary").textContent = t.summary;
     $("tAff").textContent = t.aff; $("tNeg").textContent = t.neg; $("tQ").textContent = t.q;
     $("tUses").innerHTML = t.uses.map((u) => `<li>${esc(u)}</li>`).join("");
-    $("tExamples").innerHTML = t.ex.map((e) => `<li><span class="en">${esc(e[0])}</span><br><span class="es">${esc(e[1])}</span></li>`).join("");
+    $("tExamples").innerHTML = t.ex.map((e) => `<li><span class="en">${esc(e[0])}</span><span class="es">${esc(e[1])}</span></li>`).join("");
+    // Línea de tiempo grande en el detalle (si el tiempo la tiene).
+    const tl = TENSE_TIMELINES[t.name] || "";
+    $("tTimeline").innerHTML = tl;
+    $("tTimeline").style.display = tl ? "" : "none";
   }
 
   /* ============================================================

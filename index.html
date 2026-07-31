@@ -14,82 +14,108 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- ============ NAVBAR ============ -->
-  <header class="navbar">
-    <a class="brand" href="#" data-go="dashboard" aria-label="English Trainer inicio">
-      <span class="brand-quill" aria-hidden="true">
-        <svg viewBox="0 0 64 64" class="quill-svg">
-          <rect x="8" y="32" width="22" height="24" rx="4" class="inkpot-base" />
-          <path d="M12 32v-4h14v4" class="inkpot-top" />
-          <path d="M52 10C40 14 24 26 18 40c-2 5-3 9-3 9s5-2 9-4C38 39 50 22 54 12c.6-1.4-.5-2.6-2-2z" class="feather-fill"/>
-          <path d="M18 40c-2 5-4 12-4 12M22 38l6 6M30 30l7 7M38 24l6 6" class="feather-stroke" stroke-width="1.6" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span class="brand-word">English&nbsp;Trainer</span>
-    </a>
-
-    <nav class="nav-actions" aria-label="Secciones de cuenta">
-      <button class="nav-item" data-go="perfil"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M367-527q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm296.5-343.5Q560-607 560-640t-23.5-56.5Q513-720 480-720t-56.5 23.5Q400-673 400-640t23.5 56.5Q447-560 480-560t56.5-23.5ZM480-640Zm0 400Z"/></svg></span>Perfil</button>
-      <button class="nav-item" data-go="calendario"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Z"/></svg></span>Calendario</button>
-      <button class="nav-item" data-go="racha"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M240-400q0 52 21 98.5t60 81.5q-1-5-1-9v-9q0-32 12-60t35-51l113-111 113 111q23 23 35 51t12 60v9q0 4-1 9 39-35 60-81.5t21-98.5q0-50-18.5-94.5T648-574q-20 13-42 19.5t-45 6.5q-62 0-107.5-41T401-690q-39 33-69 68.5t-50.5 72Q261-513 250.5-475T240-400Zm240 52-57 56q-11 11-17 25t-6 29q0 32 23.5 55t56.5 23q33 0 56.5-23t23.5-55q0-16-6-29.5T537-292l-57-56Zm0-492v132q0 34 23.5 57t57.5 23q18 0 33.5-7.5T622-658l18-22q74 42 117 117t43 163q0 134-93 227T480-80q-134 0-227-93t-93-227q0-129 86.5-245T480-840Z"/></svg></span>Racha</button>
-      <button class="nav-item" data-go="comunidad"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M480-600 340-740l140-140 140 140-140 140ZM40-160v-160q0-34 23.5-57t56.5-23h131q20 0 38 10t29 27q29 39 71.5 61t90.5 22q49 0 91.5-22t70.5-61q13-17 30.5-27t36.5-10h131q34 0 57 23t23 57v160H640v-91q-35 25-75.5 38T480-200q-43 0-84-13.5T320-252v92H40Zm120-280q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T280-560q0 50-34.5 85T160-440Zm640 0q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T920-560q0 50-34.5 85T800-440Z"/></svg></span>Comunidad</button>
-      <button class="nav-item" data-go="ayuda"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M440-280h80l12-60q12-5 22.5-10.5T576-364l58 18 40-68-46-40q2-14 2-26t-2-26l46-40-40-68-58 18q-11-8-21.5-13.5T532-620l-12-60h-80l-12 60q-12 5-22.5 10.5T384-596l-58-18-40 68 46 40q-2 14-2 26t2 26l-46 40 40 68 58-18q11 8 21.5 13.5T428-340l12 60Zm-16.5-143.5Q400-447 400-480t23.5-56.5Q447-560 480-560t56.5 23.5Q560-513 560-480t-23.5 56.5Q513-400 480-400t-56.5-23.5ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></span>Ayuda / Servicio</button>
-      <button class="nav-item" data-go="faqs"><span class="ni-ico"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#666666"><path d="M515.5-254.5Q530-269 530-290t-14.5-35.5Q501-340 480-340t-35.5 14.5Q430-311 430-290t14.5 35.5Q459-240 480-240t35.5-14.5ZM444-394h74q0-36 8-53t34-43q35-35 49.5-58.5T624-602q0-53-36-85.5T491-720q-55 0-93.5 27T344-618l66 26q7-27 28-43.5t49-16.5q27 0 45 14.5t18 38.5q0 17-11 36t-37 42q-33 29-45.5 55.5T444-394ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></span>FAQs</button>
-      <div class="translator-shell">
-        <button id="translatorToggle" class="nav-item translator-toggle" type="button" aria-expanded="false" aria-controls="translatorPanel">
-          <span class="ni-ico translator-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
-              <path d="M4 5.5h8.5M8.25 3v2.5M6 8.5c1.55 2.5 3.55 4.25 6.2 5.35M11.9 7.2c-.85 2.2-2.35 4.15-4.55 5.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M13.5 11.5h5L21 19h-2.1l-.55-1.8H13.7L13.1 19H11l2.5-7.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-            </svg>
-          </span>Traductor
+  <!-- Fondo animado Shape Grid adaptado a HTML/CSS/JavaScript puro -->
+  <canvas id="shapeGridBackground" class="shape-grid-background" aria-hidden="true"></canvas>
+  <!-- ============ CARD NAV ============ -->
+  <div class="card-nav-container" id="cardNavContainer">
+    <header id="cardNav" class="navbar card-nav" aria-label="Navegación principal">
+      <div class="card-nav-top">
+        <button id="cardNavToggle" class="hamburger-menu" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="cardNavContent">
+          <span class="hamburger-line"></span>
+          <span class="hamburger-line"></span>
         </button>
-        <div id="translatorPanel" class="translator-panel hidden" role="dialog" aria-label="Mini extensión de Google Traductor">
-          <div class="translator-head">
-            <div><span class="translator-google-mark">G</span><strong>Mini Traductor</strong></div>
-            <button id="translatorClose" type="button" aria-label="Cerrar traductor">×</button>
-          </div>
-          <div class="translator-language-row">
-            <select id="translatorSource" aria-label="Idioma de origen">
-              <option value="auto">Detectar idioma</option>
-              <option value="en">Inglés</option>
-              <option value="es">Español</option>
-              <option value="pt">Portugués</option>
-              <option value="it">Italiano</option>
-              <option value="fr">Francés</option>
-              <option value="de">Alemán</option>
-            </select>
-            <button id="translatorSwap" class="translator-swap" type="button" title="Intercambiar idiomas" aria-label="Intercambiar idiomas">⇄</button>
-            <select id="translatorTarget" aria-label="Idioma de destino">
-              <option value="es">Español</option>
-              <option value="en">Inglés</option>
-              <option value="pt">Portugués</option>
-              <option value="it">Italiano</option>
-              <option value="fr">Francés</option>
-              <option value="de">Alemán</option>
-            </select>
-          </div>
-          <textarea id="translatorText" rows="4" maxlength="1800" placeholder="Escribí o pegá una palabra, frase o párrafo…"></textarea>
-          <div class="translator-actions">
-            <button id="translatorSelection" class="btn btn-ghost" type="button">Usar texto seleccionado</button>
-            <button id="translatorRun" class="btn btn-primary" type="button">Traducir</button>
-          </div>
-          <div id="translatorResult" class="translator-result hidden">
-            <div class="tr-result-head">
-              <span id="translatorResultLang" class="tr-result-lang"></span>
-              <button id="translatorCopy" class="tr-copy" type="button">Copiar</button>
-            </div>
-            <p id="translatorOutput" class="tr-output" aria-live="polite"></p>
-            <p id="translatorSource2" class="tr-source"></p>
-          </div>
-          <p id="translatorStatus" class="translator-note" aria-live="polite"></p>
-        </div>
+
+        <a class="card-nav-brand" href="#" data-go="dashboard" aria-label="English Trainer inicio">
+          <span class="brand-quill" aria-hidden="true">
+            <svg viewBox="0 0 64 64" class="quill-svg">
+              <rect x="8" y="32" width="22" height="24" rx="4" class="inkpot-base" />
+              <path d="M12 32v-4h14v4" class="inkpot-top" />
+              <path d="M52 10C40 14 24 26 18 40c-2 5-3 9-3 9s5-2 9-4C38 39 50 22 54 12c.6-1.4-.5-2.6-2-2z" class="feather-fill"/>
+              <path d="M18 40c-2 5-4 12-4 12M22 38l6 6M30 30l7 7M38 24l6 6" class="feather-stroke" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="brand-word">English&nbsp;Trainer</span>
+        </a>
+
+        <button id="themeToggle" class="card-nav-cta-button" type="button" aria-label="Cambiar tema">
+          <span class="card-nav-cta-label">Tema</span>
+          <span class="tt-track" aria-hidden="true"><span class="tt-thumb"></span></span>
+        </button>
       </div>
-      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Cambiar tema">
-        <span class="tt-track"><span class="tt-thumb"></span></span>
-      </button>
-    </nav>
-  </header>
+
+      <div id="cardNavContent" class="card-nav-content" aria-hidden="true">
+        <section class="nav-card nav-card-account" aria-labelledby="cardNavAccountTitle">
+          <h2 id="cardNavAccountTitle" class="nav-card-label">Cuenta</h2>
+          <div class="nav-card-links">
+            <button class="nav-card-link" type="button" data-go="perfil"><span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Perfil</span></button>
+            <button class="nav-card-link" type="button" data-go="calendario"><span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Calendario</span></button>
+            <button class="nav-card-link" type="button" data-go="racha"><span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Racha</span></button>
+          </div>
+        </section>
+
+        <section class="nav-card nav-card-community" aria-labelledby="cardNavCommunityTitle">
+          <h2 id="cardNavCommunityTitle" class="nav-card-label">Comunidad</h2>
+          <div class="nav-card-links">
+            <button class="nav-card-link" type="button" data-go="comunidad"><span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Comunidad</span></button>
+            <button class="nav-card-link" type="button" data-go="ayuda"><span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Ayuda / Servicio</span></button>
+            <button class="nav-card-link" type="button" data-go="faqs"><span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>FAQs</span></button>
+          </div>
+        </section>
+
+        <section class="nav-card nav-card-tools" aria-labelledby="cardNavToolsTitle">
+          <h2 id="cardNavToolsTitle" class="nav-card-label">Herramientas</h2>
+          <div class="nav-card-links">
+            <button class="nav-card-link" type="button" data-go="dashboard"><span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Inicio</span></button>
+            <div class="translator-shell">
+              <button id="translatorToggle" class="nav-card-link translator-toggle" type="button" aria-expanded="false" aria-controls="translatorPanel">
+                <span class="nav-card-link-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Traductor</span>
+              </button>
+              <div id="translatorPanel" class="translator-panel hidden" role="dialog" aria-label="Mini extensión de Google Traductor">
+                <div class="translator-head">
+                  <div><span class="translator-google-mark">G</span><strong>Mini Traductor</strong></div>
+                  <button id="translatorClose" type="button" aria-label="Cerrar traductor">×</button>
+                </div>
+                <div class="translator-language-row">
+                  <select id="translatorSource" aria-label="Idioma de origen">
+                    <option value="auto">Detectar idioma</option>
+                    <option value="en">Inglés</option>
+                    <option value="es">Español</option>
+                    <option value="pt">Portugués</option>
+                    <option value="it">Italiano</option>
+                    <option value="fr">Francés</option>
+                    <option value="de">Alemán</option>
+                  </select>
+                  <button id="translatorSwap" class="translator-swap" type="button" title="Intercambiar idiomas" aria-label="Intercambiar idiomas">⇄</button>
+                  <select id="translatorTarget" aria-label="Idioma de destino">
+                    <option value="es">Español</option>
+                    <option value="en">Inglés</option>
+                    <option value="pt">Portugués</option>
+                    <option value="it">Italiano</option>
+                    <option value="fr">Francés</option>
+                    <option value="de">Alemán</option>
+                  </select>
+                </div>
+                <textarea id="translatorText" rows="4" maxlength="1800" placeholder="Escribí o pegá una palabra, frase o párrafo…"></textarea>
+                <div class="translator-actions">
+                  <button id="translatorSelection" class="btn btn-ghost" type="button">Usar texto seleccionado</button>
+                  <button id="translatorRun" class="btn btn-primary" type="button">Traducir</button>
+                </div>
+                <div id="translatorResult" class="translator-result hidden">
+                  <div class="tr-result-head">
+                    <span id="translatorResultLang" class="tr-result-lang"></span>
+                    <button id="translatorCopy" class="tr-copy" type="button">Copiar</button>
+                  </div>
+                  <p id="translatorOutput" class="tr-output" aria-live="polite"></p>
+                  <p id="translatorSource2" class="tr-source"></p>
+                </div>
+                <p id="translatorStatus" class="translator-note" aria-live="polite"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </header>
+  </div>
 
   <main id="app">
     <!-- ============ DASHBOARD ============ -->
@@ -130,6 +156,15 @@
         <button class="tile tile-half tile-examen" data-go="examen">
           <span class="tile-name">Examen</span>
           <span class="tile-desc">Formato IELTS</span>
+        </button>
+
+        <button class="tile tile-half tile-micro" data-go="micro">
+          <span class="tile-name">Micro-Learning</span>
+          <span class="tile-desc">Cápsulas: phrasal verbs, palabras clave y comparaciones</span>
+        </button>
+        <button class="tile tile-half tile-daily" data-go="daily">
+          <span class="tile-name">Daily Quiz</span>
+          <span class="tile-desc">Preguntas rápidas de repaso, todos los días</span>
         </button>
       </div>
     </section>
@@ -288,46 +323,57 @@
         <p>Leé el pasaje y resolvé preguntas de True / False / Not Given y respuestas cortas. Corregí y mirá la explicación.</p>
       </header>
 
-      <div class="reading-controls">
-        <div class="reading-pick">
-          <label for="rSelect">Pasaje</label>
-          <select id="rSelect"></select>
+      <div class="reading-shell">
+        <aside class="reading-line-sidebar" aria-label="Selección de textos de Reading">
+          <div class="reading-line-sidebar__head">
+            <span>Reading library</span>
+            <strong>Elegí uno de los 20 textos</strong>
+          </div>
+          <nav id="rLineSidebar" class="line-sidebar line-sidebar--markers line-sidebar--scale-tick" aria-label="Textos disponibles">
+            <ul id="rLineSidebarList" class="line-sidebar__list"></ul>
+          </nav>
+        </aside>
+
+        <div class="reading-main">
+          <div class="reading-controls" aria-label="Herramientas de lectura">
+            <button id="rPron" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar pronunciación</button>
+            <button id="rTrans" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar traducción</button>
+          </div>
+
+          <div class="reading-layout">
+            <article id="rPassageCard" class="passage-card" tabindex="-1">
+              <h3 id="rTitle">Passage title</h3>
+              <div id="rBody" class="passage-body"></div>
+            </article>
+
+            <article class="questions-card">
+              <div class="q-head">
+                <strong id="rQTitle">Questions</strong>
+                <p id="rInstruction" class="q-instruction"></p>
+              </div>
+              <div id="rQuestions" class="reading-questions"></div>
+
+              <div id="rChoiceBlock" class="reading-choice-block">
+                <div class="q-head">
+                  <strong>Ejercicio 1 · Elegí la opción correcta</strong>
+                  <p class="q-instruction">Según lo que dice el texto, marcá la oración correcta en cada pregunta.</p>
+                </div>
+                <div id="rChoiceQuestions" class="reading-questions"></div>
+              </div>
+
+              <div class="tool-row">
+                <button id="rCheck" class="btn btn-primary" type="button">Corregir reading</button>
+                <button id="rClearAns" class="btn btn-ghost" type="button">Limpiar</button>
+                <span id="rScore" class="score-pill"></span>
+              </div>
+              <details id="rAnswerPanel" class="details-panel">
+                <summary>Respuestas y explicación</summary>
+                <p id="rAnswersHint" class="answers-hint">Pulsá <strong>Corregir reading</strong> para ver acá las respuestas correctas con su explicación.</p>
+                <ol id="rAnswers"></ol>
+              </details>
+            </article>
+          </div>
         </div>
-        <button id="rPron" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar pronunciación</button>
-      </div>
-
-      <div class="reading-layout">
-        <article class="passage-card">
-          <h3 id="rTitle">Passage title</h3>
-          <div id="rBody" class="passage-body"></div>
-        </article>
-
-        <article class="questions-card">
-          <div class="q-head">
-            <strong id="rQTitle">Questions</strong>
-            <p id="rInstruction" class="q-instruction"></p>
-          </div>
-          <div id="rQuestions" class="reading-questions"></div>
-
-          <div id="rChoiceBlock" class="reading-choice-block">
-            <div class="q-head">
-              <strong>Ejercicio 1 · Elegí la opción correcta</strong>
-              <p class="q-instruction">Según lo que dice el texto, marcá la oración correcta en cada pregunta.</p>
-            </div>
-            <div id="rChoiceQuestions" class="reading-questions"></div>
-          </div>
-
-          <div class="tool-row">
-            <button id="rCheck" class="btn btn-primary" type="button">Corregir reading</button>
-            <button id="rClearAns" class="btn btn-ghost" type="button">Limpiar</button>
-            <span id="rScore" class="score-pill"></span>
-          </div>
-          <details id="rAnswerPanel" class="details-panel">
-            <summary>Respuestas y explicación</summary>
-            <p id="rAnswersHint" class="answers-hint">Pulsá <strong>Corregir reading</strong> para ver acá las respuestas correctas con su explicación.</p>
-            <ol id="rAnswers"></ol>
-          </details>
-        </article>
       </div>
     </section>
 
@@ -489,18 +535,36 @@
         <p>Elegí un tiempo para ver su estructura, cuándo se usa y ejemplos con traducción.</p>
       </header>
       <div class="tenses-layout">
-        <div id="tGrid" class="tense-grid"></div>
+        <div id="tGrid" class="tense-grid" role="tablist" aria-label="Tiempos verbales"></div>
         <article id="tDetail" class="tense-detail">
-          <span class="level-pill" id="tLevel"></span>
-          <h3 id="tName">Elegí un tiempo</h3>
-          <p id="tSummary" class="tense-summary"></p>
-          <div class="struct-grid">
-            <div><span>Afirmativa</span><code id="tAff"></code></div>
-            <div><span>Negativa</span><code id="tNeg"></code></div>
-            <div><span>Interrogativa</span><code id="tQ"></code></div>
+          <div class="td-hero">
+            <div class="td-hero-text">
+              <span class="level-pill" id="tLevel"></span>
+              <h3 id="tName">Elegí un tiempo</h3>
+              <p id="tSummary" class="tense-summary"></p>
+            </div>
+            <div id="tTimeline" class="td-timeline" aria-hidden="true"></div>
           </div>
-          <h4>Usos</h4><ul id="tUses" class="tense-uses"></ul>
-          <h4>Ejemplos</h4><ul id="tExamples" class="tense-examples"></ul>
+          <div class="td-body">
+            <section class="td-section">
+              <h4>Estructura</h4>
+              <div class="struct-grid">
+                <div><span>Afirmativa</span><code id="tAff"></code></div>
+                <div><span>Negativa</span><code id="tNeg"></code></div>
+                <div><span>Interrogativa</span><code id="tQ"></code></div>
+              </div>
+            </section>
+            <div class="td-columns">
+              <section class="td-section">
+                <h4>Cuándo se usa</h4>
+                <ul id="tUses" class="tense-uses"></ul>
+              </section>
+              <section class="td-section">
+                <h4>Ejemplos</h4>
+                <ul id="tExamples" class="tense-examples"></ul>
+              </section>
+            </div>
+          </div>
         </article>
       </div>
     </section>
@@ -607,6 +671,80 @@
           </span>
           <strong>Express Speaking</strong><small>Preguntas rápidas · grabación</small><em>3–5 min</em>
         </button>
+      </div>
+    </section>
+
+    <!-- ============ MICRO-LEARNING · OPTION WHEELS ============ -->
+    <section id="view-micro" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head micro-minimal-head" aria-label="Cápsulas de estudio · Study Pills">
+        <h2 class="micro-flip-heading">
+          <span id="microTitleFlip" class="micro-title-flip" aria-hidden="true">
+            <span id="microTitleFlipWord" class="micro-title-flip__word">Cápsulas de estudio</span>
+          </span>
+        </h2>
+      </header>
+
+      <div class="micro-wheel-layout">
+        <div class="micro-wheel-column micro-wheel-column--left">
+          <p class="micro-wheel-subtitle">Conceptos &amp; VS</p>
+          <div id="microOptionWheel" class="option-wheel micro-option-wheel" role="listbox" tabindex="0" aria-label="Elegir dilemas y pares confusos"></div>
+        </div>
+
+        <div class="micro-wheel-column micro-wheel-column--right">
+          <p class="micro-wheel-subtitle micro-wheel-subtitle--right">Reglas de oro</p>
+          <div id="microRulesWheel" class="option-wheel option-wheel--right micro-option-wheel" role="listbox" tabindex="0" aria-label="Elegir reglas de fonética y estructura"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MICRO-LEARNING · TOPIC LANDING ============ -->
+    <section id="view-micro-detail" class="view micro-topic-view">
+      <button class="back-link" data-go="micro">← Volver a Cápsulas de estudio</button>
+      <article class="micro-topic-shell">
+        <header class="micro-topic-hero">
+          <h2 id="microTopicTitle"></h2>
+          <p id="microTopicRule" class="micro-topic-rule"></p>
+        </header>
+
+        <div id="microTopicBody" class="micro-topic-body"></div>
+
+      </article>
+    </section>
+
+    <!-- ============ DAILY QUIZ ============ -->
+    <section id="view-daily" class="view">
+      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
+      <header class="sec-head">
+        <span class="eyebrow">Daily Quiz</span>
+        <h2>Repaso del día</h2>
+        <p>Una ronda breve de preguntas para fijar conceptos: calentamiento, concepto clave, aplicación y un desafío final.</p>
+      </header>
+
+      <div class="daily-shell">
+        <div class="daily-top">
+          <span id="dqProgress" class="daily-progress">Pregunta 1 de 4</span>
+          <span id="dqScorePill" class="daily-score-pill" aria-live="polite"></span>
+        </div>
+        <div class="daily-bar"><span id="dqBar" class="daily-bar-fill"></span></div>
+
+        <article id="dqCard" class="daily-card">
+          <span id="dqStage" class="daily-stage"></span>
+          <span id="dqTimer" class="daily-timer hidden" aria-live="polite"></span>
+          <h3 id="dqQuestion" class="daily-question"></h3>
+          <p id="dqScenario" class="daily-scenario hidden"></p>
+          <div id="dqOptions" class="daily-options"></div>
+          <p id="dqFeedback" class="daily-feedback" aria-live="polite"></p>
+          <div class="daily-actions">
+            <button id="dqNext" class="btn btn-primary" type="button" disabled>Siguiente</button>
+          </div>
+        </article>
+
+        <article id="dqResult" class="daily-result hidden">
+          <h3 id="dqResultTitle"></h3>
+          <p id="dqResultText"></p>
+          <button id="dqRestart" class="btn btn-ghost" type="button">Reiniciar repaso</button>
+        </article>
       </div>
     </section>
 

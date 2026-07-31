@@ -2152,3 +2152,239 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 @media (max-width:760px){
   .card-nav .translator-panel{top:78px;right:12px;left:12px;width:auto}
 }
+
+/* ============================================================
+   RESPONSIVE HARDENING · MacBook / tablet / mobile
+   ============================================================ */
+img,video,iframe,canvas,svg{max-width:100%}
+button,input,select,textarea{max-width:100%}
+.view,.view>*,.card-nav-content>*,.reading-main,.work-card,.prompt-card{min-width:0}
+
+/* MacBook Air / Pro and medium desktop widths */
+@media (min-width:1024px) and (max-width:1512px){
+  :root{--maxw:1180px}
+  .card-nav{width:min(1180px,calc(100vw - 32px))}
+  #app{padding-top:28px;padding-bottom:48px}
+  .hero-title{font-size:clamp(2.35rem,4.4vw,3.25rem)}
+  .tile{min-height:122px;padding:15px}
+
+  .micro-wheel-layout{
+    width:min(1220px,calc(100vw - 32px));
+    min-height:540px;
+    gap:clamp(86px,12vw,170px);
+  }
+  .micro-wheel-column{height:540px}
+  .micro-wheel-subtitle{width:clamp(102px,8.4vw,122px);padding:15px}
+  .option-wheel{
+    --ow-inset:clamp(126px,10vw,154px);
+    --ow-font-size:clamp(1.35rem,2.05vw,2.28rem);
+  }
+  .option-wheel--right{--ow-inset:clamp(126px,10vw,154px)}
+  .micro-topic-view{max-width:min(1040px,calc(100vw - 40px))}
+  .micro-topic-hero{padding:clamp(30px,4.8vw,56px)}
+  .micro-topic-body{padding:clamp(24px,4vw,46px)}
+}
+
+/* Tablets and narrow laptop windows */
+@media (max-width:1023px){
+  :root{--navbar-h:60px}
+  #app{width:100%;padding:24px clamp(14px,3vw,26px) 48px}
+  .card-nav-container{padding-inline:10px}
+  .card-nav{width:100%}
+  .card-nav.open{
+    max-height:calc(100dvh - 16px);
+    overflow:auto;
+    overscroll-behavior:contain;
+  }
+  .hero,.sec-head{max-width:100%}
+  .hero-title{font-size:clamp(2rem,6vw,2.8rem)}
+  .hero-lead,.sec-head p{max-width:68ch}
+
+  .passage-card,.questions-card,.quick-card,.daily-card,.daily-result,
+  .prompt-card,.work-card,.account-card,.match-card{max-width:100%}
+  .tool-row,.reading-controls,.listen-top-actions,.match-toolbar,
+  .match-actions,.match-roundbar,.daily-top,.calendar-head{flex-wrap:wrap}
+
+  .micro-topic-view{max-width:100%}
+  .micro-topic-shell{border-radius:22px}
+  .micro-topic-hero{padding:clamp(26px,5vw,44px)}
+  .micro-topic-body{padding:clamp(20px,4vw,34px)}
+  .micro-topic-hero h2{font-size:clamp(2rem,7vw,3.8rem)}
+}
+
+/* Phones and portrait tablets */
+@media (max-width:760px){
+  html{-webkit-text-size-adjust:100%}
+  body{overflow-wrap:anywhere}
+  #app{
+    padding-top:18px;
+    padding-right:max(12px,env(safe-area-inset-right));
+    padding-bottom:max(42px,env(safe-area-inset-bottom));
+    padding-left:max(12px,env(safe-area-inset-left));
+  }
+
+  .card-nav-container{
+    padding-top:max(8px,env(safe-area-inset-top));
+    padding-right:max(8px,env(safe-area-inset-right));
+    padding-left:max(8px,env(safe-area-inset-left));
+  }
+  .card-nav{border-radius:12px}
+  .card-nav-top{min-height:60px}
+  .card-nav-content{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+  .nav-card{min-height:106px}
+
+  .hero{margin-bottom:20px}
+  .hero-title{font-size:clamp(1.9rem,10vw,2.45rem);line-height:1.02}
+  .hero-lead{font-size:.96rem}
+  .sec-head{margin-bottom:20px}
+  .sec-head h2{font-size:clamp(1.65rem,8vw,2.1rem)}
+  .back-link{margin-bottom:14px;min-height:40px;display:inline-flex;align-items:center}
+
+  .btn,.match-nav-btn,.listen-tab,.nav-card-link,
+  .hamburger-menu,.card-nav-cta-button{min-height:44px}
+  select,input[type=text],input[type=email],input[type=number],textarea{
+    font-size:16px;
+  }
+  textarea{min-height:180px}
+  .tool-row{gap:8px}
+  .tool-row .btn{flex:1 1 150px}
+
+  .tile-grid{gap:8px}
+  .tile{min-height:112px;padding:15px;border-radius:8px}
+  .tile-name{font-size:1.04rem}
+  .tile-desc{font-size:.78rem}
+
+  .wr-filters,.writing-workspace,.writing-layout{width:100%}
+  .wr-filters{padding:14px}
+  .wr-list-pane{max-height:340px}
+  .wr-tool-row{display:grid;grid-template-columns:1fr 1fr}
+  .wr-tool-row .btn{width:100%}
+  .wr-reveal-box,.wr-model-text{padding:13px}
+
+  .listen-practice-header{grid-template-columns:1fr;gap:12px}
+  .listen-main-actions{grid-template-columns:1fr 1fr 44px}
+  .listen-settings-panel{left:0;right:0;width:auto;max-height:70dvh;overflow:auto}
+  .listen-panel,.listen-read-card{padding:14px}
+  .listen-cloze-text{font-size:.94rem;line-height:1.8}
+  .listen-gap-input{max-width:min(160px,48vw)}
+
+  .tenses-layout{gap:16px}
+  .tense-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .tense-card{min-width:0;padding:12px}
+  .td-hero,.td-columns{gap:20px}
+  .td-hero{padding:20px}
+  .struct-grid{gap:9px}
+
+  .match-card{width:100%;padding:16px;margin-left:0}
+  .match-toolbar{align-items:stretch}
+  .match-set-field{min-width:100%}
+  .match-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}
+  .match-actions .btn{width:100%}
+  .match-board{grid-template-columns:minmax(0,1fr) 42px minmax(0,1fr);gap:4px}
+  .match-item{padding:10px 9px;font-size:.8rem;line-height:1.25}
+  .match-col-head{font-size:.7rem}
+
+  .reading-shell{gap:14px}
+  .reading-line-sidebar{max-height:220px}
+  .passage-card,.questions-card{padding:17px}
+  .passage-title{font-size:clamp(1.35rem,7vw,1.8rem)}
+  .passage-body{font-size:.96rem;line-height:1.72}
+  .questions-card .reading-questions{columns:1}
+
+  .speaking-layout{gap:14px}
+  .recorder-card,.speaking-card{padding:17px}
+
+  .micro-flip-heading{min-height:58px}
+  .micro-title-flip{max-width:calc(100vw - 28px);min-height:50px}
+  .micro-wheel-layout{gap:12px}
+  .micro-wheel-column{height:405px;max-width:100%;overflow:hidden}
+  .micro-wheel-subtitle{width:92px;padding:12px;font-size:.8rem;left:2px}
+  .micro-wheel-subtitle--right{left:auto;right:2px}
+  .option-wheel{
+    --ow-inset:106px;
+    --ow-font-size:clamp(1.24rem,6.4vw,1.82rem);
+  }
+  .option-wheel--right{--ow-inset:106px}
+  .option-wheel__item{max-width:calc(100% - var(--ow-inset) - 8px);padding-inline:6px}
+
+  .micro-topic-shell{border-radius:18px}
+  .micro-topic-hero{padding:24px 20px}
+  .micro-topic-hero h2{font-size:clamp(2rem,11vw,3rem);line-height:1}
+  .micro-topic-rule{font-size:1.06rem;line-height:1.55}
+  .micro-topic-body{padding:14px;gap:14px}
+  .micro-reading-block,.micro-example-section,.micro-visual-card{padding:17px;border-radius:15px}
+  .micro-reading-block>p{font-size:1rem;line-height:1.7}
+  .micro-key-list li{padding:12px 12px 12px 38px;font-size:.94rem}
+  .micro-key-list li::before{left:13px;top:13px}
+  .micro-example-list{grid-template-columns:1fr}
+  .micro-rule-card summary{padding:15px 16px;font-size:1.05rem}
+  .micro-rule-card>div{padding:0 16px 17px}
+  .micro-rule-card>div>p{font-size:.98rem;line-height:1.68}
+  .micro-formula{gap:7px;padding:12px}
+  .micro-formula span{padding:10px 11px;font-size:.78rem}
+  .micro-osascomp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+  .micro-prep-visual{min-height:390px;padding:0}
+  .micro-prep-in{width:min(340px,84vw)}
+  .micro-prep-label small{max-width:22ch;font-size:.64rem;padding:3px 6px}
+  .micro-prep-label--in{top:14px}
+  .micro-prep-label--on{top:14px}
+  .micro-prep-label--in strong{font-size:2.35rem}
+  .micro-prep-label--on strong{font-size:2rem}
+  .micro-prep-label--at strong{font-size:1.75rem}
+
+  .cal1-toolbar{gap:8px}
+  .cal1-grid,.cal1-weekdays{font-size:.78rem}
+  .cal1-day{min-height:56px;padding:5px}
+  .site-foot{padding-inline:14px;text-align:center;justify-content:center}
+}
+
+/* Small phones */
+@media (max-width:430px){
+  #app{padding-inline:10px}
+  .brand-word{font-size:1.06rem}
+  .card-nav-brand{gap:5px}
+  .hamburger-menu{width:40px}
+  .card-nav-cta-button{width:44px}
+  .nav-card-links{grid-template-columns:1fr}
+
+  .hero-title{font-size:clamp(1.78rem,10.5vw,2.2rem)}
+  .btn{padding:10px 12px;font-size:.84rem}
+  .tile{min-height:102px}
+  .wr-tool-row{grid-template-columns:1fr}
+  .listen-tabs{grid-template-columns:1fr 1fr}
+  .listen-main-actions{grid-template-columns:1fr 1fr 40px;gap:6px}
+  .tense-grid{grid-template-columns:1fr}
+
+  .match-card{padding:12px}
+  .match-board{grid-template-columns:minmax(0,1fr) 30px minmax(0,1fr)}
+  .match-item{padding:9px 7px;font-size:.74rem}
+  .match-port{width:13px;height:13px}
+
+  .micro-wheel-column{height:370px}
+  .micro-wheel-subtitle{width:78px;padding:9px;font-size:.69rem}
+  .option-wheel{--ow-inset:86px;--ow-font-size:clamp(1.08rem,6.3vw,1.55rem)}
+  .option-wheel--right{--ow-inset:86px}
+  .option-wheel__item.is-compact{font-size:calc(var(--ow-font-size) * .82)}
+  .option-wheel__item.is-tight{font-size:calc(var(--ow-font-size) * .69)}
+
+  .micro-topic-hero{padding:22px 16px}
+  .micro-topic-hero h2{font-size:clamp(1.82rem,10vw,2.6rem)}
+  .micro-topic-body{padding:10px}
+  .micro-reading-block,.micro-example-section,.micro-visual-card{padding:14px}
+  .micro-osascomp-grid{grid-template-columns:1fr 1fr;gap:7px}
+  .micro-osascomp-grid article{padding:11px 8px}
+  .micro-prep-visual{min-height:350px}
+  .micro-prep-in{width:min(310px,86vw)}
+
+  .cal1-day{min-height:50px;font-size:.72rem}
+  .translator-language-row{grid-template-columns:1fr 34px 1fr}
+}
+
+/* Landscape phones: preserve useful vertical space */
+@media (max-height:520px) and (orientation:landscape){
+  .card-nav.open{max-height:calc(100dvh - 10px)}
+  .card-nav-content{max-height:calc(100dvh - 74px)}
+  .micro-wheel-column{height:330px}
+  .reading-line-sidebar{max-height:170px}
+}

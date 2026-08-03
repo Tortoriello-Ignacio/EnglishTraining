@@ -13,6 +13,208 @@
     del(k) { try { localStorage.removeItem("et_" + k); } catch {} }
   };
 
+  /* ---------- Scroll Float intro ---------- */
+  function initScrollFloatIntro() {
+    const intro = $("scrollFloatIntro");
+    const stage = intro?.querySelector(".scroll-float-stage");
+    const brand = intro?.querySelector(".scroll-float-brand");
+    const title = $("scrollFloatTitle");
+    const cue = intro?.querySelector(".scroll-float-cue");
+    if (!intro || !stage || !brand || !title) return;
+
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
+    const rawText = title.dataset.text || title.textContent.trim() || "English Trainer";
+    title.setAttribute("aria-label", rawText);
+    title.innerHTML = Array.from(rawText).map((character, index) => {
+      const visible = character === " " ? "&nbsp;" : esc(character);
+      return `<span class="scroll-float-char" style="--char-index:${index};--char-x:0px;--char-y:0px;--char-rotate:0deg;--char-opacity:1"><span>${visible}</span></span>`;
+    }).join("");
+
+    const chars = Array.from(title.querySelectorAll(".scroll-float-char"));
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const root = document.documentElement;
+    const body = document.body;
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+    // Distancia virtual necesaria para completar la portada. Cuanto mayor sea,
+    // más lenta y controlada se siente la transición horizontal.
+    const VIRTUAL_SCROLL_DISTANCE = window.matchMedia("(max-width: 820px)").matches ? 2600 : 3400;
+
+    let targetProgress = 0;
+    let renderedProgress = 0;
+    let rafId = null;
+    let completed = false;
+    let touchY = null;
+
+    body.classList.add("scroll-intro-active");
+    root.classList.add("scroll-intro-active");
+    window.scrollTo(0, 0);
+
+    function removeListeners() {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    function completeIntro() {
+      if (completed) return;
+      completed = true;
+      removeListeners();
+
+      intro.classList.add("is-complete");
+      intro.setAttribute("aria-hidden", "true");
+
+      window.setTimeout(() => {
+        intro.remove();
+        root.classList.remove("scroll-intro-active");
+        body.classList.remove("scroll-intro-active");
+        body.classList.add("scroll-intro-finished");
+        window.scrollTo(0, 0);
+      }, reduceMotion ? 0 : 220);
+    }
+
+    function render() {
+      rafId = null;
+      if (completed || !intro.isConnected) return;
+
+      const easing = reduceMotion ? 1 : 0.075;
+      renderedProgress += (targetProgress - renderedProgress) * easing;
+      if (Math.abs(targetProgress - renderedProgress) < 0.00035) {
+        renderedProgress = targetProgress;
+      }
+
+      const progress = clamp(renderedProgress, 0, 1);
+      intro.style.setProperty("--intro-progress", progress.toFixed(4));
+
+      // El panel blanco completo se desplaza hacia la izquierda. El Home ya está
+      // detrás de la portada, por lo que se revela lateralmente y no verticalmente.
+      stage.style.transform = `translate3d(${(-progress * 102).toFixed(3)}vw, 0, 0)`;
+
+      if (!reduceMotion) {
+        const midpoint = (chars.length - 1) / 2;
+        chars.forEach((char, index) => {
+          const distance = index - midpoint;
+          const delayed = clamp((progress - index * 0.003) / 0.97, 0, 1);
+          const eased = delayed * delayed * (3 - 2 * delayed);
+          const x = -(22 + Math.abs(distance) * 1.25) * eased;
+          const y = distance * 0.38 * eased;
+          const rotation = distance * -0.08 * eased;
+          const opacity = 1 - clamp((eased - 0.62) / 0.38, 0, 1);
+          char.style.setProperty("--char-x", `${x.toFixed(2)}px`);
+          char.style.setProperty("--char-y", `${y.toFixed(2)}px`);
+          char.style.setProperty("--char-rotate", `${rotation.toFixed(2)}deg`);
+          char.style.setProperty("--char-opacity", opacity.toFixed(3));
+        });
+
+        const brandScale = 1 - progress * 0.035;
+        brand.style.transform = `translateX(${(-progress * 5).toFixed(2)}vw) scale(${brandScale.toFixed(4)})`;
+        brand.style.opacity = String(1 - clamp((progress - 0.76) / 0.24, 0, 1));
+        if (cue) cue.style.opacity = String(1 - clamp(progress * 4.2, 0, 1));
+      }
+
+      if (targetProgress >= 1 && progress >= 0.995) {
+        completeIntro();
+        return;
+      }
+
+      if (renderedProgress !== targetProgress) rafId = requestAnimationFrame(render);
+    }
+
+    function requestRender() {
+      if (completed || rafId !== null) return;
+      rafId = requestAnimationFrame(render);
+    }
+
+    function addProgress(delta) {
+      if (completed) return;
+      // Sólo el desplazamiento hacia abajo/adelante hace avanzar la portada.
+      // Un pequeño retroceso está permitido antes de completarla, pero nunca
+      // vuelve a aparecer una vez retirada.
+      targetProgress = clamp(targetProgress + delta / VIRTUAL_SCROLL_DISTANCE, 0, 1);
+      requestRender();
+    }
+
+    function onWheel(event) {
+      if (completed) return;
+      event.preventDefault();
+      const raw = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+      const normalized = event.deltaMode === 1 ? raw * 18 : event.deltaMode === 2 ? raw * window.innerHeight : raw;
+      addProgress(clamp(normalized, -180, 180));
+    }
+
+    function onTouchStart(event) {
+      touchY = event.touches?.[0]?.clientY ?? null;
+    }
+
+    function onTouchMove(event) {
+      if (touchY == null || !event.touches?.length) return;
+      event.preventDefault();
+      const nextY = event.touches[0].clientY;
+      const delta = touchY - nextY;
+      touchY = nextY;
+      addProgress(clamp(delta * 1.45, -140, 140));
+    }
+
+    function onTouchEnd() {
+      touchY = null;
+    }
+
+    function onKeyDown(event) {
+      const forwardKeys = ["ArrowDown", "PageDown", " ", "Enter"];
+      const backKeys = ["ArrowUp", "PageUp"];
+      if (forwardKeys.includes(event.key)) {
+        event.preventDefault();
+        addProgress(260);
+      } else if (backKeys.includes(event.key)) {
+        event.preventDefault();
+        addProgress(-220);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        targetProgress = 1;
+        requestRender();
+      }
+    }
+
+    function onResize() {
+      requestRender();
+    }
+
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize, { passive: true });
+
+    render();
+  }
+
+  initScrollFloatIntro();
+
+  /* ---------- índice escrito ---------- */
+  // Los índices laterales identifican cada ejercicio por su posición en inglés.
+  const NUM_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen",
+    "Eighteen", "Nineteen"];
+  const NUM_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  function numberWord(n) {
+    if (n < 20) return NUM_ONES[n] || String(n);
+    if (n < 100) {
+      const unit = n % 10;
+      return NUM_TENS[Math.floor(n / 10)] + (unit ? "-" + NUM_ONES[unit].toLowerCase() : "");
+    }
+    const rest = n % 100;
+    return NUM_ONES[Math.floor(n / 100)] + " hundred" +
+      (rest ? " " + numberWord(rest).toLowerCase() : "");
+  }
+
   /* ---------- progress ---------- */
   function today() { return new Date().toISOString().slice(0, 10); }
   function logActivity() {
@@ -32,16 +234,94 @@
   /* ============================================================
      ROUTER
      ============================================================ */
+  /* ============================================================
+     RUTEO POR HASH
+     La URL refleja dónde está el usuario en tres niveles:
+       #listening
+       #listening/podcast-practice
+       #listening/podcast-practice/climate-change
+     Se usa el hash y no history.pushState porque la app también se
+     abre como archivo local, donde pushState falla por seguridad.
+     ============================================================ */
+  const ROUTE_SECTIONS = {};
+  let routeSilent = false;   // true mientras se aplica una ruta entrante
+  let lastRoute = null;      // último hash que escribimos nosotros
+
+  // Vistas de un solo nivel: el nombre de la vista es la ruta.
+  const SIMPLE_ROUTES = ["dashboard", "tiempos", "practica", "examen", "micro",
+    "daily", "perfil", "calendario", "racha", "comunidad", "ayuda", "faqs"];
+  // Vistas de taller: la ruta la arma su propio módulo.
+  const MODULE_VIEWS = ["writing", "reading", "speaking", "listening"];
+
+  function routeSlug(text) {
+    return String(text || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  // Los títulos largos harían URLs impracticables: se recorta a 6 palabras.
+  function shortSlug(text, words) {
+    return routeSlug(text).split("-").filter(Boolean).slice(0, words || 6).join("-");
+  }
+
+  function registerSection(key, api) { ROUTE_SECTIONS[key] = api; }
+
+  function setRoute(parts) {
+    if (routeSilent) return;
+    const hash = "#" + parts.filter(Boolean).join("/");
+    if (hash === lastRoute || hash === window.location.hash) { lastRoute = hash; return; }
+    lastRoute = hash;
+    window.location.hash = hash;
+  }
+
+  function parseRoute(hash) {
+    return String(hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
+  }
+
+  function applyRoute(hash) {
+    const parts = parseRoute(hash !== undefined ? hash : window.location.hash);
+    routeSilent = true;
+    try {
+      if (!parts.length) { go("dashboard"); return; }
+      const section = ROUTE_SECTIONS[parts[0]];
+      if (section) { section.apply(parts[1], parts[2]); return; }
+      if (SIMPLE_ROUTES.includes(parts[0]) && $("view-" + parts[0])) { go(parts[0]); return; }
+      go("dashboard");
+    } finally {
+      routeSilent = false;
+    }
+  }
+
+  // Atrás y adelante del navegador, y también editar el hash a mano.
+  window.addEventListener("hashchange", () => {
+    const hash = window.location.hash || "";
+    if (hash === lastRoute) return;   // es el hash que acabamos de escribir
+    lastRoute = hash;
+    applyRoute(hash);
+  });
+
   function go(name) {
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("is-active"));
     const target = $("view-" + name) || $("view-dashboard");
     target.classList.add("is-active");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    // Aviso sincrónico para que cada módulo pueda cortar lo que esté sonando.
+    document.dispatchEvent(new CustomEvent("et:viewchange", { detail: target.id }));
+
+    // La URL sigue a la vista. Los talleres la completan desde su módulo,
+    // porque necesitan agregar la consigna y el ejercicio.
+    if (name.endsWith("-hub")) setRoute([name.replace(/-hub$/, "")]);
+    else if (!MODULE_VIEWS.includes(name)) setRoute([SIMPLE_ROUTES.includes(name) ? name : "dashboard"]);
+
+    const siteStart = $("cardNavContainer") || $("app");
+    const siteTop = siteStart ? siteStart.offsetTop : 0;
+    window.scrollTo({ top: siteTop, behavior: "smooth" });
     if (name === "tiempos" && !tensesInit) initTenses();
     if (name === "listening" && !listeningInit) initListening();
     if (name === "micro" && !microInit) initMicro();
     if (name === "daily" && !dailyInit) initDaily();
-    if (name === "speaking") renderSpeaking();
     if (["perfil", "calendario", "racha"].includes(name)) renderAccount();
   }
   document.addEventListener("click", (e) => {
@@ -114,11 +394,18 @@
 
   /* ---------- theme ---------- */
   const themeToggle = $("themeToggle");
-  function applyTheme(t) { if (t === "dark") document.documentElement.setAttribute("data-theme", "dark"); else document.documentElement.removeAttribute("data-theme"); }
+  function applyTheme(t) {
+    const dark = t === "dark";
+    if (dark) document.documentElement.setAttribute("data-theme", "dark");
+    else document.documentElement.removeAttribute("data-theme");
+    // El interruptor refleja el tema aunque el cambio venga de otro lado.
+    if (themeToggle) themeToggle.checked = dark;
+  }
   applyTheme(store.get("theme", "light"));
-  themeToggle.addEventListener("click", () => {
-    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    store.set("theme", next); applyTheme(next);
+  if (themeToggle) themeToggle.addEventListener("change", () => {
+    const next = themeToggle.checked ? "dark" : "light";
+    store.set("theme", next);
+    applyTheme(next);
   });
 
   /* ============================================================
@@ -271,16 +558,6 @@
         }
       }
 
-      const radius = Math.sqrt(cssWidth * cssWidth + cssHeight * cssHeight) * 0.58;
-      const vignette = ctx.createRadialGradient(
-        cssWidth / 2, cssHeight / 2, Math.min(cssWidth, cssHeight) * 0.08,
-        cssWidth / 2, cssHeight / 2, radius
-      );
-      vignette.addColorStop(0, "rgba(0,0,0,0)");
-      vignette.addColorStop(0.72, "rgba(0,0,0,0)");
-      vignette.addColorStop(1, palette.fade);
-      ctx.fillStyle = vignette;
-      ctx.fillRect(0, 0, cssWidth, cssHeight);
     }
 
     function animate(now) {
@@ -5858,13 +6135,11 @@
     };
     // ---- element refs ----
     const elModalityBar = document.querySelector(".wr-modality-bar");
-    const elRandom = $("wrRandom");
     const elCountFilter = $("wrCountFilter");
     const elList = $("wrList");
     const elProgressBadge = $("wrProgressBadge");
     const elEmpty = $("wrEmpty");
     const elActive = $("wrActive");
-    const elExModality = $("wrExModality");
     const elExTitle = $("wrExTitle");
     const elExMeta = $("wrExMeta");
     const elMaterial = $("wrMaterial");
@@ -5951,6 +6226,7 @@
       });
       renderList();
       updateFilterCount();
+      updateProgressBadge();
     }
 
     function updateFilterCount() {
@@ -5959,30 +6235,37 @@
     }
 
     function updateProgressBadge() {
-      elProgressBadge.textContent = completed.size + " / " + EX.length + " completadas";
+      if (!elProgressBadge) return;
+      const done = filtered.reduce((n, e) => n + (completed.has(e.id) ? 1 : 0), 0);
+      elProgressBadge.textContent = done + " / " + filtered.length;
+      elProgressBadge.setAttribute("title", done + " de " + filtered.length + " completadas en este módulo");
     }
 
     // ---- render list ----
     function renderList() {
       if (!filtered.length) {
         elList.innerHTML = '<li class="wr-list-empty">No hay actividades en esta modalidad.</li>';
+        syncIndexFades();
         return;
       }
       let html = "";
-      filtered.forEach(e => {
+      filtered.forEach((e, i) => {
         const isDone = completed.has(e.id);
         const isSel = current && current.id === e.id;
         const hasDraft = !!getDraft(e.id);
+        const label = numberWord(i + 1);
         html += '<li class="wr-list-item' + (isSel ? " is-selected" : "") + (isDone ? " is-done" : "") +
-          '" role="option" tabindex="0" data-id="' + esc(e.id) + '" aria-selected="' + (isSel ? "true" : "false") + '">' +
+          '" role="option" tabindex="0" data-id="' + esc(e.id) + '" aria-selected="' + (isSel ? "true" : "false") +
+          '" title="' + esc(e.title) + '" aria-label="' + label + ": " + esc(e.title) + '">' +
           '<span class="wr-item-row">' +
           '<span class="wr-dot wr-dot-' + esc(e.modality) + '" role="img" aria-label="' + esc(MOD_LABEL[e.modality] || "") + '"></span>' +
-          '<span class="wr-item-title">' + esc(e.title) + "</span>" +
+          '<span class="wr-item-title">' + label + "</span>" +
           (hasDraft ? '<span class="wr-item-flag" title="Borrador guardado">✎</span>' : "") +
           (isDone ? '<span class="wr-item-flag wr-done-flag" title="Completada">✓</span>' : "") +
           "</span></li>";
       });
       elList.innerHTML = html;
+      syncIndexFades();
     }
 
     // ---- render source material ----
@@ -6359,9 +6642,6 @@
       resetTimer();
       current = e;
 
-      elExModality.className = "wr-dot wr-dot-" + e.modality;
-      elExModality.setAttribute("aria-label", MOD_LABEL[e.modality] || "");
-      elExModality.setAttribute("title", MOD_LABEL[e.modality] || "");
       elExTitle.textContent = e.title;
       elExMeta.textContent = isOrderExercise(e)
         ? MOD_LABEL[e.modality] + " · " + e.time + " · " + e.length
@@ -6406,6 +6686,8 @@
       elEmpty.classList.add("hidden");
       elActive.classList.remove("hidden");
       renderList();
+      revealSelected();
+      emitRoute();
       const ctl = answerControl(e);
       if (ctl && !isOrderExercise(e)) ctl.focus();
     }
@@ -6473,12 +6755,6 @@
       if (!chip) return;
       activeModality = chip.getAttribute("data-modality") || "all";
       applyFilters();
-    });
-
-    elRandom.addEventListener("click", () => {
-      if (!filtered.length) return;
-      const pick = filtered[Math.floor(Math.random() * filtered.length)];
-      selectExercise(pick.id);
     });
 
     elList.addEventListener("click", (ev) => {
@@ -6569,10 +6845,158 @@
       renderList();
     });
 
+    /* ============================================================
+       MODO MÓDULO — doble panel colapsable
+       Las tarjetas del hub de Writing abren este espacio con una
+       modalidad ya fijada; el panel de módulo devuelve al hub.
+       ============================================================ */
+    const MODULE_MODALITY = {
+      "Prompt Writing": "prompt",
+      "Read & Reply": "read",
+      "Visual Writing": "visual",
+      "Sentence Builder": "order"
+    };
+
+    const elView = $("view-writing");
+    const elRail = $("wrxRail");
+    const elIndex = $("wrxIndex");
+    const elScroller = $("wrxScroller");
+    const elModuleName = $("wrxModuleName");
+    const elBackToHub = $("wrxBack");
+
+    function syncIndexFades() {
+      if (!elIndex || !elScroller) return;
+      const top = elScroller.scrollTop;
+      const rest = elScroller.scrollHeight - (top + elScroller.clientHeight);
+      const atEnd = elScroller.scrollHeight <= elScroller.clientHeight + 1;
+      elIndex.style.setProperty("--wrx-fade-top", String(Math.min(top / 28, 1)));
+      elIndex.style.setProperty("--wrx-fade-bottom", atEnd ? "0" : String(Math.min(rest / 28, 1)));
+    }
+
+    function revealSelected() {
+      if (!elScroller) return;
+      const node = elList.querySelector(".wr-list-item.is-selected");
+      if (node) node.scrollIntoView({ block: "nearest" });
+      syncIndexFades();
+    }
+
+    function setPanelOpen(panel, open) {
+      if (!panel) return;
+      panel.classList.toggle("is-open", open);
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) toggle.setAttribute("aria-expanded", String(open));
+      if (panel === elIndex) window.setTimeout(syncIndexFades, 340);
+    }
+
+    function closePanels() {
+      setPanelOpen(elRail, false);
+      setPanelOpen(elIndex, false);
+    }
+
+    [elRail, elIndex].forEach(panel => {
+      if (!panel) return;
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) {
+        toggle.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const open = !panel.classList.contains("is-open");
+          closePanels();
+          setPanelOpen(panel, open);
+        });
+      }
+      // Con mouse el panel se contrae solo: el estado fijado es para pantallas táctiles.
+      panel.addEventListener("pointerleave", (ev) => {
+        if (ev.pointerType === "touch") return;
+        setPanelOpen(panel, false);
+      });
+    });
+
+    // Un toque o clic fuera de los paneles también los devuelve a su lugar.
+    document.addEventListener("pointerdown", (ev) => {
+      if (!elView || !elView.classList.contains("is-active")) return;
+      if (ev.target.closest(".wrx-panel")) return;
+      closePanels();
+    });
+
+    if (elScroller) elScroller.addEventListener("scroll", syncIndexFades, { passive: true });
+    window.addEventListener("resize", syncIndexFades, { passive: true });
+
+    // Escape cierra los paneles fijados sin sacar el foco del ejercicio.
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      if (!elView || !elView.classList.contains("is-active")) return;
+      closePanels();
+      if (document.activeElement && document.activeElement.closest(".wrx-panel")) {
+        document.activeElement.blur();
+      }
+    });
+
+    if (elBackToHub) {
+      elBackToHub.addEventListener("click", () => {
+        flushDraft();
+        closePanels();
+        go("writing-hub");
+      });
+    }
+
+    let routeModule = "Writing";
+
+    // La URL refleja consigna y ejercicio abiertos.
+    function emitRoute() {
+      if (!elView || !elView.classList.contains("is-active")) return;
+      if (!MODULE_MODALITY[routeModule]) { setRoute(["writing"]); return; }
+      setRoute(["writing", routeSlug(routeModule), current ? routeSlug(current.id) : null]);
+    }
+
+    registerSection("writing", {
+      apply(moduleSlug, exerciseSlug) {
+        const name = Object.keys(MODULE_MODALITY).find(n => routeSlug(n) === moduleSlug);
+        if (!name) { go("writing-hub"); return; }
+        openModule(name, { autoSelect: !exerciseSlug });
+        if (!exerciseSlug) return;
+        const found = filtered.find(e => routeSlug(e.id) === exerciseSlug);
+        if (found) selectExercise(found.id);
+        else if (filtered.length) selectExercise(filtered[0].id);
+      }
+    });
+
+    // API mínima para el hub: abre el espacio de trabajo con un módulo fijado.
+    function openModule(moduleName, options) {
+      const opts = options || {};
+      const mod = MODULE_MODALITY[moduleName] || "all";
+      routeModule = moduleName || "Writing";
+      activeModality = mod;
+      if (elView) elView.setAttribute("data-wr-module", mod);
+      if (elModuleName) elModuleName.textContent = moduleName || "Writing";
+      applyFilters();
+      closePanels();
+      if (elScroller) elScroller.scrollTop = 0;
+      go("writing");
+      if (opts.autoSelect !== false && filtered.length) {
+        selectExercise(filtered[0].id);
+      } else {
+        current = null;
+        elActive.classList.add("hidden");
+        elEmpty.classList.remove("hidden");
+        renderList();
+      }
+      syncIndexFades();
+      emitRoute();
+    }
+
+    // Los accesos directos existentes (Express Writing) abren el catálogo completo.
+    document.addEventListener("click", (ev) => {
+      const trigger = ev.target.closest('[data-go="writing"]');
+      if (trigger) openModule("Writing", { autoSelect: false });
+    });
+
+    window.ETWriting = { openModule: openModule };
+
     window.addEventListener("beforeunload", flushDraft);
 
     applyFilters();
     updateProgressBadge();
+    syncIndexFades();
   })();
 
   /* ============================================================
@@ -12539,125 +12963,9 @@
     b.classList.toggle("is-on", rTransOn);
   }
 
-  /* ---------- Line Sidebar de textos ---------- */
-  const READING_FALLOFF = {
-    linear: (p) => p,
-    smooth: (p) => p * p * (3 - 2 * p),
-    sharp: (p) => p * p * p
-  };
-  const readingSidebarFx = {
-    items: [], targets: [], current: [], raf: null, last: 0,
-    proximityRadius: 92, smoothing: 85, falloff: "sharp"
-  };
-
-  function populateReadingSidebar() {
-    const list = $("rLineSidebarList");
-    if (!list) return;
-    list.innerHTML = readingPassages.map((p, i) =>
-      `<li class="line-sidebar__item" data-reading-index="${i}" style="--effect:0">` +
-        `<span class="line-sidebar__marker" aria-hidden="true"></span>` +
-        `<button class="line-sidebar__button" type="button" data-reading-index="${i}" ` +
-          `aria-controls="rPassageCard" aria-label="Texto ${i + 1}: ${esc(p.title)}">` +
-          `<span class="line-sidebar__index">${String(i + 1).padStart(2, "0")}</span>` +
-          `<span class="line-sidebar__text">${esc(p.title)}</span>` +
-        `</button>` +
-      `</li>`
-    ).join("");
-
-    readingSidebarFx.items = Array.from(list.querySelectorAll(".line-sidebar__item"));
-    readingSidebarFx.targets = readingSidebarFx.items.map(() => 0);
-    readingSidebarFx.current = readingSidebarFx.items.map(() => 0);
-
-    list.addEventListener("pointermove", handleReadingSidebarPointer);
-    list.addEventListener("pointerleave", () => {
-      readingSidebarFx.targets.fill(0);
-      startReadingSidebarLoop();
-    });
-    list.addEventListener("click", (event) => {
-      const button = event.target.closest(".line-sidebar__button");
-      if (!button) return;
-      selectReadingFromSidebar(Number(button.dataset.readingIndex), button);
-    });
-    list.addEventListener("keydown", (event) => {
-      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-      const buttons = Array.from(list.querySelectorAll(".line-sidebar__button"));
-      const current = Math.max(buttons.indexOf(document.activeElement), 0);
-      let next = current;
-      if (event.key === "ArrowDown") next = Math.min(current + 1, buttons.length - 1);
-      if (event.key === "ArrowUp") next = Math.max(current - 1, 0);
-      if (event.key === "Home") next = 0;
-      if (event.key === "End") next = buttons.length - 1;
-      event.preventDefault();
-      buttons[next]?.focus();
-    });
-    updateReadingSidebarActive(false);
-  }
-
-  function selectReadingFromSidebar(index, button) {
-    if (!Number.isInteger(index) || index < 0 || index >= readingPassages.length) return;
-    rIndex = index;
-    store.set("readingIndex", rIndex);
-    newReading();
-    button?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    if (window.matchMedia("(max-width: 1100px)").matches) {
-      $("rPassageCard")?.scrollIntoView({ block: "start", behavior: "smooth" });
-    }
-  }
-
-  function updateReadingSidebarActive(scrollActive = true) {
-    const list = $("rLineSidebarList");
-    if (!list) return;
-    list.querySelectorAll(".line-sidebar__item").forEach((item, i) => {
-      const active = i === rIndex;
-      item.classList.toggle("is-active", active);
-      const button = item.querySelector(".line-sidebar__button");
-      if (button) button.setAttribute("aria-current", active ? "true" : "false");
-      if (active && scrollActive) item.scrollIntoView({ block: "nearest" });
-    });
-    startReadingSidebarLoop();
-  }
-
-  function handleReadingSidebarPointer(event) {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const list = $("rLineSidebarList");
-    if (!list) return;
-    const rect = list.getBoundingClientRect();
-    const pointerY = event.clientY - rect.top;
-    const ease = READING_FALLOFF[readingSidebarFx.falloff] || READING_FALLOFF.linear;
-    readingSidebarFx.items.forEach((item, i) => {
-      const center = item.offsetTop + item.offsetHeight / 2;
-      const distance = Math.abs(pointerY - center);
-      readingSidebarFx.targets[i] = ease(Math.max(0, 1 - distance / readingSidebarFx.proximityRadius));
-    });
-    startReadingSidebarLoop();
-  }
-
-  function startReadingSidebarLoop() {
-    if (readingSidebarFx.raf != null) return;
-    readingSidebarFx.last = performance.now();
-    readingSidebarFx.raf = requestAnimationFrame(runReadingSidebarFrame);
-  }
-
-  function runReadingSidebarFrame(now) {
-    const dt = Math.min((now - readingSidebarFx.last) / 1000, 0.05);
-    readingSidebarFx.last = now;
-    const tau = Math.max(readingSidebarFx.smoothing, 1) / 1000;
-    const k = 1 - Math.exp(-dt / tau);
-    let moving = false;
-
-    readingSidebarFx.items.forEach((item, i) => {
-      const active = i === rIndex;
-      const target = Math.max(readingSidebarFx.targets[i] || 0, active ? 1 : 0);
-      const current = readingSidebarFx.current[i] || 0;
-      const next = current + (target - current) * k;
-      const settled = Math.abs(target - next) < 0.0015;
-      const value = settled ? target : next;
-      readingSidebarFx.current[i] = value;
-      item.style.setProperty("--effect", value.toFixed(4));
-      if (!settled) moving = true;
-    });
-
-    readingSidebarFx.raf = moving ? requestAnimationFrame(runReadingSidebarFrame) : null;
+  /* ---------- Índice de textos (lo renderiza el módulo de Reading) ---------- */
+  function updateReadingSidebarActive() {
+    if (window.ETReading) window.ETReading.syncIndex();
   }
 
   function newReading() {
@@ -12809,81 +13117,1247 @@
     updateTransButton();
   });
   $("rCheck").addEventListener("click", checkReading);
-  populateReadingSidebar();
   $("rClearAns").addEventListener("click", newReading);
   newReading();
 
   /* ============================================================
-     SPEAKING — prompts + MediaRecorder
+     READING · BITE-SIZED READS — texto breve + preguntas abiertas
+     La corrección busca las ideas clave, no una redacción exacta.
      ============================================================ */
-  const speakingData = {
-    1: [
-      { prompt: "Let’s talk about your hometown. Where are you from, and what do you like most about it?", bullets: ["Say where you live", "Give one thing you like", "Give one reason"] },
-      { prompt: "Do you work or are you a student? Tell me about what you do.", bullets: ["Your job or studies", "Why you chose it", "Whether you enjoy it"] },
-      { prompt: "How do you usually spend your weekends?", bullets: ["A typical activity", "Who you do it with", "Whether it changes"] }
-    ],
-    2: [
-      { prompt: "Describe a skill you would like to learn. You should say:", bullets: ["what the skill is", "why you want to learn it", "how you would learn it", "and explain how it would help you"] },
-      { prompt: "Describe a place you enjoy visiting. You should say:", bullets: ["where it is", "how often you go", "what you do there", "and explain why you like it"] },
-      { prompt: "Describe a person who has influenced you. You should say:", bullets: ["who the person is", "how you know them", "what they did", "and explain the influence they had"] }
-    ],
-    3: [
-      { prompt: "Some people say learning new skills as an adult is harder than as a child. What do you think?", bullets: ["Give your opinion", "Give a reason", "Give an example"] },
-      { prompt: "How has technology changed the way people learn today?", bullets: ["Name one change", "Say if it is positive", "Give an example"] },
-      { prompt: "Do you think schools focus too much on exams? Why or why not?", bullets: ["Your position", "One argument for", "One argument against"] }
-    ]
-  };
-  let sPart = 1, sPrep = null, recorder = null, recChunks = [], recTimer = null, recSecs = 0;
-  function renderSpeaking() {
-    const arr = speakingData[sPart];
-    const item = arr[Math.floor(Math.random() * arr.length)];
-    $("sPartLabel").textContent = "Part " + sPart;
-    $("sPrompt").textContent = item.prompt;
-    $("sBullets").innerHTML = item.bullets.map((b) => `<li>${esc(b)}</li>`).join("");
-    $("sPrompt").dataset.text = item.prompt + ". " + item.bullets.join(". ");
-  }
-  document.querySelectorAll(".seg-btn").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll(".seg-btn").forEach((x) => x.classList.remove("is-active"));
-    b.classList.add("is-active"); sPart = Number(b.dataset.part); renderSpeaking();
-  }));
-  $("sNew").addEventListener("click", renderSpeaking);
-  $("sHear").addEventListener("click", () => {
-    if (!("speechSynthesis" in window)) return;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance($("sPrompt").dataset.text || $("sPrompt").textContent);
-    u.lang = "en-GB"; u.rate = 0.95; speechSynthesis.speak(u);
-    if (sPart === 2) startPrep();
-  });
-  function startPrep() {
-    clearInterval(sPrep); let t = 60; const el = $("sPrepTimer"); el.hidden = false;
-    const tick = () => { el.textContent = "Preparación 0:" + String(t).padStart(2, "0"); if (t-- <= 0) { clearInterval(sPrep); el.textContent = "¡A hablar!"; } };
-    tick(); sPrep = setInterval(tick, 1000);
-  }
-  async function startRec() {
-    if (!navigator.mediaDevices?.getUserMedia) { $("recHint").textContent = "Tu navegador no permite grabar audio aquí."; return; }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recorder = new MediaRecorder(stream); recChunks = [];
-      recorder.ondataavailable = (e) => e.data.size && recChunks.push(e.data);
-      recorder.onstop = () => {
-        const blob = new Blob(recChunks, { type: recorder.mimeType || "audio/webm" });
-        const url = URL.createObjectURL(blob);
-        const pb = $("recPlayback"); pb.src = url; pb.hidden = false;
-        stream.getTracks().forEach((t) => t.stop());
-        logActivity();
+  const RD_BITES = [
+    {
+      "title": "TripAside: No More Boring Stopovers",
+      "text": "Few things are more depressing than spending hours in an airport terminal waiting for a connecting flight. Outside the airport, there is a foreign city full of great tourist attractions, restaurants, and shops. In 2015, Emmanuel Rozenblum and Anna Veyrenc started their 'stopover tours' business, called TripAside, in Paris. Their idea is that a guide picks up travellers at the airport, takes them around the city, and guarantees to get them back in time for their connecting flight.",
+      "questions": [
+        { "q": "Why do many travellers hesitate to leave the airport during a long stopover?", "a": "Because they are afraid they will not get back in time for their connecting flight.", "keys": ["in time", "connecting flight", "miss the flight", "miss their flight"] },
+        { "q": "What service does TripAside offer to air travellers?", "a": "A guide collects them at the airport and takes them on a stopover tour around the city.", "keys": ["stopover tour", "guide", "around the city", "tour of the city"] },
+        { "q": "What critical guarantee does the guide provide to passengers?", "a": "That they will be back at the airport in time for their connecting flight.", "keys": ["back in time", "in time", "connecting flight"] }
+      ]
+    },
+    {
+      "title": "The Remake Project",
+      "text": "The Remake Project was the idea of Canadian artist Jeff Hamada. He asked readers of his website to remake a famous work of art as a photo. Hundreds of people sent photos to the project and the photos appeared in blogs, in newspapers, and in a book.",
+      "questions": [
+        { "q": "Who created the Remake Project?", "a": "The Canadian artist Jeff Hamada.", "keys": ["jeff hamada", "hamada"] },
+        { "q": "What were participants asked to do for the project?", "a": "Remake a famous work of art as a photo.", "keys": ["remake", "famous work of art", "as a photo", "photograph"] },
+        { "q": "Where were the submitted photos published?", "a": "In blogs, in newspapers and in a book.", "keys": ["blogs", "newspapers", "book"] }
+      ]
+    },
+    {
+      "title": "The Ice Cream Sellers Paradox",
+      "text": "Imagine a beach a kilometre long, full of sunbathers. An ice cream seller called George arrives and puts his cart in the middle of the beach so sunbathers can easily walk to him. Later, a second seller, Georgina, arrives. They divide the beach into two halves and each puts their cart in the middle of their half. Nobody walks more than 250 metres. But soon, George wants more customers, so he moves back to the very middle of the beach. Georgina does the same. Now, both sellers are next to each other again in the center, forcing some customers to walk up to 500 metres.",
+      "questions": [
+        { "q": "Why did George and Georgina initially split the beach into two equal zones?", "a": "So that nobody had to walk more than 250 metres to buy an ice cream.", "keys": ["250", "two halves", "half", "shorter walk", "less"] },
+        { "q": "What caused George to move his ice cream cart back to the center?", "a": "He wanted to reach more customers.", "keys": ["more customers", "customers"] },
+        { "q": "Why is the final situation worse for some beachgoers?", "a": "Because some of them now have to walk up to 500 metres.", "keys": ["500", "further", "farther", "longer walk", "twice"] }
+      ]
+    },
+    {
+      "title": "A Boring Weekend? Don't Tell Anybody!",
+      "text": "A new survey has shown that 20% of British people tell lies about their weekend on social media. The survey shows that people invent stories to make their lives appear more interesting than they really are. Psychologist Judi James explained that when people read their friends' posts on Facebook or Instagram, they begin to feel jealous and think their friends have more exciting lives. The most popular lies are going to a party or having a romantic break.",
+      "questions": [
+        { "q": "What percentage of British people lie about their weekend activities on social media?", "a": "Twenty per cent.", "keys": ["20", "twenty"] },
+        { "q": "Why do people invent stories according to psychologist Judi James?", "a": "Because reading their friends' posts makes them jealous, so they try to look more interesting.", "keys": ["jealous", "envious", "more interesting", "more exciting"] },
+        { "q": "What are two of the most common lies people tell online?", "a": "Going to a party and having a romantic break.", "keys": ["party", "romantic"] }
+      ]
+    },
+    {
+      "title": "Why Negative Thinking Can Be Positive",
+      "text": "Everybody thinks that it's better to be an optimist than a pessimist. But in fact, there's a kind of pessimism—called 'defensive pessimism'—that can lead to very positive results. Defensive pessimism is a strategy used in specific situations to manage anxiety and fear. Defensive pessimists think about future situations and prepare for them by imagining all the things that can go wrong. By planning how to avoid each problem, they gain control and achieve better results.",
+      "questions": [
+        { "q": "What is the main purpose of 'defensive pessimism'?", "a": "To manage anxiety and fear in specific situations.", "keys": ["anxiety", "fear", "manage"] },
+        { "q": "How do defensive pessimists prepare for important future events?", "a": "By imagining everything that could go wrong and planning how to avoid each problem.", "keys": ["go wrong", "imagining", "imagine", "planning", "plan"] },
+        { "q": "How does imagining potential problems help defensive pessimists perform better?", "a": "It gives them a sense of control, and that control leads to better results.", "keys": ["control", "better results"] }
+      ]
+    },
+    {
+      "title": "The Girl Who Inspired 'I Have a Dream'",
+      "text": "Mahalia Jackson was a gospel music legend who helped bring church music to large audiences. She was also an important member of the Civil Rights Movement and a close friend of Martin Luther King. During the famous 1963 march in Washington, King was giving a speech that wasn't going very well. Suddenly, Mahalia shouted from the crowd: 'Tell them about the dream, Martin!' King threw away his written notes and delivered his iconic 'I have a dream' speech.",
+      "questions": [
+        { "q": "What was Mahalia Jackson's connection to Martin Luther King?", "a": "She was a close friend of his and an important member of the Civil Rights Movement.", "keys": ["close friend", "friend", "civil rights"] },
+        { "q": "What did Mahalia shout to King during his speech in Washington?", "a": "\u201cTell them about the dream, Martin!\u201d", "keys": ["about the dream", "the dream"] },
+        { "q": "What did Martin Luther King do right after hearing Mahalia's shout?", "a": "He threw away his written notes and delivered the 'I have a dream' speech.", "keys": ["threw away", "notes", "i have a dream", "improvised"] }
+      ]
+    },
+    {
+      "title": "How to Survive Your First Day in a New Office",
+      "text": "Everybody gets nervous on their first day at any job. Plan to arrive at least ten minutes early, but not more than twenty—you don't want to look too enthusiastic. Try to remember everybody's name, and if you forget, just admit it politely. Offer to make coffee or bring water for your colleagues, but don't make it either extremely well or very badly. Finally, don't think that staying late will impress your boss on day one.",
+      "questions": [
+        { "q": "What is the recommended arrival time window for your first day at work?", "a": "Between ten and twenty minutes early.", "keys": ["ten", "10", "twenty", "20"] },
+        { "q": "What advice does the text give regarding making coffee for colleagues?", "a": "Offer to make it, but don't make it extremely well or very badly.", "keys": ["offer", "not too well", "extremely well", "very badly", "neither"] },
+        { "q": "Does staying late on your first day impress your boss according to the text?", "a": "No, the text says staying late will not impress your boss on day one.", "keys": ["no", "not", "won't", "wont", "doesn't", "doesnt"] }
+      ]
+    },
+    {
+      "title": "Are the British Really Bad at Learning Languages?",
+      "text": "The British are famous for being bad at learning languages. In any city around the world, you can hear British tourists asking for the menu in English. Many British people think: 'I don't have to learn a foreign language because everyone speaks English nowadays.' In British schools, children only have to study a language until age 14, and 30% of students stop after that because they think foreign languages are too difficult.",
+      "questions": [
+        { "q": "What common belief stops many British people from trying to learn foreign languages?", "a": "The belief that everyone speaks English nowadays, so learning another language is unnecessary.", "keys": ["everyone speaks english", "everybody speaks english", "english is spoken", "dont have to"] },
+        { "q": "Up to what age is language learning compulsory in British schools?", "a": "Until the age of 14.", "keys": ["14", "fourteen"] },
+        { "q": "Why do 30% of British students decide to stop studying languages after age 14?", "a": "Because they think foreign languages are too difficult.", "keys": ["difficult", "hard"] }
+      ]
+    },
+    {
+      "title": "Doing Housework Is Good for Your Health",
+      "text": "Doing exercise for 30 minutes a day is good for health, a new Canadian study has found. The study looked at 130,000 people in 17 countries. Researchers discovered that you don't need to do sport or go to the gym to stay healthy; any form of physical activity is effective, including housework. Activities like cleaning the house offer great exercise, allowing you to stay healthy and maintain a tidy home at the same time.",
+      "questions": [
+        { "q": "How many people participated in the Canadian health study?", "a": "130,000 people, in 17 countries.", "keys": ["130000", "130,000"] },
+        { "q": "Do researchers say you must go to a gym to stay healthy?", "a": "No. Any form of physical activity works, including housework.", "keys": ["no", "not", "dont", "any physical activity", "any form"] },
+        { "q": "What double benefit does doing household cleaning provide?", "a": "You stay healthy and keep the house tidy at the same time.", "keys": ["healthy", "tidy", "clean home", "clean house"] }
+      ]
+    },
+    {
+      "title": "How to Be a Queue Winner",
+      "text": "Do you know why the queues at other checkouts always seem to move faster than yours? According to author David Andrews, you only notice how fast other queues move when your own line is slow. To pick a winning queue, Andrews suggests choosing a line with more men, because men are less patient and often leave slow queues. He also recommends choosing a queue on the left, as most right-handed people naturally pick queues on the right.",
+      "questions": [
+        { "q": "Why do we usually notice the speed of other queues only when ours is slow?", "a": "Because we only pay attention to the other lines when our own line is moving slowly.", "keys": ["own line is slow", "our queue is slow", "when ours is slow", "only notice"] },
+        { "q": "Why is choosing a queue with more men recommended?", "a": "Because men are less patient and often leave slow queues.", "keys": ["less patient", "impatient", "leave"] },
+        { "q": "Why are queues on the left side often shorter in supermarkets?", "a": "Because most people are right-handed and naturally choose the queue on the right.", "keys": ["right handed", "righthanded", "right-handed"] }
+      ]
+    }
+  ];
+
+  /* ============================================================
+     READING · CONTEXT CLUES — huecos con dos opciones
+     La opción correcta se guarda por texto, no por posición.
+     ============================================================ */
+  const RD_CLUES = [
+    {
+      "title": "The Milkmaid Remake Project",
+      "text": "In the original painting by Vermeer, a woman is standing {1} a table, pouring milk into a bowl. There is some bread {2} the table, right {3} a basket. In the modern photo remake, the young man is standing {4} the table, but he is pouring milk from a plastic bottle instead of a jug.",
+      "gaps": [
+        { "opts": ["behind", "next to"], "ok": "behind", "why": "La mujer está detrás de la mesa: es la posición desde la que sirve." },
+        { "opts": ["on", "under"], "ok": "on", "why": "El pan está apoyado sobre la mesa, a la vista." },
+        { "opts": ["next to", "behind"], "ok": "next to", "why": "El pan está junto a la cesta, no detrás de ella." },
+        { "opts": ["behind", "in front of"], "ok": "behind", "why": "El contraste que marca «but» es la botella, no la posición: sigue detrás de la mesa." }
+      ]
+    },
+    {
+      "title": "Steve and Carmen's Love Story",
+      "text": "Steve and Carmen fell in love in England and decided to get married. However, {1} their engagement, Carmen moved to France for work. Steve tried to write her a letter, {2} he sent it to her mother's house in Spain. {3} Steve hoped for an answer, Carmen's mother forgot to forward the letter, and it stayed behind the fireplace {4}.",
+      "gaps": [
+        { "opts": ["a year after", "for ten years"], "ok": "a year after", "why": "Marca un momento puntual posterior al compromiso." },
+        { "opts": ["so", "although"], "ok": "so", "why": "Consecuencia: no tenía su dirección, por eso la mandó a lo de la madre." },
+        { "opts": ["Although", "So"], "ok": "Although", "why": "Contraste entre lo que él esperaba y lo que efectivamente pasó." },
+        { "opts": ["for ten years", "a year after"], "ok": "for ten years", "why": "Duración: la carta quedó ahí durante diez años." }
+      ]
+    },
+    {
+      "title": "First Day Office Survival",
+      "text": "When you start a new job, plan to arrive ten minutes early {1} show punctuality without looking desperate. Offer to make coffee for your team {2} a friendly impression, but don't try to be perfect. If you forget someone's name, apologize immediately {3} honesty is better than calling someone by the wrong name all day.",
+      "gaps": [
+        { "opts": ["in order to", "because"], "ok": "in order to", "why": "Finalidad seguida de infinitivo: para qué llegás temprano." },
+        { "opts": ["to make", "so that"], "ok": "to make", "why": "«so that» necesita sujeto y verbo conjugado; acá va infinitivo de finalidad." },
+        { "opts": ["because", "so that"], "ok": "because", "why": "Introduce la razón por la que conviene disculparse enseguida." }
+      ]
+    },
+    {
+      "title": "The Bank of Happiness",
+      "text": "In Tallinn, Estonia, there is a unique initiative called the Bank of Happiness. It is a place {1} people exchange services {2} using any real money. For example, if you need someone to teach you English, you post a request on the platform. Someone helps you, and {3} paying them, you offer to do another favor\u2014like walking a dog or fixing a computer\u2014for another member of the community.",
+      "gaps": [
+        { "opts": ["where", "which"], "ok": "where", "why": "El antecedente es un lugar, así que el relativo es «where»." },
+        { "opts": ["without", "instead of"], "ok": "without", "why": "Ausencia de dinero, sin sustituirlo por otra cosa en esa frase." },
+        { "opts": ["instead of", "without"], "ok": "instead of", "why": "Acá sí hay sustitución: en lugar de pagar, devolvés un favor." }
+      ]
+    },
+    {
+      "title": "Are the British Bad at Languages?",
+      "text": "Many people in the UK believe they {1} learn a second language {2} English is spoken widely around the world. In British schools, students {3} study a foreign language after age 14 if they choose not to. {4} some journalists tested intensive courses abroad, most adults still struggle with basic daily interactions in other countries.",
+      "gaps": [
+        { "opts": ["don't have to", "must"], "ok": "don't have to", "why": "Ausencia de obligación, no prohibición ni deber." },
+        { "opts": ["because", "although"], "ok": "because", "why": "Da la causa de esa creencia." },
+        { "opts": ["have to", "don't have to"], "ok": "don't have to", "why": "«if they choose not to» confirma que después de los 14 deja de ser obligatorio." },
+        { "opts": ["Although", "Because"], "ok": "Although", "why": "Contraste entre el experimento de los periodistas y la realidad de la mayoría." }
+      ]
+    },
+    {
+      "title": "The Story of Twin Strangers",
+      "text": "Cordelia and Ciara met by chance at university. {1} girls had the exact same hair color, height, and age. People {2} saw them together assumed they were identical twins. Inspired by this phenomenon, a website was created to help people find someone who looks just {3} them anywhere in the world. The results were {4} surprising that thousands of people signed up immediately.",
+      "gaps": [
+        { "opts": ["Both", "So"], "ok": "Both", "why": "Se refiere a las dos chicas como conjunto." },
+        { "opts": ["who", "which"], "ok": "who", "why": "El antecedente son personas." },
+        { "opts": ["like", "as"], "ok": "like", "why": "«look like» + sustantivo es la fórmula del parecido físico." },
+        { "opts": ["so", "both"], "ok": "so", "why": "Estructura «so + adjetivo + that» para expresar consecuencia." }
+      ]
+    },
+    {
+      "title": "Unbelievable News: Cupcake the Cat",
+      "text": "A woman received a big surprise when she opened a box of DVDs that she {1} on eBay. A live cat suddenly {2} out of the package! The cat's owner explained that her pet {3} asleep inside the box eight days earlier while she was packing it. She only {4} what had happened when the vet contacted her using the cat's microchip.",
+      "gaps": [
+        { "opts": ["had bought", "bought"], "ok": "had bought", "why": "La compra es anterior al momento de abrir la caja: pasado perfecto." },
+        { "opts": ["jumped", "had jumped"], "ok": "jumped", "why": "Acción principal del relato, en pasado simple." },
+        { "opts": ["had fallen", "fell"], "ok": "had fallen", "why": "«eight days earlier» marca anterioridad respecto del relato." },
+        { "opts": ["realized", "had realized"], "ok": "realized", "why": "Ocurre después de todo lo anterior: pasado simple." }
+      ]
+    },
+    {
+      "title": "One Dark October Evening",
+      "text": "Hannah met Jamie last summer at a club. She asked the DJ to play a different song. {1}, he announced: 'The next song is for a girl in a pink dress.' When Hannah left, the DJ was waiting for her at the door. {2}, Jamie invited her to dinner at a French restaurant. They started seeing each other every day. {3}, Hannah was driving fast to meet Jamie at 5:30 PM because she was in a hurry. {4}, a man ran across the road in a dark coat.",
+      "gaps": [
+        { "opts": ["Two minutes later", "Suddenly"], "ok": "Two minutes later", "why": "Marca el intervalo breve entre el pedido y el anuncio." },
+        { "opts": ["After that", "One evening in October"], "ok": "After that", "why": "Enlaza con lo inmediatamente anterior, sin fijar una fecha nueva." },
+        { "opts": ["One evening in October", "Two minutes later"], "ok": "One evening in October", "why": "Abre una escena nueva y la ubica en el tiempo." },
+        { "opts": ["Suddenly", "After that"], "ok": "Suddenly", "why": "Introduce el hecho inesperado que corta la escena." }
+      ]
+    },
+    {
+      "title": "How to Take Better Holiday Photos",
+      "text": "Holiday time is when we all want to record happy memories. I took a photo in Bruges early in the morning {1} the light was warm and there were no tourists around. Evening light is also good, {2} there are usually many more people. When visiting famous places, try not to take the exact same photo as everyone else; look for small details {3} other photographers haven't noticed.",
+      "gaps": [
+        { "opts": ["because", "although"], "ok": "because", "why": "Explica el motivo de sacar la foto a esa hora." },
+        { "opts": ["but", "so"], "ok": "but", "why": "Contrasta la ventaja de la luz con la desventaja de la gente." },
+        { "opts": ["which", "who"], "ok": "which", "why": "El antecedente son detalles, no personas." }
+      ]
+    },
+    {
+      "title": "Murphy's Law in Action",
+      "text": "If you are standing in a slow queue at the supermarket and change to another one, {1}. If you carry an umbrella because you think it will rain, {2}. These situations are named after Captain Edward Murphy, {3} was an engineer studying military plane safety in the 1940s.",
+      "gaps": [
+        { "opts": ["the first queue will start moving faster", "it will close immediately"], "ok": "the first queue will start moving faster", "why": "La ironía de la ley de Murphy: la fila que dejaste avanza." },
+        { "opts": ["it won't rain at all", "you will lose it"], "ok": "it won't rain at all", "why": "El resultado contrario al que preparaste." },
+        { "opts": ["who", "which"], "ok": "who", "why": "El antecedente es una persona." }
+      ]
+    }
+  ];
+
+  /* ============================================================
+     READING — espacio de módulo: índice lateral y correcciones
+     ============================================================ */
+  (function initReadingModules() {
+    const elView = $("view-reading");
+    const elRail = $("rdRail");
+    const elIndex = $("rdIndex");
+    const elScroller = $("rdScroller");
+    const elList = $("rdList");
+    const elBadge = $("rdProgressBadge");
+    const elName = $("rdModuleName");
+    const elBack = $("rdBack");
+    if (!elView || !elList) return;
+
+    const DONE_KEY = "rd_done";
+    let done = store.get(DONE_KEY, {}) || {};
+    let moduleKey = "academic";
+    let pos = 0;
+    let clueState = null;
+
+    const MODULES = {
+      academic: { name: "Academic Passages", pane: "rdPaneAcademic", items: () => readingPassages, open: openAcademic },
+      bites: { name: "Bite-Sized Reads", pane: "rdPaneBites", items: () => RD_BITES, open: openBite },
+      clues: { name: "Context Clues", pane: "rdPaneClues", items: () => RD_CLUES, open: openClue }
+    };
+    const MODULE_BY_NAME = {
+      "Academic Passages": "academic",
+      "Bite-Sized Reads": "bites",
+      "Context Clues": "clues"
+    };
+
+    /* ---------- índice lateral ---------- */
+    function doneKey(mod, i) { return mod + ":" + i; }
+    function markDone(perfect) {
+      const key = doneKey(moduleKey, pos);
+      if (perfect) { done[key] = true; store.set(DONE_KEY, done); }
+      renderIndex();
+      updateBadge();
+      if (perfect) logActivity();
+    }
+
+    function updateBadge() {
+      if (!elBadge) return;
+      const items = MODULES[moduleKey].items();
+      let n = 0;
+      items.forEach((_, i) => { if (done[doneKey(moduleKey, i)]) n++; });
+      elBadge.textContent = n + " / " + items.length;
+      elBadge.setAttribute("title", n + " de " + items.length + " resueltos en este módulo");
+    }
+
+    function renderIndex() {
+      const items = MODULES[moduleKey].items();
+      elList.innerHTML = items.map((it, i) => {
+        const label = numberWord(i + 1);
+        const isSel = i === pos;
+        const isDone = !!done[doneKey(moduleKey, i)];
+        return '<li class="wr-list-item' + (isSel ? " is-selected" : "") + (isDone ? " is-done" : "") +
+          '" role="option" tabindex="0" data-rd-pos="' + i + '" aria-selected="' + (isSel ? "true" : "false") +
+          '" title="' + esc(it.title) + '" aria-label="' + label + ": " + esc(it.title) + '">' +
+          '<span class="wr-item-row">' +
+          '<span class="wr-dot" aria-hidden="true"></span>' +
+          '<span class="wr-item-title">' + label + "</span>" +
+          (isDone ? '<span class="wr-item-flag wr-done-flag" title="Resuelto">\u2713</span>' : "") +
+          "</span></li>";
+      }).join("");
+      syncFades();
+    }
+
+    function syncFades() {
+      if (!elIndex || !elScroller) return;
+      const top = elScroller.scrollTop;
+      const rest = elScroller.scrollHeight - (top + elScroller.clientHeight);
+      const atEnd = elScroller.scrollHeight <= elScroller.clientHeight + 1;
+      elIndex.style.setProperty("--wrx-fade-top", String(Math.min(top / 28, 1)));
+      elIndex.style.setProperty("--wrx-fade-bottom", atEnd ? "0" : String(Math.min(rest / 28, 1)));
+    }
+
+    function revealSelected() {
+      const node = elList.querySelector(".wr-list-item.is-selected");
+      if (node) node.scrollIntoView({ block: "nearest" });
+      syncFades();
+    }
+
+    /* ---------- paneles colapsables ---------- */
+    function setPanelOpen(panel, open) {
+      if (!panel) return;
+      panel.classList.toggle("is-open", open);
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) toggle.setAttribute("aria-expanded", String(open));
+      if (panel === elIndex) window.setTimeout(syncFades, 340);
+    }
+    function closePanels() { setPanelOpen(elRail, false); setPanelOpen(elIndex, false); }
+
+    [elRail, elIndex].forEach(panel => {
+      if (!panel) return;
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) {
+        toggle.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const open = !panel.classList.contains("is-open");
+          closePanels();
+          setPanelOpen(panel, open);
+        });
+      }
+      panel.addEventListener("pointerleave", (ev) => {
+        if (ev.pointerType === "touch") return;
+        setPanelOpen(panel, false);
+      });
+    });
+
+    document.addEventListener("pointerdown", (ev) => {
+      if (!elView.classList.contains("is-active")) return;
+      if (ev.target.closest(".wrx-panel")) return;
+      closePanels();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape" || !elView.classList.contains("is-active")) return;
+      closePanels();
+      if (document.activeElement && document.activeElement.closest(".wrx-panel")) document.activeElement.blur();
+    });
+    if (elScroller) elScroller.addEventListener("scroll", syncFades, { passive: true });
+    window.addEventListener("resize", syncFades, { passive: true });
+
+    /* ---------- selección ---------- */
+    elList.addEventListener("click", (ev) => {
+      const li = ev.target.closest(".wr-list-item");
+      if (li) select(Number(li.dataset.rdPos));
+    });
+    elList.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const li = ev.target.closest(".wr-list-item");
+      if (li) { ev.preventDefault(); select(Number(li.dataset.rdPos)); }
+    });
+    if (elBack) elBack.addEventListener("click", () => { closePanels(); go("reading-hub"); });
+
+    function select(i) {
+      const items = MODULES[moduleKey].items();
+      if (!Number.isInteger(i) || i < 0 || i >= items.length) return;
+      pos = i;
+      MODULES[moduleKey].open(i);
+      renderIndex();
+      updateBadge();
+      revealSelected();
+      emitRoute();
+    }
+
+    /* ---------- Academic Passages ---------- */
+    function openAcademic(i) {
+      rIndex = i;
+      store.set("readingIndex", i);
+      newReading();
+    }
+    // Marca el texto como resuelto sólo con puntaje perfecto.
+    if ($("rCheck")) $("rCheck").addEventListener("click", () => {
+      if (moduleKey !== "academic") return;
+      const m = /^(\d+)\s*\/\s*(\d+)/.exec($("rScore").textContent || "");
+      if (m && m[1] === m[2]) markDone(true);
+    });
+
+    /* ---------- Bite-Sized Reads ---------- */
+    function openBite(i) {
+      const ex = RD_BITES[i];
+      $("rbTitle").textContent = ex.title;
+      $("rbText").innerHTML = "<p>" + esc(ex.text) + "</p>";
+      $("rbQuestions").innerHTML = ex.questions.map((q, k) =>
+        '<div class="q-item" data-bq="' + k + '">' +
+        '<div class="q-text">' + (k + 1) + ". " + esc(q.q) + "</div>" +
+        '<input class="rd-answer" type="text" data-bq="' + k + '" autocomplete="off" placeholder="Your answer\u2026" />' +
+        "</div>"
+      ).join("");
+      $("rbScore").textContent = "";
+    }
+
+    function checkBites() {
+      const ex = RD_BITES[pos];
+      if (!ex) return;
+      let correct = 0;
+      ex.questions.forEach((q, k) => {
+        const item = $("rbQuestions").querySelector('.q-item[data-bq="' + k + '"]');
+        const value = norm(item.querySelector("input").value);
+        const ok = !!value && q.keys.some(key => value.includes(norm(key)));
+        if (ok) correct++;
+        item.classList.remove("correct", "wrong");
+        item.classList.add(ok ? "correct" : "wrong");
+        let v = item.querySelector(".q-verdict");
+        if (!v) { v = document.createElement("div"); v.className = "q-verdict"; item.appendChild(v); }
+        v.className = "q-verdict " + (ok ? "ok" : "no");
+        v.textContent = ok ? "\u2713 La idea clave está" : "\u2717 Falta la idea clave";
+        let m = item.querySelector(".rd-model");
+        if (!m) { m = document.createElement("div"); m.className = "rd-model"; item.appendChild(m); }
+        m.innerHTML = "<strong>Respuesta modelo:</strong> " + esc(q.a);
+      });
+      $("rbScore").textContent = correct + " / " + ex.questions.length + " correctas";
+      markDone(correct === ex.questions.length);
+    }
+
+    if ($("rbCheck")) $("rbCheck").addEventListener("click", checkBites);
+    if ($("rbClear")) $("rbClear").addEventListener("click", () => openBite(pos));
+
+    /* ---------- Context Clues ---------- */
+    function shuffle2(arr) {
+      const a = arr.slice();
+      if (Math.random() < 0.5) { const t = a[0]; a[0] = a[1]; a[1] = t; }
+      return a;
+    }
+
+    function openClue(i) {
+      const ex = RD_CLUES[i];
+      clueState = { picked: ex.gaps.map(() => null), order: ex.gaps.map(g => shuffle2(g.opts)) };
+      $("rcTitle").textContent = ex.title;
+      renderClueText();
+      $("rcGaps").innerHTML = ex.gaps.map((g, k) =>
+        '<div class="rd-gap-row" data-cg="' + k + '">' +
+        '<span class="rd-gap-label">' + (k + 1) + ".</span>" +
+        clueState.order[k].map(o =>
+          '<button type="button" class="rd-opt" data-cg="' + k + '" data-opt="' + esc(o) + '">' + esc(o) + "</button>"
+        ).join("") +
+        "</div>"
+      ).join("");
+      $("rcScore").textContent = "";
+    }
+
+    function renderClueText() {
+      const ex = RD_CLUES[pos];
+      if (!ex || !clueState) return;
+      let html = "";
+      const parts = ex.text.split(/\{(\d+)\}/);
+      parts.forEach((chunk, idx) => {
+        if (idx % 2 === 0) { html += esc(chunk); return; }
+        const k = Number(chunk) - 1;
+        const picked = clueState.picked[k];
+        html += '<span class="rd-gap' + (picked ? "" : " is-empty") + '" data-gap="' + k + '">' +
+          '<span class="rd-gap-num">' + (k + 1) + "</span>" +
+          '<span class="rd-gap-word">' + (picked ? esc(picked) : "\u2014\u2014\u2014") + "</span></span>";
+      });
+      $("rcText").innerHTML = html;
+    }
+
+    if ($("rcGaps")) $("rcGaps").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".rd-opt");
+      if (!btn || !clueState) return;
+      const k = Number(btn.dataset.cg);
+      clueState.picked[k] = btn.dataset.opt;
+      btn.parentElement.querySelectorAll(".rd-opt").forEach(b => b.classList.remove("sel"));
+      btn.classList.add("sel");
+      renderClueText();
+    });
+
+    function checkClues() {
+      const ex = RD_CLUES[pos];
+      if (!ex || !clueState) return;
+      let correct = 0;
+      ex.gaps.forEach((g, k) => {
+        const row = $("rcGaps").querySelector('.rd-gap-row[data-cg="' + k + '"]');
+        const chosen = clueState.picked[k];
+        const ok = chosen === g.ok;
+        if (ok) correct++;
+        row.querySelectorAll(".rd-opt").forEach(b => {
+          b.classList.remove("is-right", "is-wrong");
+          if (b.dataset.opt === g.ok) b.classList.add("is-right");
+          else if (b.dataset.opt === chosen) b.classList.add("is-wrong");
+        });
+        let v = row.querySelector(".q-verdict");
+        if (!v) { v = document.createElement("div"); v.className = "q-verdict"; row.appendChild(v); }
+        v.className = "q-verdict " + (ok ? "ok" : "no");
+        v.textContent = ok ? "\u2713 Correcto" : "\u2717 " + g.ok + ". " + g.why;
+        const gapEl = $("rcText").querySelector('.rd-gap[data-gap="' + k + '"]');
+        if (gapEl) { gapEl.classList.remove("is-right", "is-wrong"); gapEl.classList.add(ok ? "is-right" : "is-wrong"); }
+      });
+      $("rcScore").textContent = correct + " / " + ex.gaps.length + " correctas";
+      markDone(correct === ex.gaps.length);
+    }
+
+    if ($("rcCheck")) $("rcCheck").addEventListener("click", checkClues);
+    if ($("rcClear")) $("rcClear").addEventListener("click", () => openClue(pos));
+
+    /* ---------- apertura de módulo ---------- */
+    function setModule(key) {
+      moduleKey = MODULES[key] ? key : "academic";
+      elView.setAttribute("data-rd-module", moduleKey);
+      if (elName) elName.textContent = MODULES[moduleKey].name;
+      Object.keys(MODULES).forEach(k => {
+        const pane = $(MODULES[k].pane);
+        if (pane) pane.classList.toggle("hidden", k !== moduleKey);
+      });
+      closePanels();
+      if (elScroller) elScroller.scrollTop = 0;
+    }
+
+    function openModule(name) {
+      const key = MODULE_BY_NAME[name] || "academic";
+      setModule(key);
+      go("reading");
+      select(key === "academic" ? Math.min(Math.max(rIndex, 0), readingPassages.length - 1) : 0);
+    }
+
+    function emitRoute() {
+      if (!elView.classList.contains("is-active")) return;
+      const mod = MODULES[moduleKey];
+      const item = mod.items()[pos];
+      setRoute(["reading", routeSlug(mod.name), item ? shortSlug(item.title) : null]);
+    }
+
+    registerSection("reading", {
+      apply(moduleSlug, exerciseSlug) {
+        const key = Object.keys(MODULES).find(k => routeSlug(MODULES[k].name) === moduleSlug);
+        if (!key) { go("reading-hub"); return; }
+        openModule(MODULES[key].name);
+        if (!exerciseSlug) return;
+        const at = MODULES[key].items().findIndex(item => shortSlug(item.title) === exerciseSlug);
+        if (at >= 0) select(at);
+      }
+    });
+
+    // Los accesos directos existentes (Express Reading) abren Academic Passages.
+    document.addEventListener("click", (ev) => {
+      if (ev.target.closest('[data-go="reading"]')) openModule("Academic Passages");
+    });
+
+    window.ETReading = {
+      openModule: openModule,
+      syncIndex: function () {
+        if (moduleKey === "academic") pos = rIndex;
+        renderIndex();
+        updateBadge();
+      }
+    };
+
+    // Estado inicial coherente con el texto guardado, sin navegar.
+    setModule("academic");
+    select(Math.min(Math.max(rIndex, 0), readingPassages.length - 1));
+  })();
+
+  /* ============================================================
+     SPEAKING — cuatro dinámicas sobre la misma maqueta de taller
+     ============================================================ */
+  const SP_TRANSLATE = [
+    {
+      "es": "No llego a fin de mes si sigo gastando tanto.",
+      "en": "I won't make ends meet if I keep spending so much.",
+      "alts": [
+        "I can't make it to the end of the month if I keep spending like this.",
+        "At this rate I'm not going to make ends meet."
+      ],
+      "note": "«make ends meet» es la fórmula fija para llegar a fin de mes. Después de «keep» el verbo va en -ing, nunca en infinitivo."
+    },
+    {
+      "es": "Avisa si te surge algún imprevisto a último momento.",
+      "en": "Let me know if anything comes up at the last minute.",
+      "alts": [
+        "Give me a heads-up if something unexpected comes up.",
+        "Tell me if anything crops up last minute."
+      ],
+      "note": "«come up» es el phrasal verb natural para «surgir». «a heads-up» es un aviso anticipado, siempre con artículo."
+    }
+  ];
+
+  const SP_MONOLOGUE = [
+    {
+      "topic": "Describe your typical weekday routine and what you usually do to unwind after work.",
+      "points": [
+        { "en": "How your day starts", "es": "Inicio del día: horario, primeras rutinas, traslado." },
+        { "en": "The main challenge of your day", "es": "Desafío principal: qué parte te cuesta más y por qué." },
+        { "en": "What you do in the evening to unwind", "es": "Actividad nocturna: cómo cortás con el trabajo." }
+      ],
+      "vocab": [
+        { "group": "Conectores", "items": ["To begin with", "After that", "What I find hardest is…", "By the time I get home", "Once I've finished", "More often than not", "All in all"] },
+        { "group": "Términos clave", "items": ["a fixed routine", "commute", "back-to-back meetings", "juggle tasks", "wind down", "switch off", "recharge"] }
+      ],
+      "sample": "To begin with, my weekday starts at around half past six. I'm not a morning person at all, so the first half hour is mostly coffee and silence. After that I commute for about forty minutes, which I actually don't mind because it's the only time I get to listen to podcasts. What I find hardest is the middle of the afternoon: I usually have back-to-back meetings from two until five, and by the end of them my concentration is gone. Trying to juggle those meetings with actual work is the real challenge of my day. By the time I get home it's nearly seven, and I've learned that I need something physical to switch off properly, so I either go for a run or cook something that takes a while. More often than not I end up watching an episode of something before bed. All in all, it's a fairly fixed routine, and honestly that's what makes it manageable."
+    }
+  ];
+
+  const SP_SHADOWING = [
+    {
+      "title": "Reproche informal · ritmo rápido",
+      "text": "If you're in a **hurry**, | you **should've** told me **before** | we left the house!",
+      "meta": "≈ 6 s · inglés hablado informal · contracción «should've»"
+    }
+  ];
+
+  const SP_ROLEPLAY = [
+    {
+      "scenario": "Hotel Reception — Reporting a problem with the room heating.",
+      "role": "Sos el huésped de la habitación 412. La calefacción no funciona y son casi las once de la noche.",
+      "turns": [
+        {
+          "partner": "Good evening, reception. How can I help you?",
+          "goal": "Presentate, decí en qué habitación estás y explicá el problema en una sola frase.",
+          "suggestion": "Hi, good evening. This is room 412 — the heating doesn't seem to be working. The room is freezing."
+        },
+        {
+          "partner": "I'm sorry to hear that. Have you tried turning the thermostat up?",
+          "goal": "Decí que ya lo intentaste y agregá un detalle concreto que lo demuestre.",
+          "suggestion": "Yes, I turned it all the way up about an hour ago and nothing happened. The radiator is completely cold."
+        },
+        {
+          "partner": "I can send a maintenance technician up in about twenty minutes. Would that be all right?",
+          "goal": "Aceptá, pero pedí una alternativa por si no se resuelve esta noche.",
+          "suggestion": "That's fine, thank you. But if it can't be fixed tonight, would it be possible to move to another room?"
+        },
+        {
+          "partner": "Of course. I'll make a note on your booking and call you back either way.",
+          "goal": "Agradecé y confirmá por dónde te van a contactar.",
+          "suggestion": "Great, thanks very much. You can reach me on the room phone — I'll be here."
+        }
+      ]
+    }
+  ];
+
+  (function initSpeakingModules() {
+    const elView = $("view-speaking");
+    const elRail = $("spRail");
+    const elIndex = $("spIndex");
+    const elScroller = $("spScroller");
+    const elList = $("spList");
+    const elBadge = $("spProgressBadge");
+    const elName = $("spModuleName");
+    const elBack = $("spBack");
+    if (!elView || !elList) return;
+
+    const DONE_KEY = "sp_done";
+    let done = store.get(DONE_KEY, {}) || {};
+    let moduleKey = "translate";
+    let pos = 0;
+
+    const MODULES = {
+      translate: { name: "Quick Translate", pane: "spPaneTranslate", items: () => SP_TRANSLATE, label: (x) => x.es, open: openTranslate },
+      monologue: { name: "Monologue Challenge", pane: "spPaneMonologue", items: () => SP_MONOLOGUE, label: (x) => x.topic, open: openMonologue },
+      shadowing: { name: "Shadowing", pane: "spPaneShadowing", items: () => SP_SHADOWING, label: (x) => x.title, open: openShadowing },
+      roleplay: { name: "Roleplay", pane: "spPaneRoleplay", items: () => SP_ROLEPLAY, label: (x) => x.scenario, open: openRoleplay }
+    };
+    const MODULE_BY_NAME = {
+      "Quick Translate": "translate",
+      "Monologue Challenge": "monologue",
+      "Shadowing": "shadowing",
+      "Roleplay": "roleplay"
+    };
+
+    /* ---------- utilidades compartidas ---------- */
+    function speakEn(text, rate) {
+      if (!("speechSynthesis" in window)) return null;
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-GB";
+      u.rate = rate || 0.95;
+      speechSynthesis.speak(u);
+      return u;
+    }
+
+    function clock(s) {
+      return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    }
+
+    // Un grabador por módulo: comparten la lógica y no se pisan entre sí.
+    function makeRecorder(ids, onStop) {
+      const dot = $(ids.dot), time = $(ids.time), start = $(ids.start),
+        stop = $(ids.stop), playback = $(ids.playback), hint = $(ids.hint);
+      let rec = null, chunks = [], timer = null, secs = 0;
+
+      async function begin() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          if (hint) hint.textContent = "Tu navegador no permite grabar audio acá.";
+          return;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          rec = new MediaRecorder(stream);
+          chunks = [];
+          rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+          rec.onstop = () => {
+            const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+            const url = URL.createObjectURL(blob);
+            if (playback) { playback.src = url; playback.hidden = false; }
+            stream.getTracks().forEach(t => t.stop());
+            logActivity();
+            if (onStop) onStop(secs, url);
+          };
+          rec.start();
+          secs = 0;
+          if (time) time.textContent = "00:00";
+          if (dot) dot.classList.add("live");
+          if (start) start.disabled = true;
+          if (stop) stop.disabled = false;
+          timer = setInterval(() => {
+            secs++;
+            if (time) time.textContent = clock(secs);
+            if (ids.bar) {
+              const el = $(ids.bar);
+              if (el) el.style.width = Math.min((secs / 150) * 100, 100) + "%";
+            }
+          }, 1000);
+        } catch {
+          if (hint) hint.textContent = "No pude acceder al micrófono. Revisá los permisos del navegador.";
+        }
+      }
+
+      function end() {
+        if (rec && rec.state !== "inactive") rec.stop();
+        clearInterval(timer);
+        if (dot) dot.classList.remove("live");
+        if (start) start.disabled = false;
+        if (stop) stop.disabled = true;
+      }
+
+      function reset() {
+        end();
+        secs = 0;
+        if (time) time.textContent = "00:00";
+        if (playback) { playback.hidden = true; playback.removeAttribute("src"); }
+        if (ids.bar && $(ids.bar)) $(ids.bar).style.width = "0";
+      }
+
+      if (start) start.addEventListener("click", begin);
+      if (stop) stop.addEventListener("click", end);
+      return { reset: reset, stop: end };
+    }
+
+    /* ---------- índice lateral ---------- */
+    function doneKey(mod, i) { return mod + ":" + i; }
+    function markDone() {
+      const key = doneKey(moduleKey, pos);
+      if (done[key]) return;
+      done[key] = true;
+      store.set(DONE_KEY, done);
+      renderIndex();
+      updateBadge();
+    }
+
+    function updateBadge() {
+      if (!elBadge) return;
+      const items = MODULES[moduleKey].items();
+      let n = 0;
+      items.forEach((_, i) => { if (done[doneKey(moduleKey, i)]) n++; });
+      elBadge.textContent = n + " / " + items.length;
+      elBadge.setAttribute("title", n + " de " + items.length + " practicados en este módulo");
+    }
+
+    function renderIndex() {
+      const mod = MODULES[moduleKey];
+      elList.innerHTML = mod.items().map((it, i) => {
+        const label = numberWord(i + 1);
+        const isSel = i === pos;
+        const isDone = !!done[doneKey(moduleKey, i)];
+        return '<li class="wr-list-item' + (isSel ? " is-selected" : "") + (isDone ? " is-done" : "") +
+          '" role="option" tabindex="0" data-sp-pos="' + i + '" aria-selected="' + (isSel ? "true" : "false") +
+          '" title="' + esc(mod.label(it)) + '" aria-label="' + label + ": " + esc(mod.label(it)) + '">' +
+          '<span class="wr-item-row">' +
+          '<span class="wr-dot" aria-hidden="true"></span>' +
+          '<span class="wr-item-title">' + label + "</span>" +
+          (isDone ? '<span class="wr-item-flag wr-done-flag" title="Practicado">\u2713</span>' : "") +
+          "</span></li>";
+      }).join("");
+      syncFades();
+    }
+
+    function syncFades() {
+      if (!elIndex || !elScroller) return;
+      const top = elScroller.scrollTop;
+      const rest = elScroller.scrollHeight - (top + elScroller.clientHeight);
+      const atEnd = elScroller.scrollHeight <= elScroller.clientHeight + 1;
+      elIndex.style.setProperty("--wrx-fade-top", String(Math.min(top / 28, 1)));
+      elIndex.style.setProperty("--wrx-fade-bottom", atEnd ? "0" : String(Math.min(rest / 28, 1)));
+    }
+
+    /* ---------- paneles colapsables ---------- */
+    function setPanelOpen(panel, open) {
+      if (!panel) return;
+      panel.classList.toggle("is-open", open);
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) toggle.setAttribute("aria-expanded", String(open));
+      if (panel === elIndex) window.setTimeout(syncFades, 340);
+    }
+    function closePanels() { setPanelOpen(elRail, false); setPanelOpen(elIndex, false); }
+
+    [elRail, elIndex].forEach(panel => {
+      if (!panel) return;
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) {
+        toggle.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const open = !panel.classList.contains("is-open");
+          closePanels();
+          setPanelOpen(panel, open);
+        });
+      }
+      panel.addEventListener("pointerleave", (ev) => {
+        if (ev.pointerType === "touch") return;
+        setPanelOpen(panel, false);
+      });
+    });
+
+    document.addEventListener("pointerdown", (ev) => {
+      if (!elView.classList.contains("is-active")) return;
+      if (ev.target.closest(".wrx-panel")) return;
+      closePanels();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape" || !elView.classList.contains("is-active")) return;
+      closePanels();
+      if (document.activeElement && document.activeElement.closest(".wrx-panel")) document.activeElement.blur();
+    });
+    if (elScroller) elScroller.addEventListener("scroll", syncFades, { passive: true });
+    window.addEventListener("resize", syncFades, { passive: true });
+
+    /* ---------- selección ---------- */
+    elList.addEventListener("click", (ev) => {
+      const li = ev.target.closest(".wr-list-item");
+      if (li) select(Number(li.dataset.spPos));
+    });
+    elList.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const li = ev.target.closest(".wr-list-item");
+      if (li) { ev.preventDefault(); select(Number(li.dataset.spPos)); }
+    });
+    function leaveModule() {
+      stopEverything();
+      closePanels();
+      go("speaking-hub");
+    }
+    if (elBack) elBack.addEventListener("click", leaveModule);
+
+    function stopEverything() {
+      if ("speechSynthesis" in window) speechSynthesis.cancel();
+      qtCancel();
+      clearInterval(mcPrepTimer);
+      mcRec.stop();
+      shRec.stop();
+    }
+
+    function select(i) {
+      const items = MODULES[moduleKey].items();
+      if (!Number.isInteger(i) || i < 0 || i >= items.length) return;
+      stopEverything();
+      pos = i;
+      MODULES[moduleKey].open(i);
+      renderIndex();
+      updateBadge();
+      const node = elList.querySelector(".wr-list-item.is-selected");
+      if (node) node.scrollIntoView({ block: "nearest" });
+      emitRoute();
+    }
+
+    /* ============================================================
+       1 · QUICK TRANSLATE — escenario a máquina de escribir
+       Se escribe el español, se esperan 10 s para que el usuario lo
+       diga en voz alta, la frase se desenfoca hasta desaparecer y en
+       su mismo lugar se escribe la traducción, con las alternativas
+       debajo. Cada oración entra en un solo renglón.
+       ============================================================ */
+    const QT_WAIT = 10000;
+    const QT_ROWS = ["qtRowLead", "qtRowAlt1", "qtRowAlt2"];
+    let qtToken = 0, qtTimer = null, qtProbe = null;
+
+    // Cada corte invalida la secuencia en curso: los timers viejos se
+    // descartan solos al comparar el token.
+    function qtCancel() {
+      qtToken++;
+      clearTimeout(qtTimer);
+      return qtToken;
+    }
+
+    function qtSetTyping(rowId) {
+      QT_ROWS.forEach(id => {
+        const el = $(id);
+        if (el) el.classList.toggle("is-typing", id === rowId);
+      });
+    }
+
+    /* Ajuste a un renglón --------------------------------------------------
+       La oración se mide entera antes de escribirla y, si no entra en el
+       ancho disponible, se baja el cuerpo de esa línea. Así nunca parte en
+       dos y tampoco salta de tamaño mientras se tipea. */
+    function qtFit(rowId, text) {
+      const row = $(rowId);
+      const stage = row && row.closest(".qt-stage");
+      if (!row || !stage) return;
+      row.style.fontSize = "";
+      const tag = row.querySelector(".qt-tag");
+      const avail = stage.clientWidth - (tag ? tag.offsetWidth : 0) - 34;
+      if (!avail || avail <= 0) return; // sin layout medible: queda el cuerpo base
+
+      const cs = window.getComputedStyle(row);
+      const base = parseFloat(cs.fontSize) || 16;
+      if (!qtProbe) {
+        qtProbe = document.createElement("span");
+        qtProbe.className = "qt-probe";
+        document.body.appendChild(qtProbe);
+      }
+      qtProbe.style.fontFamily = cs.fontFamily;
+      qtProbe.style.fontWeight = cs.fontWeight;
+      qtProbe.style.fontStyle = cs.fontStyle;
+      qtProbe.style.letterSpacing = cs.letterSpacing;
+      qtProbe.style.fontSize = base + "px";
+      qtProbe.textContent = text;
+
+      const width = qtProbe.getBoundingClientRect().width;
+      if (width > avail) row.style.fontSize = Math.max(base * (avail / width), 13) + "px";
+    }
+
+    // Cada carácter entra en su propio span para poder desenfocarlo.
+    function qtType(rowId, targetId, text, speed, token, onDone) {
+      const el = $(targetId);
+      if (!el) return;
+      el.textContent = "";
+      qtFit(rowId, text);
+      qtSetTyping(rowId);
+      let i = 0;
+      (function step() {
+        if (token !== qtToken) return;
+        if (i >= text.length) {
+          const row = $(rowId);
+          if (row) row.classList.add("is-written");
+          if (onDone) onDone();
+          return;
+        }
+        const ch = document.createElement("span");
+        ch.className = "qt-ch";
+        ch.textContent = text.charAt(i++);
+        el.appendChild(ch);
+        qtTimer = setTimeout(step, speed);
+      })();
+    }
+
+    // Salida: la línea entera se desenfoca y recién ahí se vacía.
+    function qtBlurOut(rowId, targetId, token, onDone) {
+      const row = $(rowId), el = $(targetId);
+      if (!row || !el) return;
+      qtSetTyping(null);
+      row.classList.add("is-out");
+      qtTimer = setTimeout(() => {
+        if (token !== qtToken) return;
+        el.textContent = "";
+        row.classList.remove("is-out", "is-written");
+        if (onDone) onDone();
+      }, 430);
+    }
+
+    function openTranslate(i) {
+      const token = qtCancel();
+      const ex = SP_TRANSLATE[i];
+      ["qtLead", "qtAlt1", "qtAlt2"].forEach(id => { if ($(id)) $(id).textContent = ""; });
+      QT_ROWS.forEach(id => {
+        const row = $(id);
+        if (row) { row.classList.remove("is-written", "is-typing", "is-out"); row.style.fontSize = ""; }
+      });
+      $("qtRowLead").classList.remove("is-en");
+      $("qtNote").textContent = ex.note;
+      $("qtNote").classList.remove("is-open");
+      $("qtStatus").textContent = "";
+      qtType("qtRowLead", "qtLead", ex.es, 42, token, () => {
+        $("qtStatus").textContent = "Decila en voz alta, en inglés.";
+        qtTimer = setTimeout(() => qtRevealSequence(token), QT_WAIT);
+      });
+    }
+
+    // La traducción reemplaza al español en el mismo renglón.
+    function qtRevealSequence(token) {
+      if (token !== qtToken) return;
+      const ex = SP_TRANSLATE[pos];
+      $("qtStatus").textContent = "";
+      qtBlurOut("qtRowLead", "qtLead", token, () => {
+        $("qtRowLead").classList.add("is-en");
+        qtType("qtRowLead", "qtLead", ex.en, 34, token, () => {
+          qtTimer = setTimeout(() => {
+            if (token !== qtToken) return;
+            qtType("qtRowAlt1", "qtAlt1", ex.alts[0], 20, token, () => {
+              qtTimer = setTimeout(() => {
+                if (token !== qtToken) return;
+                qtType("qtRowAlt2", "qtAlt2", ex.alts[1], 20, token, () => {
+                  qtSetTyping(null);
+                  $("qtNote").classList.add("is-open");
+                  markDone();
+                });
+              }, 300);
+            });
+          }, 340);
+        });
+      });
+    }
+
+    // Al cambiar el ancho, se recalcula el cuerpo de lo que ya está escrito.
+    window.addEventListener("resize", () => {
+      if (moduleKey !== "translate" || !elView.classList.contains("is-active")) return;
+      const ex = SP_TRANSLATE[pos];
+      if (!ex) return;
+      qtFit("qtRowLead", $("qtRowLead").classList.contains("is-en") ? ex.en : ex.es);
+      qtFit("qtRowAlt1", ex.alts[0]);
+      qtFit("qtRowAlt2", ex.alts[1]);
+    }, { passive: true });
+
+    // Los ejercicios no siguen orden lineal: cada avance sale al azar
+    // y nunca repite el que se acaba de resolver.
+    function qtRandomIndex() {
+      const n = SP_TRANSLATE.length;
+      if (n <= 1) return 0;
+      let i = pos;
+      while (i === pos) i = Math.floor(Math.random() * n);
+      return i;
+    }
+
+    if ($("qtReveal")) $("qtReveal").addEventListener("click", () => {
+      const token = qtCancel();
+      qtRevealSequence(token);
+    });
+    if ($("qtNext")) $("qtNext").addEventListener("click", () => select(qtRandomIndex()));
+    if ($("qtHear")) $("qtHear").addEventListener("click", () => speakEn(SP_TRANSLATE[pos].en, 0.95));
+
+    /* ============================================================
+       2 · MONOLOGUE CHALLENGE — 30 s de preparación + grabación
+       ============================================================ */
+    let mcPrepTimer = null;
+    const mcRec = makeRecorder(
+      { dot: "mcDot", time: "mcTime", start: "mcStart", stop: "mcStop", playback: "mcPlayback", hint: "mcHint", bar: "mcBar" },
+      (secs) => {
+        const el = $("mcHint");
+        if (secs < 60) el.textContent = "Duraste " + clock(secs) + ". Te quedaste corto: en Part 2 se esperan al menos 60 segundos.";
+        else if (secs > 120) el.textContent = "Duraste " + clock(secs) + ". Te pasaste de los 2 minutos; practicá cerrar antes.";
+        else el.textContent = "Duraste " + clock(secs) + ". Dentro del rango esperado.";
+        markDone();
+      }
+    );
+
+    function openMonologue(i) {
+      const ex = SP_MONOLOGUE[i];
+      clearInterval(mcPrepTimer);
+      $("mcTopic").textContent = ex.topic;
+      $("mcPoints").innerHTML = ex.points.map(p =>
+        "<li><b>" + esc(p.en) + "</b><span>" + esc(p.es) + "</span></li>"
+      ).join("");
+      $("mcVocab").innerHTML = ex.vocab.map(g =>
+        '<div class="sp-vocab-group"><h4>' + esc(g.group) + "</h4>" +
+        '<div class="sp-chips">' + g.items.map(v => '<span class="sp-chip">' + esc(v) + "</span>").join("") + "</div></div>"
+      ).join("");
+      $("mcSampleText").textContent = ex.sample;
+      $("mcSample").classList.remove("is-open");
+      $("mcPrepTimer").hidden = true;
+      $("mcHint").textContent = "Hablá sin frenar. Cubrí los tres puntos en orden y cerrá con una conclusión breve.";
+      mcRec.reset();
+    }
+
+    function mcStartPrep() {
+      clearInterval(mcPrepTimer);
+      let left = 30;
+      const el = $("mcPrepTimer");
+      el.hidden = false;
+      el.textContent = "00:" + String(left).padStart(2, "0");
+      mcPrepTimer = setInterval(() => {
+        left--;
+        el.textContent = left > 0 ? "00:" + String(left).padStart(2, "0") : "¡A hablar!";
+        if (left <= 0) clearInterval(mcPrepTimer);
+      }, 1000);
+    }
+
+    if ($("mcPrep")) $("mcPrep").addEventListener("click", mcStartPrep);
+    if ($("mcHear")) $("mcHear").addEventListener("click", () => {
+      const ex = SP_MONOLOGUE[pos];
+      speakEn(ex.topic + " " + ex.points.map(p => p.en).join(". ") + ".", 0.95);
+    });
+    if ($("mcShowSample")) $("mcShowSample").addEventListener("click", () => {
+      $("mcSample").classList.toggle("is-open");
+      if ($("mcSample").classList.contains("is-open")) markDone();
+    });
+    if ($("mcSampleHear")) $("mcSampleHear").addEventListener("click", () => speakEn(SP_MONOLOGUE[pos].sample, 0.95));
+
+    /* ============================================================
+       3 · SHADOWING — velocidad, tónicas y comparación
+       ============================================================ */
+    let shSpeed = 1;
+    const shRec = makeRecorder(
+      { dot: "shDot", time: "shTime", start: "shStart", stop: "shStop", playback: "shPlayback", hint: "shHint" },
+      () => { $("shCompare").disabled = false; markDone(); }
+    );
+
+    // El texto guarda **tónica** y | para la pausa de respiración.
+    function shRender(text) {
+      return esc(text)
+        .replace(/\*\*(.+?)\*\*/g, '<span class="sp-stress">$1</span>')
+        .replace(/\|/g, '<span class="sp-break">|</span>');
+    }
+    function shPlain(text) {
+      return text.replace(/\*\*/g, "").replace(/\s*\|\s*/g, " ");
+    }
+
+    function openShadowing(i) {
+      const ex = SP_SHADOWING[i];
+      $("shText").innerHTML = shRender(ex.text);
+      $("shMeta").textContent = ex.meta;
+      $("shHint").textContent = "Al comparar suena primero el original y después tu intento, sin cortes.";
+      $("shCompare").disabled = true;
+      shRec.reset();
+    }
+
+    document.querySelectorAll(".sp-speed .seg-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".sp-speed .seg-btn").forEach(b => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        shSpeed = Number(btn.dataset.speed);
+      });
+    });
+
+    if ($("shPlay")) $("shPlay").addEventListener("click", () => {
+      speakEn(shPlain(SP_SHADOWING[pos].text), shSpeed);
+    });
+
+    if ($("shCompare")) $("shCompare").addEventListener("click", () => {
+      const playback = $("shPlayback");
+      const u = speakEn(shPlain(SP_SHADOWING[pos].text), shSpeed);
+      $("shHint").textContent = "Sonando el original…";
+      const playMine = () => {
+        $("shHint").textContent = "Ahora tu intento. Escuchá dónde cae el acento y dónde respirás.";
+        if (playback && playback.src) { playback.currentTime = 0; playback.play(); }
       };
-      recorder.start();
-      recSecs = 0; $("recDot").classList.add("live"); $("recStart").disabled = true; $("recStop").disabled = false;
-      recTimer = setInterval(() => { recSecs++; $("recTime").textContent = fmt(recSecs); }, 1000);
-    } catch { $("recHint").textContent = "No pude acceder al micrófono. Revisá los permisos del navegador."; }
-  }
-  function stopRec() {
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    clearInterval(recTimer); $("recDot").classList.remove("live"); $("recStart").disabled = false; $("recStop").disabled = true;
-  }
-  function fmt(s) { return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
-  $("recStart").addEventListener("click", startRec);
-  $("recStop").addEventListener("click", stopRec);
+      if (u) u.onend = playMine; else playMine();
+    });
+
+    /* ============================================================
+       4 · ROLEPLAY — diálogo por turnos con sugerencia
+       ============================================================ */
+    let rpStep = 0;
+
+    function openRoleplay(i) {
+      const ex = SP_ROLEPLAY[i];
+      rpStep = 0;
+      $("rpScenario").textContent = ex.scenario;
+      $("rpRole").textContent = ex.role;
+      rpRenderTurns();
+    }
+
+    function rpRenderTurns() {
+      const ex = SP_ROLEPLAY[pos];
+      const shown = ex.turns.slice(0, rpStep + 1);
+      $("rpTurns").innerHTML = shown.map((t, k) =>
+        '<article class="sp-turn" data-turn="' + k + '">' +
+        '<div class="sp-turn-head"><span class="sp-turn-num">' + (k + 1) + "</span>Recepción</div>" +
+        '<p class="sp-partner">' + esc(t.partner) + "</p>" +
+        '<div class="sp-goal"><b>Tu turno:</b> ' + esc(t.goal) + "</div>" +
+        '<div class="tool-row">' +
+        '<button class="btn btn-ghost" type="button" data-rp-hear="' + k + '">🔊 Escuchar</button>' +
+        '<button class="btn btn-primary" type="button" data-rp-done="' + k + '">Ya respondí · ver sugerencia</button>' +
+        "</div>" +
+        '<div class="sp-reveal sp-suggestion" data-rp-sug="' + k + '"><div class="sp-reveal-inner">' +
+        '<article class="sp-card"><span class="sp-eyebrow">Sugerencia</span><p>' + esc(t.suggestion) + "</p></article>" +
+        "</div></div></article>"
+      ).join("");
+      $("rpProgress").textContent = "Turno " + (rpStep + 1) + " de " + ex.turns.length;
+    }
+
+    if ($("rpTurns")) $("rpTurns").addEventListener("click", (ev) => {
+      const ex = SP_ROLEPLAY[pos];
+      const hear = ev.target.closest("[data-rp-hear]");
+      if (hear) { speakEn(ex.turns[Number(hear.dataset.rpHear)].partner, 0.95); return; }
+
+      const doneBtn = ev.target.closest("[data-rp-done]");
+      if (!doneBtn) return;
+      const k = Number(doneBtn.dataset.rpDone);
+      const sug = $("rpTurns").querySelector('[data-rp-sug="' + k + '"]');
+      if (sug) sug.classList.add("is-open");
+      doneBtn.disabled = true;
+
+      if (k === rpStep && rpStep < ex.turns.length - 1) {
+        rpStep++;
+        const openSuggestions = Array.from($("rpTurns").querySelectorAll(".sp-suggestion.is-open"))
+          .map(n => Number(n.dataset.rpSug));
+        const disabled = Array.from($("rpTurns").querySelectorAll("[data-rp-done]"))
+          .filter(b => b.disabled).map(b => Number(b.dataset.rpDone));
+        rpRenderTurns();
+        openSuggestions.forEach(n => {
+          const node = $("rpTurns").querySelector('[data-rp-sug="' + n + '"]');
+          if (node) node.classList.add("is-open");
+        });
+        disabled.forEach(n => {
+          const btn = $("rpTurns").querySelector('[data-rp-done="' + n + '"]');
+          if (btn) btn.disabled = true;
+        });
+        const next = $("rpTurns").querySelector('.sp-turn[data-turn="' + rpStep + '"]');
+        if (next) next.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } else if (k === ex.turns.length - 1) {
+        $("rpProgress").textContent = "Diálogo completo · " + ex.turns.length + " turnos";
+        markDone();
+      }
+    });
+
+    if ($("rpRestart")) $("rpRestart").addEventListener("click", () => openRoleplay(pos));
+
+    /* ---------- apertura de módulo ---------- */
+    function setModule(key) {
+      moduleKey = MODULES[key] ? key : "translate";
+      elView.setAttribute("data-sp-module", moduleKey);
+      if (elName) elName.textContent = MODULES[moduleKey].name;
+      Object.keys(MODULES).forEach(k => {
+        const pane = $(MODULES[k].pane);
+        if (pane) pane.classList.toggle("hidden", k !== moduleKey);
+      });
+      closePanels();
+      if (elScroller) elScroller.scrollTop = 0;
+    }
+
+    function openModule(name) {
+      const key = MODULE_BY_NAME[name] || "translate";
+      setModule(key);
+      go("speaking");
+      select(key === "translate" ? Math.floor(Math.random() * SP_TRANSLATE.length) : 0);
+    }
+
+    function emitRoute() {
+      if (!elView.classList.contains("is-active")) return;
+      const mod = MODULES[moduleKey];
+      const item = mod.items()[pos];
+      setRoute(["speaking", routeSlug(mod.name), item ? shortSlug(mod.label(item)) : null]);
+    }
+
+    registerSection("speaking", {
+      apply(moduleSlug, exerciseSlug) {
+        const key = Object.keys(MODULES).find(k => routeSlug(MODULES[k].name) === moduleSlug);
+        if (!key) { go("speaking-hub"); return; }
+        openModule(MODULES[key].name);
+        if (!exerciseSlug) return;
+        const items = MODULES[key].items();
+        const at = items.findIndex(item => shortSlug(MODULES[key].label(item)) === exerciseSlug);
+        if (at >= 0) select(at);
+      }
+    });
+
+    // El acceso directo del inicio abre Quick Translate.
+    document.addEventListener("click", (ev) => {
+      if (ev.target.closest('[data-go="speaking"]')) openModule("Quick Translate");
+    });
+
+    window.ETSpeaking = { openModule: openModule };
+
+    // Estado inicial, sin navegar.
+    setModule("translate");
+    pos = Math.floor(Math.random() * SP_TRANSLATE.length);
+    MODULES.translate.open(pos);
+    renderIndex();
+    updateBadge();
+  })();
 
   /* ============================================================
      LISTENING LAB — original passages, read-along, cloze & dictation
@@ -14493,15 +15967,6 @@
     $("lPlay").addEventListener("click", playListening);
     $("lPause").addEventListener("click", pauseResumeListening);
     $("lStop").addEventListener("click", stopListening);
-    $("lPracticeSelect").addEventListener("change", () => {
-      const nextIndex = Number($("lPracticeSelect").value);
-      if (!Number.isInteger(nextIndex) || !LISTENING_LESSONS[nextIndex]) return;
-      stopListening();
-      curLessonIndex = nextIndex;
-      store.set("listening_lesson_index", curLessonIndex);
-      renderListeningLesson(LISTENING_LESSONS[curLessonIndex]);
-      setListeningTab("read");
-    });
     $("lSettingsToggle").addEventListener("click", toggleListeningSettings);
     $("lSettingsClose").addEventListener("click", closeListeningSettings);
     $("lWpm").addEventListener("input", () => {
@@ -14545,13 +16010,19 @@
       if (!panel.contains(event.target) && !toggle.contains(event.target)) closeListeningSettings();
     });
 
-    $("lPracticeSelect").innerHTML = LISTENING_LESSONS.map((_, index) =>
-      `<option value="${index}">Práctica ${index + 1}</option>`
-    ).join("");
     const savedLessonIndex = Number(store.get("listening_lesson_index", 0));
     curLessonIndex = Number.isInteger(savedLessonIndex) && LISTENING_LESSONS[savedLessonIndex] ? savedLessonIndex : 0;
-    $("lPracticeSelect").value = String(curLessonIndex);
     renderListeningLesson(LISTENING_LESSONS[curLessonIndex]);
+  }
+
+  // Punto de entrada del índice lateral de Dictation Practice.
+  function setListeningLesson(index) {
+    if (!Number.isInteger(index) || !LISTENING_LESSONS[index]) return;
+    stopListening();
+    curLessonIndex = index;
+    store.set("listening_lesson_index", index);
+    renderListeningLesson(LISTENING_LESSONS[index]);
+    setListeningTab("read");
   }
 
   function loadListeningVoices() {
@@ -14654,7 +16125,6 @@
     $("lTitle").textContent = lesson.title;
     const wordCount = words(listeningTranscript(lesson)).length;
     $("lLessonMeta").textContent = `${lesson.duration} · ${wordCount} words · ${lesson.paragraphs.length} paragraphs`;
-    $("lPracticeSelect").value = String(curLessonIndex);
     setListeningProgress(0);
     setListeningStatus("Listo");
     renderListeningReadAlong();
@@ -15547,6 +17017,93 @@
     if (typeof logActivity === "function") logActivity();
   }
 
+  /* ============================================================
+     PREPOSICIONES
+     Cada entrada trae la idea central, el uso principal y ejemplos.
+     En el ejemplo en inglés, {} marca la preposición a resaltar.
+     ============================================================ */
+  const PREPOSITIONS = [
+    { word: "IN", idea: "dentro de", use: "lugar / tiempo largo", ex: [
+      ["I {live in} Argentina.", "Vivo en Argentina."],
+      ["The {keys are in} the bag.", "Las llaves están en la bolsa."]] },
+    { word: "ON", idea: "sobre algo", use: "superficies / días", ex: [
+      ["The {phone is on} the table.", "El teléfono está sobre la mesa."],
+      ["I {work on} Monday.", "Trabajo el lunes."]] },
+    { word: "AT", idea: "punto exacto", use: "lugar específico / hora", ex: [
+      ["I am {at} home.", "Estoy en casa."],
+      ["The meeting is {at} 7 pm.", "La reunión es a las 7 pm."]] },
+    { word: "TO", idea: "hacia", use: "dirección / destinatario", ex: [
+      ["I {go to} work.", "Voy a mi trabajo."],
+      ["I {sent the email to} my boss.", "Envié el correo a mi jefe."]] },
+    { word: "FOR", idea: "duración / propósito", use: "tiempo / finalidad", ex: [
+      ["I {studied for} three hours.", "Estudié durante tres horas."],
+      ["This {gift is for} you.", "Este regalo es para ti."]] },
+    { word: "OF", idea: "relación", use: "pertenencia / composición", ex: [
+      ["The {name of} the company.", "El nombre de la empresa."],
+      ["A {glass of} water.", "Un vaso de agua."]] },
+    { word: "WITH", idea: "con", use: "compañía / instrumento", ex: [
+      ["I am {going with} my friend.", "Voy con mi amigo."],
+      ["I {cut it with} a knife.", "Lo corté con un cuchillo."]] },
+    { word: "ABOUT", idea: "sobre", use: "tema", ex: [
+      ["We {talked about} you.", "Hablamos sobre ti."]] },
+    { word: "FROM", idea: "origen", use: "procedencia", ex: [
+      ["I am {from} Argentina.", "Soy de Argentina."]] },
+    { word: "BY", idea: "cerca / autor", use: "medio / autor / agente", ex: [
+      ["The {book was written by} her.", "El libro fue escrito por ella."]] },
+    { word: "BETWEEN", idea: "entre dos", use: "relación entre dos", ex: [
+      ["The café is {between the bank} and the park.", "El café está entre el banco y el parque."]] },
+    { word: "AMONG", idea: "entre varios", use: "grupo de más de dos", ex: [
+      ["She {was among} friends.", "Ella estaba entre amigos."]] },
+    { word: "UNDER", idea: "debajo", use: "posición inferior", ex: [
+      ["The {cat is under} the table.", "El gato está debajo de la mesa."]] },
+    { word: "OVER", idea: "encima / arriba", use: "posición superior", ex: [
+      ["The {lamp is over} the table.", "La lámpara está encima de la mesa."]] },
+    { word: "BEFORE", idea: "antes", use: "tiempo", ex: [
+      ["I {finished before} lunch.", "Terminé antes del almuerzo."]] },
+    { word: "AFTER", idea: "después", use: "tiempo", ex: [
+      ["We {will talk after} class.", "Hablaremos después de clase."]] },
+    { word: "DURING", idea: "durante", use: "periodo de tiempo", ex: [
+      ["I {slept during} the movie.", "Dormí durante la película."]] },
+    { word: "UNTIL", idea: "hasta", use: "límite de tiempo", ex: [
+      ["I {worked until} midnight.", "Trabajé hasta medianoche."]] }
+  ];
+
+  function prepMarkup(sentence) {
+    return esc(sentence).replace(/\{([^}]+)\}/g, '<mark class="prep-mark">$1</mark>');
+  }
+
+  function initPrepositions() {
+    const grid = $("pGrid");
+    if (!grid) return;
+    grid.innerHTML = PREPOSITIONS.map((prep, i) =>
+      '<button class="prep-chip" type="button" role="tab" aria-selected="false" data-pi="' + i + '">' +
+      "<strong>" + esc(prep.word) + "</strong>" +
+      "<span>" + esc(prep.idea) + "</span></button>"
+    ).join("");
+    grid.addEventListener("click", (ev) => {
+      const chip = ev.target.closest(".prep-chip");
+      if (chip) showPreposition(Number(chip.dataset.pi));
+    });
+    showPreposition(0);
+  }
+
+  function showPreposition(i) {
+    const prep = PREPOSITIONS[i];
+    if (!prep) return;
+    document.querySelectorAll(".prep-chip").forEach((chip, k) => {
+      const on = k === i;
+      chip.classList.toggle("active", on);
+      chip.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    $("pWord").textContent = prep.word;
+    $("pIdea").textContent = prep.idea;
+    $("pUse").textContent = prep.use;
+    $("pExamples").innerHTML = prep.ex.map(pair =>
+      '<li><span class="en">' + prepMarkup(pair[0]) + "</span>" +
+      '<span class="es">' + esc(pair[1]) + "</span></li>"
+    ).join("");
+  }
+
   let tensesInit = false;
   function initTenses() {
     tensesInit = true;
@@ -15557,17 +17114,39 @@
         `<span class="tc-head"><span class="tc-name">${esc(t.name)}</span>` +
         `<span class="tc-level">${esc(t.level)}</span></span>` +
         (tl ? `<span class="tc-timeline">${tl}</span>` : "") + `</button>`;
-    }).join("");
-    $("tGrid").addEventListener("click", (e) => { const b = e.target.closest(".tense-card"); if (b) showTense(Number(b.dataset.ti)); });
+    }).join("") +
+      '<button class="tense-card tense-card--prep tense-card--noline" data-ti="prep" role="tab" aria-selected="false">' +
+      '<span class="tc-head"><span class="tc-name">Prepositions</span>' +
+      '<span class="tc-level">Base</span></span></button>';
+
+    $("tGrid").addEventListener("click", (e) => {
+      const card = e.target.closest(".tense-card");
+      if (!card) return;
+      if (card.dataset.ti === "prep") showPrepositionsPanel();
+      else showTense(Number(card.dataset.ti));
+    });
+    initPrepositions();
     showTense(0);
   }
+  // Las dos fichas de detalle comparten lugar: sólo una está visible.
+  function markTenseCard(key) {
+    document.querySelectorAll(".tense-card").forEach((card) => {
+      const on = card.dataset.ti === String(key);
+      card.classList.toggle("active", on);
+      card.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const isPrep = key === "prep";
+    $("tDetail").classList.toggle("hidden", isPrep);
+    $("pDetail").classList.toggle("hidden", !isPrep);
+  }
+
+  function showPrepositionsPanel() {
+    markTenseCard("prep");
+  }
+
   function showTense(i) {
     const t = tenses[i];
-    document.querySelectorAll(".tense-card").forEach((b, k) => {
-      const on = k === i;
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-selected", on ? "true" : "false");
-    });
+    markTenseCard(i);
     const group = tenseGroup(t.name);
     const detail = $("tDetail");
     detail.className = "tense-detail tense-detail--" + group;
@@ -17206,6 +18785,2089 @@
   });
   if ($("hSend")) $("hSend").addEventListener("click", () => { $("hStatus").textContent = $("hMsg").value.trim() ? "¡Gracias! Recibimos tu mensaje." : "Escribí un mensaje primero."; if ($("hMsg").value.trim()) $("hMsg").value = ""; });
 
+  /* ---------- Skill hubs · Focus Cards interactions ---------- */
+  /* ============================================================
+     HUB · CARRUSEL DE MODALIDADES
+     Sustituye la grilla de cuadrantes. La tarjeta activa queda
+     centrada; las vecinas asoman en perspectiva. Se maneja con
+     flechas, indicadores, teclado y arrastre.
+     ============================================================ */
+  function openSkillModule(card) {
+    const view = card.closest(".skill-hub-view");
+    const moduleName = card.dataset.skillModule || "Esta práctica";
+    if (view?.id === "view-writing-hub" && window.ETWriting) {
+      window.ETWriting.openModule(moduleName, { autoSelect: true });
+      return;
+    }
+    if (view?.id === "view-reading-hub" && window.ETReading) {
+      window.ETReading.openModule(moduleName);
+      return;
+    }
+    if (view?.id === "view-speaking-hub" && window.ETSpeaking) {
+      window.ETSpeaking.openModule(moduleName);
+      return;
+    }
+    if (view?.id === "view-listening-hub" && window.ETListening) {
+      window.ETListening.openModule(moduleName);
+      return;
+    }
+    const status = view?.querySelector(".skill-hub-status");
+    if (status) status.textContent = `${moduleName} · contenido reservado para el Paso 2.`;
+  }
+
+  function initSkillHubCards() {
+    document.querySelectorAll("[data-hub-carousel]").forEach(setupHubCarousel);
+  }
+
+  function setupHubCarousel(root) {
+    const viewport = root.querySelector("[data-hub-viewport]");
+    const track = root.querySelector("[data-hub-track]");
+    const dotsBox = root.querySelector("[data-hub-dots]");
+    const prev = root.querySelector("[data-hub-prev]");
+    const next = root.querySelector("[data-hub-next]");
+    const slides = Array.from(root.querySelectorAll(".hub-slide"));
+    if (!viewport || !track || !slides.length) return;
+
+    let index = 0;
+    let dragging = false, startX = 0, startShift = 0, shift = 0, suppressClick = false;
+
+    // Indicadores: uno por tarjeta.
+    if (dotsBox) {
+      dotsBox.innerHTML = slides.map((slide, i) =>
+        '<button class="hub-dot" type="button" role="tab" data-hub-dot="' + i +
+        '" aria-label="' + esc(slide.dataset.skillModule || ("Ejercicio " + (i + 1))) + '"></button>'
+      ).join("");
+      dotsBox.addEventListener("click", (ev) => {
+        const dot = ev.target.closest("[data-hub-dot]");
+        if (dot) goTo(Number(dot.dataset.hubDot));
+      });
+    }
+
+    // Centrar la activa: se mide en píxeles reales para que el ancho
+    // fluido de las tarjetas no descuadre el cálculo.
+    function baseShift(i) {
+      const slide = slides[i];
+      if (!slide) return 0;
+      return viewport.clientWidth / 2 - (slide.offsetLeft + slide.offsetWidth / 2);
+    }
+
+    function paint(extra) {
+      shift = baseShift(index) + (extra || 0);
+      track.style.transform = "translate3d(" + shift + "px,0,0)";
+      slides.forEach((slide, i) => {
+        const distance = i - index;
+        const depth = Math.min(Math.abs(distance), 2);
+        const scale = 1 - depth * 0.07;
+        slide.style.transform =
+          "perspective(1400px) rotateY(" + (-distance * 7) + "deg) scale(" + scale + ")";
+        slide.classList.toggle("is-active", i === index);
+        slide.setAttribute("aria-current", i === index ? "true" : "false");
+      });
+      if (dotsBox) {
+        dotsBox.querySelectorAll("[data-hub-dot]").forEach((dot, i) =>
+          dot.classList.toggle("is-active", i === index));
+      }
+      if (prev) prev.disabled = index === 0;
+      if (next) next.disabled = index === slides.length - 1;
+    }
+
+    function goTo(i) {
+      index = Math.max(0, Math.min(i, slides.length - 1));
+      track.classList.remove("is-dragging");
+      paint(0);
+    }
+
+    if (prev) prev.addEventListener("click", () => goTo(index - 1));
+    if (next) next.addEventListener("click", () => goTo(index + 1));
+
+    root.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowLeft") { goTo(index - 1); ev.preventDefault(); }
+      if (ev.key === "ArrowRight") { goTo(index + 1); ev.preventDefault(); }
+    });
+
+    // Arrastre: sirve con mouse y con el dedo.
+    // Sin captura de puntero: capturarla en el visor haría que el navegador
+    // dispare el clic sobre el visor y no sobre la tarjeta, y las tarjetas
+    // dejarían de abrir su ejercicio. El seguimiento va sobre window.
+    function onMove(ev) {
+      if (!dragging) return;
+      const delta = ev.clientX - startX;
+      // Resistencia en los extremos, para que el final se note.
+      const limit = (index === 0 && delta > 0) || (index === slides.length - 1 && delta < 0);
+      track.style.transform =
+        "translate3d(" + (startShift + (limit ? delta * 0.32 : delta)) + "px,0,0)";
+    }
+
+    function endDrag(ev) {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      if (!dragging) return;
+      dragging = false;
+      track.classList.remove("is-dragging");
+      const delta = (ev && ev.clientX !== undefined ? ev.clientX : startX) - startX;
+      // Un arrastre no debe abrir el módulo: se ignora el clic que lo sigue.
+      suppressClick = Math.abs(delta) > 8;
+      window.setTimeout(() => { suppressClick = false; }, 0);
+      const threshold = Math.max(60, slides[index].offsetWidth * 0.18);
+      if (delta < -threshold) goTo(index + 1);
+      else if (delta > threshold) goTo(index - 1);
+      else paint(0);
+    }
+
+    viewport.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      dragging = true;
+      startX = ev.clientX;
+      startShift = shift;
+      track.classList.add("is-dragging");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", endDrag);
+      window.addEventListener("pointercancel", endDrag);
+    });
+
+    // Arrastrar imágenes o texto dentro del carrusel rompería el gesto.
+    viewport.addEventListener("dragstart", (ev) => ev.preventDefault());
+
+    slides.forEach((slide, i) => {
+      // Toda tarjeta es un botón directo: abre su ejercicio esté o no centrada.
+      slide.addEventListener("click", () => {
+        if (suppressClick) return;
+        goTo(i);
+        openSkillModule(slide);
+      });
+      slide.addEventListener("focus", () => { if (i !== index) goTo(i); });
+    });
+
+    window.addEventListener("resize", () => paint(0), { passive: true });
+    // Al abrir el hub las medidas ya son válidas: se recalcula el centrado
+    // y se vuelve a la primera tarjeta, para entrar siempre igual.
+    document.addEventListener("et:viewchange", (ev) => {
+      if (ev.detail !== root.closest(".skill-hub-view")?.id) return;
+      index = 0;
+      paint(0);
+    });
+    paint(0);
+  }
+
+  /* ============================================================
+     LISTENING · PODCAST PRACTICE
+     Siete episodios con su audio local y el transcript dividido
+     por hablante. `side` decide de qué lado va la burbuja y `role`
+     distingue conductores, invitados y bloques de ejemplos.
+     ============================================================ */
+  const podcastPracticeData = [
+      {
+          "id": "pod_climate_change",
+          "title": "Climate Change",
+          "intro": "Becca and Neil have a real conversation in easy English about climate change – how long-term weather patterns are shifting. Learn to talk about how we can reduce our use of fossil fuels, conserve water and move towards renewable energy.",
+          "audioUrl": "audio/pod_climate_change.mp3",
+          "transcript": [
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Hello and welcome to Real Easy English. We're back with another conversation in easy English to help with your learning. I'm Becca."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And I'm Neil. Don't forget there is a video version of this podcast on our website. It's got subtitles on it to help you learn. That's at bbclearningenglish.com."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Today, Neil, we're talking about climate change. You might have heard this term – climate change – but what does it mean?"
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "So, it's an interesting topic, isn't it? Important one. Climate change is the change in weather over a long period of time. And when we talk about climate change now, we're talking mainly about the world getting hotter."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yes. How is climate change affecting where you live?"
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Well, Becca, I remember a few years ago, in July I think, the temperature in the UK hit 40 degrees on one day. And that is something I have never experienced in my life. 40 degrees in the UK is crazy, and it was hot recently here as well, wasn't it?"
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yeah, it was. We don't usually have 30 degree days in May, but it reached 30 degrees and it was so hot."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And if you turn on the news, you always hear stories these days about the hottest this, the wettest this, the windiest this, so we hear a lot about extreme weather."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yeah. And experts say that this could be because of greenhouse gases. Greenhouse gases, like carbon dioxide for example, they stay in the Earth's atmosphere and they trap the sun's heat in the atmosphere, meaning that the Earth gets hotter and hotter."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yeah. And so, one thing that scientists say is that we should burn fewer fossil fuels. Now, fossil fuels are things like oil and gas that come from the Earth. And when you burn them, they create carbon dioxide – CO2."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "But it's not all bad news, Neil. A lot of people are using renewable energy. So, renewable energy is energy that comes from things like the wind or from the sun that aren't likely to run out."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Energy conservation is also really important, Becca. So, for example, that means not using too much energy, especially if you don't really need to. So, for example, not having your heating turned up too high, maybe using public transport instead of driving so that you don't use too much fuel. And we can also talk about water conservation and that means not using too much water."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK. So, like when I turn the tap off when I brush my teeth."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Exactly. So, let's recap the vocabulary that we heard in this episode, starting with fossil fuels. Fossil fuels are things like oil, gas and coal, which we burn to get energy. And when we burn them, they release carbon into the atmosphere."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Carbon dioxide is one of the gases that we call greenhouse gases. Now, greenhouse gases are those gases that keep the heat inside the Earth's atmosphere."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "We also heard energy conservation, and that means using less energy. Conservation means protecting something, so you can also conserve water and that means not using too much water if you don't have to."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "And lastly, renewable energy, and this is the energy that we can make from things like the wind, the sun or the movement of water."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "That's it for this episode of Real Easy English, but we have a worksheet which you can download for free on our website so you can test yourself. That's at bbclearningenglish.com."
+              },
+              {
+                  "speaker": "Becca",
+                  "gender": "female",
+                  "avatar": "assets/avatars/becca.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "And we'll be back next week with another conversation in Real Easy English. But for now, goodbye."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Goodbye!"
+              }
+          ]
+      },
+      {
+          "id": "pod_family_tree",
+          "title": "Family Trees",
+          "intro": "Phil and Georgie have a real conversation in easy English about family trees – grandparents, aunts, uncles, cousins and other members of your wider family. Learn to talk about your ancestors, which of your relatives you are closest to, and learn some practical tips on how to look up your own family tree!",
+          "audioUrl": "audio/pod_family_tree.mp3",
+          "transcript": [
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Hello, I'm Phil."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And I'm Georgie."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Welcome to Real Easy English. Remember, you can find the vocabulary from this episode and test yourself with a free worksheet on our website, bbclearningenglish.com. Hi Georgie, how are you?"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "I'm very well, thank you, Phil. How are you?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "I'm really good. Today we're going to talk about our families and particularly our extended families. Georgie, do you have a big family?"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "I don't actually. I have my two parents, a sister and then outside of that, my family is quite small. I've got one aunt, two uncles, and only one of my uncles has children, so I don't have many cousins. What about you? Do you have a big family?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Actually, my family is probably similar. I've got... I've got a brother, and then I've got two aunts, three uncles. I've got... Well, I've got three cousins that I know and a cousin somewhere lost in Australia."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Oh wow! Interesting. So, we both have quite small extended families. Do you see yours much?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Usually only at times, like at Christmas I'll often see especially my uncles and my aunts. I see them fairly regularly. My cousins – yeah, often Christmas or New Year or something like that."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Same with me, really. Growing up, my uncle, who has children who are my cousins, they lived quite far away, so it was similar. We only really saw them at Christmas and times like that. And nowadays I only really see my extended family at events like weddings and, sadly, funerals. I'd probably like to see them more. But this is life."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK. Georgie, what about your grandparents? Have you been close with your grandparents?"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yeah. So, sadly, I don't have any grandparents left. They've all died, but I was really close with particularly my grandmothers. Both of them lived quite close to me, so that was really nice. I could spend a lot of time with them. They were big personalities – really funny, really loving, caring. And yeah, I was really close with them. What about you?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yeah, I think for me it's kind of similar to your story, really. I don't have any grandparents now, but when I was younger, the two grandparents that were still alive then, I was quite close to. I used to see my granddad every week. He used to come and do the shopping for my mum, and I'd see my grandma quite regularly as well. Yeah, I was quite close with them when I was younger."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "To talk about our extended families, we often look at family trees. That's like a diagram that shows your family history. Have you researched your family tree?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "I personally haven't researched my family tree, but other people in my family have researched it quite a lot, so I can see the bits of my family going back lots of generations – going back to Scotland, to Ireland, to Norway, to Armenia and places like this."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Wow. So, your ancestors are from all over the world, it sounds like?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Quite a few places, yeah."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yeah, I also have not researched my family tree, but I really would like to because I do know that my great grandmother was Italian and my great grandfather was from the US, so I would love to, kind of, find some family members from those countries and maybe become close with them. I think that would be really interesting to, kind of, understand more about my history."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "If you want to know more about your family history, I think you can often look it up. You can... you can look it up in records in government offices, but also I think there's a lot of websites where you can look things up now and find... find out your family history – find out about your ancestors."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yes. Well, actually, there is a story that my family tells that I'm not sure is true, but one of my ancestors apparently has a connection to royalty – a big event in history. But again, I don't know if it's true, so I'd love to look it up and find out the facts. I think that would be good."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK. Let's recap the vocabulary that we've looked at in this episode, starting with close. If you're close with or close to a family member, then it's someone whom you see a lot and you get on well with."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Your family tree is a diagram or image which shows your family history."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Your ancestors are your relatives from a long time ago."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Lots of people like to look up their ancestors. If you look something up, you try to find out information – for example, by searching online or reading books."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "That's it for this episode of Real Easy English. We'll be back next week with another episode in easy English."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And if you want to learn to talk more about your family, we have a collection of episodes all about this topic. Go to bbclearningenglish.com."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Bye for now!"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Goodbye!"
+              }
+          ]
+      },
+      {
+          "id": "pod_making_mistakes",
+          "title": "Fear of Making Mistakes",
+          "intro": "The fear of making mistakes can be related to the fear of judgement and personality traits like being a perfectionist. Learn from experts about this topic and get tips on how to reduce this fear.",
+          "audioUrl": "audio/pod_making_mistakes.mp3",
+          "transcript": [
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Do you get anxious when you speak English? You're not alone."
+              },
+              {
+                  "speaker": "Miguel",
+                  "gender": "male",
+                  "avatar": "assets/avatars/miguel.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "I guess I'd say that my experience speaking English is full of dread and regret. I don't know why, but I cannot find the courage to speak to someone."
+              },
+              {
+                  "speaker": "Kristina",
+                  "gender": "female",
+                  "avatar": "assets/avatars/kristina.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "For me, it was very important to be good in English. And I was like thinking what people will think about me when I'm speaking the wrong way or my pronunciation is not correct."
+              },
+              {
+                  "speaker": "Han Luo",
+                  "gender": "female",
+                  "avatar": "assets/avatars/han_luo.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "Imagine that if you are able to sound very intelligent, very wise, very smart in your first language, but then in the second language, you are not able to do that."
+              },
+              {
+                  "speaker": "Barnaby Griffiths",
+                  "gender": "male",
+                  "avatar": "assets/avatars/barnaby_griffiths.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "It isn't about perfection, and it isn't about necessarily being very fluent. It's about communicating well."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "In this special series from BBC Learning English, we'll be helping you understand speaking anxiety and improve your confidence in English. Hello and welcome to Beating Speaking Anxiety. I'm Georgie, an English teacher and presenter at BBC Learning English."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And I'm Hanan, a bilingual reporter for BBC Arabic and presenter of the Arabic educational series, Dars."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "So, as an English teacher, something my students used to ask me all the time was, \"How can I get better at speaking?\" And sometimes they mean they want to make fewer mistakes, but most often it's about confidence and wanting to stop feeling so nervous. They're worried about being judged for their mistakes. They're scared they'll forget their words, that people won't understand their accent. There are so many fears when it comes to speaking a foreign language."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yes, it's something I struggled with too when I moved to the UK to work at the BBC. My English was actually pretty good, but having conversations with people, I found it really difficult. So when I first joined the BBC, the Learning English team made an assessment of my English level, which they used to do for all new joiners to see if they need any help or courses. My results were pretty good, and I was fluent, but on that very same day, leaving the building and going to get some coffee, I couldn't really understand what the barista was saying, and I felt pretty nervous to order coffee and was trying to stress every single word, hoping that my grammar is correct and I am pronouncing the words right."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yeah, I'm sure that's a situation lots of people can relate to. So, in this series, we're going to look at all the things that make us afraid of speaking in a new language. We'll speak to experts to understand why speaking makes us so anxious, learn about what happens to our brain when we learn a new language, and explore some tips to help make speaking English less stressful."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Each week for the next eight weeks, we will focus on a different fear learners have when speaking English."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "And we start with one of the most common fears for learners: I'm scared of making mistakes. Let's hear more from some learners – Cindy from Colombia, David from Brazil and Elisa from Mexico."
+              },
+              {
+                  "speaker": "Cindy",
+                  "gender": "female",
+                  "avatar": "assets/avatars/cindy.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "And I feel afraid when I speak English because I don't have more vocabulary and I feel afraid for mistake and can't communicate my idea."
+              },
+              {
+                  "speaker": "Deivid",
+                  "gender": "male",
+                  "avatar": "assets/avatars/deivid.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "I felt very self-conscious. I felt really insecure sometimes because I was like, oh, am I saying the right things? Do I say, do I know things well enough?"
+              },
+              {
+                  "speaker": "Elisa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/elisa.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "I don't like making mistakes and knowing they know more than me. I put pressure on myself to avoid making mistakes and being foolish."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "All of those learners are worried about making mistakes."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yes. A time when I felt this fear the most was when I worked as an English teacher in Spain, and I had to have meetings with my students' parents to discuss their progress, all in Spanish. I was so scared of making mistakes because in my head it was linked to my job and my professionalism. I didn't want the parents to judge me and think I was a bad teacher."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Totally. And you know, it's not just new learners of English who are worried about making mistakes. Even advanced learners talk about this. So what's going on?"
+              },
+              {
+                  "speaker": "Han Luo",
+                  "gender": "female",
+                  "avatar": "assets/avatars/han_luo.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "You know, usually the beliefs that cause anxiety, especially severe anxiety, are, we call it 'irrational beliefs'. And also like, some low self-perceptions, fear of negative evaluation. All those learner internal, you know, factors."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "This is Han Luo, associate professor of Chinese at Lafayette College in the United States. Han has done lots of research into the sources of anxiety, or where that fear comes from. Han says irrational beliefs can make us anxious. Irrational beliefs are beliefs that aren't based on things that are true. And Han says that learners worry about mistakes because they're scared of 'negative evaluation'. In other words, that people will judge them for their mistakes and think badly of them."
+              },
+              {
+                  "speaker": "Han Luo",
+                  "gender": "female",
+                  "avatar": "assets/avatars/han_luo.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "Imagine that if you are able to sound very intelligent, very wise, very smart in your first language. You are, you know, admired by people, but then in the second language, you are not able to do that, right?"
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "When people speak in another language, they worry about what other people might think about them. But Han says this judgement doesn't come from other people. It comes from within."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yes. But in the moment when we try to speak, we're often not aware of what's causing the anxiety and stress. And so the first step to reducing the fear of making mistakes is to recognise that fear."
+              },
+              {
+                  "speaker": "Han Luo",
+                  "gender": "female",
+                  "avatar": "assets/avatars/han_luo.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "We want to make those implicit beliefs into conscious beliefs. That is already like a very, very important step."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Often the beliefs that are making us anxious are implicit – we don't notice them, and we need to make them conscious so that we do notice them."
+              },
+              {
+                  "speaker": "Han Luo",
+                  "gender": "female",
+                  "avatar": "assets/avatars/han_luo.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "You realise it now – 'Oh, nobody will laugh at me, uh, if I make a mistake', because everyone is in the same boat, right? So when you realise this, you know, now, I tell you, \"You don't have to worry about it\". So are you able to just remove your anxiety, you know, and then your your beliefs are changed?"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "I find what Han said about irrational beliefs really interesting. So I'm an English teacher, so I know that mistakes help us learn. And also that as long as you communicate your ideas effectively, it doesn't really matter if you make a few mistakes. But I still have an irrational fear of making mistakes in Spanish. I need to make my feelings match my belief that making mistakes is fine."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And you know what, Georgie? Um, we already make mistakes in our own languages, so I feel like we should encourage ourselves and tell ourselves it's OK to make mistakes."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "A hundred per cent, I totally agree. Han says recognising that these fears of making mistakes are irrational is the first step. But is there anything we can do practically to help get rid of this fear?"
+              },
+              {
+                  "speaker": "Barnaby Griffiths",
+                  "gender": "male",
+                  "avatar": "assets/avatars/barnaby_griffiths.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "It isn't about perfection, and it isn't about necessarily being very fluent. It's about communicating well."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "This is Barnaby Griffiths. He's a speaking coach who works with the students who want to improve their speaking in English."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Barnaby says if we think about speaking as communicating rather than like a test, then we can relax. So embrace your mistakes."
+              },
+              {
+                  "speaker": "Barnaby Griffiths",
+                  "gender": "male",
+                  "avatar": "assets/avatars/barnaby_griffiths.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "Above all, allow for mistakes. So self-correct is fine. Allow pauses and silence within your communication and learn to correct yourself and also introduce elements such as humour and smile and laugh when things go wrong and say, 'Oh, I didn't mean to say that' and have phrases like, 'Let me rephrase that', or 'I need to say that again' and be vulnerable."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "I love Barnaby's advice to just smile and laugh when things go wrong, but I imagine it might be difficult to be vulnerable like Barnaby says. Do you have any tips, Georgie?"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yes, I do. I think the best way to get comfortable making mistakes is to start in situations where you feel safe. So you could practise with someone you feel comfortable with. And another idea is to do a language exchange. So this is when you find someone who wants to practise your language and you want to practise their language. This is really good because you're both practising languages and you're both making mistakes, and you're kind of in the same situation."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "That's true. I had a similar experience actually when I was learning Turkish, so I did an exchange with a Turkish friend. She was teaching me Turkish and I was funnily enough, I was actually giving her some English tips. Um, and it was really good because it is with someone you know and you feel comfortable with and you don't worry too much about mistakes. I was making mistakes in both languages, and, uh, that felt OK."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yeah, it's great because there's no judgement, is there?"
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Exactly. Thanks for listening to this episode of Beating Speaking Anxiety. To learn more about speaking anxiety, head to our website where Georgie has made videos for each of the speaking fears we talk about in this series. You will hear more advice and see some tips in action with real learners. Use the link in the notes for this episode or visit bbclearningenglish.com"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "And we'd love to hear about your experience speaking English. Please send us an email and tell us what scares you about speaking. Our email address is learningenglish@bbc.co.uk. And in the next episode, we'll be talking about what to do when you're speaking English and your mind suddenly goes blank. See you then."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Bye."
+              }
+          ]
+      },
+      {
+          "id": "pod_understanding_people",
+          "title": "I Won't Understand People",
+          "intro": "When we think about language anxiety, we often think about the fear of speaking, but that's only one part of a conversation. We also have to listen. Learn from experts about this topic and get tips on how to improve your listening skills, and what to do when you can’t understand the person you’re speaking to.",
+          "audioUrl": "audio/pod_understanding_people_download.mp3",
+          "transcript": [
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Do you struggle to understand people when you're having a conversation in English?"
+              },
+              {
+                  "speaker": "Paola, Italy",
+                  "gender": "female",
+                  "avatar": "assets/avatars/paola_italy.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "I'm scared, scared when I don't understand the other people."
+              },
+              {
+                  "speaker": "Gyuri, South Korea",
+                  "gender": "female",
+                  "avatar": "assets/avatars/gyuri_south_korea.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "It's really hard to understand British accent. Like when I ate dinner with my family, I couldn't understand their speaking, and they couldn't understand my speaking."
+              },
+              {
+                  "speaker": "Lenka",
+                  "gender": "female",
+                  "avatar": "assets/avatars/lenka.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "You have to understand that it's about communication. It doesn't matter how many times, times you ask how many times you don't understand it."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "When we think about language anxiety, we often think about the fear of speaking, but that's only one part of a conversation. We also have to listen."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "In today's episode of Beating Speaking Anxiety, we'll look at what to do when you don't understand the other person.\nHello and welcome to Beating Speaking Anxiety. In this podcast, we help you understand speaking anxiety and fight your fears of speaking English. I'm Georgie, an English teacher and presenter at BBC Learning English."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And I am Hanan, a bilingual correspondent for BBC Arabic and presenter of the Arabic educational series, Dars."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Find a transcript for this episode to read along on our website bbclearningenglish.com.\nSo we heard from some learners at the start of the programme about the difficulty they have understanding English speakers, particularly native English speakers. And it's a very common problem."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yes, let's hear from Lenka. Lenka is now an English teacher in the UK, but she's also experienced difficulty understanding people in the past."
+              },
+              {
+                  "speaker": "Lenka",
+                  "gender": "female",
+                  "avatar": "assets/avatars/lenka.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "English is not my first language, so I learned English at school. I started when I was young, but I didn't travel until much later. So first time I actually went abroad and it was London and no one speaks slowly, no one takes any notice, so that was a shock – how much different language is in the classroom to the real world."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "The English Lenka learned in the classroom wasn't very helpful in real life situations. And when you're travelling in a foreign country, that is really stressful, especially when things go wrong."
+              },
+              {
+                  "speaker": "Lenka",
+                  "gender": "female",
+                  "avatar": "assets/avatars/lenka.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "I almost wanted to cry because we went into the airport with the connecting flight, so trying to sort it out, didn't really understand what they were saying. So I was shocked really, because I thought I was good at English, but I couldn't actually communicate."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "I completely understand what Lenka is saying about trying to understand people in London. When I first moved here, I found it really difficult because, you know, the day-to-day language is fairly different from what I'd learned at school. So, for example, when I meet someone, I know the first thing I say, 'How are you?' Or maybe 'What's up?' as I used to hear in American movies. But after moving to London, I'd run into a colleague and they'd say, 'You alright?' and in my head I'm like, 'I'm fine, what's wrong?' Also, natives speak so fast. So sometimes I had to guess what they were saying. If I was waiting to check out at a shop, for example, I remember, especially if I was returning or exchanging an item, there were times I'd just catch one word and tried to guess what they were saying. And I'm not going to tell you how many times my guess was actually wrong."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yeah, that can be really stressful. And even if you feel confident in your English and you can speak well, if you can't understand what the other person is saying, it's really difficult to do anything. Like with Lenka, she missed her flight at the airport, and she couldn't understand the staff to try and sort the problem out."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "To understand more about the difficulty lots of learners have understanding English in these real-life situations. We spoke to Erhan Aslan, associate professor of applied linguistics at the University of Reading."
+              },
+              {
+                  "speaker": "Erhan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/erhan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "When a student doesn't have enough English language proficiency, they cannot really perform real life tasks like, um, ordering coffee in a coffee shop or opening a bank account on the phone. Some students may have listening anxiety like they can't really talk on the phone because they have more difficulty understanding people in this really natural, fast-paced speech."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Erhan says that difficulty understanding fast, natural speech can hold learners back. The problem is, learners need to practise using English to improve, but a few bad experiences can increase their anxiety."
+              },
+              {
+                  "speaker": "Erhan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/erhan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "These kinds of instances can accumulate and create, um, this barrier in how they use language, how they hear language, and how they encounter language in different situations."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "According to Erhan, bad experiences can accumulate, this means they can collect together inside the mind of a learner. Erhan believes that part of the problem is that learners don't hear a wide enough range of voices speaking English."
+              },
+              {
+                  "speaker": "Erhan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/erhan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "One main issue, I think, uh, when that anxiety happens is when your students are not familiar with different accents and when you look at their experience, they're always exposed to one variety of English, and that tends to be the American English because of the movies, the pop culture, um, music and that sort of thing."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Watching films, TV and hearing American English voices is a great way to improve your English, but it might not help you that much on a street in the UK, as you know Hanan,"
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Totally."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "where you’ll hear lots of different English accents. And of course, English is spoken in many other places around the world, and everyone uses it a bit differently."
+              },
+              {
+                  "speaker": "Erhan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/erhan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "In real life, students don't always communicate with native English speakers, right? So they also need to develop strategies and abilities to to understand different accents of the world. So that's that's also very important."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "So trying to watch and listen to things in English from different places can help prepare us for real-life English conversations. But Erhan says we should also think about the kind of things we watch and listen to."
+              },
+              {
+                  "speaker": "Erhan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/erhan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "I always tell my students, um, or told in the past, always listen to like, talk shows, because in talk shows, people use more natural flowing language as opposed to movies and TV shows, it's more scripted."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Films and TV dramas are great, but they're scripted, so they don't always give you the best idea of how natural conversation works. Think about how you talk on the phone in your own language. It's probably very different to what you've seen in the films."
+              },
+              {
+                  "speaker": "Erhan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/erhan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "Interviews are always more, uh, natural to me, so I would always say listen to them and see like how they speak, how they like pause, um, how they show hesitation, these different kinds of functions."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "At BBC Learning English, lots of our podcasts and programmes include natural speech. Try Real Easy English for a whole conversation in simple English, or listen to 6 Minute English, to hear clips from BBC programmes featuring interviews from around the world."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Georgie, I have one more question for you. If someone finds themselves in a situation like Lenka did at the airport, where they need to speak in English to fix a problem but they’re struggling to understand, what would you suggest?"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Well, the first thing is to try to stay calm. This is easier said than done, but don't be afraid to ask someone to speak more slowly. Say 'English is not my first language. Can you speak more slowly and clearly?' Or, try this: 'Sorry, I didn't understand that. Can you say it again?' If there's one word you didn't understand, say, 'What does this word mean?' And in the end, Lenka was able to sort her flight out. And she says that even though it's hard, you just have to keep trying."
+              },
+              {
+                  "speaker": "Lenka",
+                  "gender": "female",
+                  "avatar": "assets/avatars/lenka.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "You have to understand that it's about communication. It doesn't matter how many times, times you ask how many times you don't understand it. It doesn't have to be perfect because communication is not perfect. So you have to just keep going and get the result."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Thanks for listening to this episode of Beating Speaking Anxiety. You can find more resources to help with the fear of not understanding people. On the BBC Learning English website, visit bbclearningenglish.com."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "In the next episode, we'll be talking about how to improve your public speaking in English. See you then."
+              },
+              {
+                  "speaker": "Hanan",
+                  "gender": "female",
+                  "avatar": "assets/avatars/hanan.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Bye bye."
+              }
+          ]
+      },
+      {
+          "id": "pod_learn_the_hard_way",
+          "title": "Learn the Hard Way",
+          "intro": "If you learn something the hard way, it's because you weren’t listening or you made a mistake. Learn how to use this expression with Feifei and Phil.",
+          "audioUrl": "audio/pod_learn_the_hard_way.mp3",
+          "transcript": [
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Hello and welcome to The English We Speak, where we explain phrases and expressions used by fluent English speakers so that you can use them too. I'm Feifei."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And I'm Phil."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Phil, you are dripping wet. What happened?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "The weather seemed fine when I left home, but then I got five minutes down the road, and it started raining really heavily. I guess I learnt the hard way that you need to have an umbrella if you live in London!"
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Well, I suppose the good thing is that if you learn the hard way, then you probably won't forget. Now, shall we learn this expression – 'learn something the hard way'?"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yes. Learning something the hard way is a bit like learning from your mistakes. It means something difficult or unpleasant happened to you, so you learn to do something differently to make sure it doesn't happen again. Where's the best place to buy an umbrella, Feifei? I'm not going home without one."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "I'll tell you after this programme. Yes, you can learn something the hard way when something goes wrong. We often use it to talk about things that you could have prepared for. For example, if you lost all your work because you forgot to save, you'll learn why saving is important the hard way, when your computer crashes."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yeah, it's often used to suggest that someone has ignored advice. OK, let's hear some other examples of people using 'learn something the hard way'."
+              },
+              {
+                  "speaker": "Examples",
+                  "gender": "neutral",
+                  "avatar": "assets/avatars/examples.png",
+                  "side": "left",
+                  "role": "note",
+                  "text": "I didn't use to look at the cookbooks when I cook, but then I did because I learned the hard way and cooked so many terrible dishes.\nI was getting the train to Paris from London, and I learned the hard way that you need an hour before the train. I only arrived 15 minutes before the train, so I missed it.\nPeople say when you go travelling, you should take half of what you think you should take, and I didn’t take that advice so I learnt the hard way. I carried a really heavy bag around with me all the time for no reason."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "We've been talking about the expression 'learn something the hard way' to mean learning from bad experiences."
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yes, there's also a similar expression we can say that sometimes people have to learn hard lessons. If we say someone has to learn hard lessons, we mean that they are doing something wrong and they need to learn from the consequences."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK. That's it for this programme, but join us next time to learn more English phrases and expressions"
+              },
+              {
+                  "speaker": "Phil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/phil.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Don't worry, you can learn things the easy way when you listen to us!"
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "That's right! See you next time."
+              }
+          ]
+      },
+      {
+          "id": "pod_6_minute_english_the_enhanced_games",
+          "title": "The Enhanced Games",
+          "intro": "What would the world of athletics look like if athletes were allowed to take drugs? That's what the organisers of The Enhanced Games want to find out. In mainstream sport, taking performance-enhancing drugs is strictly forbidden. It's known as 'doping' and if athletes are caught doing it, they can face fines, suspensions or even bans from professional sport. But in The Enhanced Games, doping is allowed. Is this an insult to sporting tradition or an acceptance of scientific progress? Pippa and Neil discuss this and teach you some new vocabulary.",
+          "audioUrl": "audio/pod_6_minute_english_the_enhanced_games.mp3",
+          "transcript": [
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Hello, this is 6 Minute English from BBC Learning English. I'm Neil."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And I'm Pippa. Sharing your Netflix password, lying about your age or not paying the bus fare are a few examples of cheating in daily life. But there's one place where cheating is usually considered wrong, and that's sport."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Cheating in sport through the use of performance-enhancing drugs, informally called doping, is normally considered wrong. Just ask American cycling legend Lance Armstrong, who was thrown out of the sport for using banned substances. But earlier this year, a sporting event took place which turned the debate about drugs in sport upside down. Here's Asma Khalid from BBC World Service's The Global Story to explain:"
+              },
+              {
+                  "speaker": "Asma Khalid",
+                  "gender": "female",
+                  "avatar": "assets/avatars/asma_khalid.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "This weekend, elite athletes from around the world are descending on Las Vegas, Nevada, for the first-of-its-kind sporting competition known as The Enhanced Games. It's kind of like the Olympics, but only for swimming, sprinting and weightlifting. The aim is to break world records. In fact, some of these competitors are former Olympians – medallists battling it out for money and glory. But there's one big difference..."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "The big difference is that The Enhanced Games allow athletes to use performance-enhancing drugs that are banned in professional sports. In these games, nicknamed The Doping Olympics, steroids, growth hormones and stimulants are all OK. You're a big sports fan, Neil. Would you enjoy watching a sport where the athletes have taken drugs?"
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "No, I wouldn't. I really don't think that's fair. I think we need to know that all the athletes start and compete from the same level."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yeah, I guess that makes sense. I don't really watch that many sports so I guess I wouldn't notice the difference, but if you're really into sport you care about the rules, right?"
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Yes, absolutely. And in this episode we'll dive into the controversial world of The Enhanced Games, learning some useful new words and phrases along the way. And remember, you'll find all the vocabulary, plus a quiz and a worksheet, on our website, bbclearningenglish.com."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "But now I have a question for you, Neil. You mentioned the famous sporting cheat Lance Armstrong, but how many times did Lance Armstrong win the famous race, the Tour de France, before he was finally caught out? Was it:\na)    five,\nb)    six, or\nc)    seven?"
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Ooh... Well, it was a lot, so I think I'll go for c) seven."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Well, we'll find out the answer at the end of the programme. Now, it's no exaggeration to say that The Enhanced Games are controversial. After all, organisations like the World Anti-Doping Agency have spent decades fighting performance-enhancing drugs in sport. Here's BBC sports editor Dan Roan on World Service programme The Global Story."
+              },
+              {
+                  "speaker": "Dan Roan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/dan_roan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "I think it's fair to say it's one of the most divisive and controversial events that the world of sport has seen for a long time. It's an event where performance-enhancing drugs, banned elsewhere in mainstream sport of course, are actually allowed to be taken by the competitors under medical supervision."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Dan Roan says, \"It's fair to say The Enhanced Games are controversial.\" He uses the phrase it's fair to say to introduce a statement that he considers to be balanced and reasonable – that the games are controversial."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Dan also describes the games as divisive – an adjective that means causing a lot of disagreement between people. Much of this disagreement is about the use of performance-enhancing drugs themselves. The Games' organisers point out that all drugs are approved by the US Food and Drug Agency and taken openly under medical supervision, which they say makes them safer than when they are taken secretly at competitions elsewhere. But there are many critics too, as Dan Roan outlined to BBC World Service's The Global Story."
+              },
+              {
+                  "speaker": "Dan Roan",
+                  "gender": "male",
+                  "avatar": "assets/avatars/dan_roan.png",
+                  "side": "left",
+                  "role": "guest",
+                  "text": "But the critics, of course, say that this crosses an ethical line, that it sets a dreadful example because it risks normalising doping. It could harm the integrity, therefore, of sport, and it could be dangerous to the health of those taking part."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "For the Games' critics, doping crosses an ethical line. The phrase to cross the line means to start behaving in a way that's not socially acceptable. These critics say the Games set a bad example, meaning that they encourage others to behave badly as well. Why is that, Pippa?"
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Well, it's because critics argue the games normalise the use of performance drugs in sport. If you normalise something, you treat it as normal or acceptable when previously it wasn't. But with arguments strongly held on both sides, the debate is far from over. So Neil, have you changed your opinion after hearing both sides of the story?"
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "No, I haven't. I think it's just not fair, and I think if you're not fair in sport, what's the point?"
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Well, let's hear the answer to my quiz question, Neil. I asked you how many times Lance Armstrong won the Tour de France, and it was c) seven times, consecutively between 1999 and 2005. Of course, we now know that there were performance-enhancing drugs involved."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK. So, now it's time to recap the vocabulary we've learned, starting with doping – using banned drugs to perform better in sporting competitions."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "You can use the phrase it's fair to say to introduce a statement you consider to be balanced, reasonable or true."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "If something is divisive, it causes disagreement between people."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "The idiom cross the line means to start behaving in an unacceptable way."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "If you set a bad example, you behave in a way that encourages others to behave badly."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "And finally, to normalise something means to treat it as normal or acceptable when previously it wasn't."
+              },
+              {
+                  "speaker": "Neil",
+                  "gender": "male",
+                  "avatar": "assets/avatars/neil.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK. Once again, our six minutes are up, but if you'd like to practise more, you'll find a quiz and worksheet on our website, bbclearningenglish.com. See you again soon. But for now, it's goodbye."
+              },
+              {
+                  "speaker": "Pippa",
+                  "gender": "female",
+                  "avatar": "assets/avatars/pippa.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Bye!"
+              }
+          ]
+      },
+      {
+          "id": "pod_understood_the_assignment",
+          "title": "Understood the Assignment",
+          "intro": "This slang phrase is about knowing what you have to do for a task, and doing it perfectly. Hear examples and learn how to use it in this programme, with Georgie and Feifei.",
+          "audioUrl": "audio/pod_understood_the_assignment_download.mp3",
+          "transcript": [
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Hello and welcome to The English We Speak, where we explain expressions used by fluent English speakers so that you can use them, too! I'm Feifei, and I'm joined by Georgie. How are you? What have you been up to this week?"
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Well, something that's really exciting is that I went to a costume party, um, the theme was 'fairytales', and my friend came as a fairy. She wore these amazing purple wings, she got her makeup and hair done professionally, and she looked incredible. She really understood the assignment."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Oh wow, that sounds fun! But what do you mean she 'understood the assignment'? Assignments are usually something we do at school, like essays and coursework, but you're talking about a costume party."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yes. That's because 'understood the assignment' is now being used as a slang phrase, meaning that someone did something very well – they exceeded expectations. So, at the party I went to, lots of people didn't really make much of an effort, but my friend went out and bought accessories, she did her makeup…"
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Right, so she knew what she had to do to impress people, and she achieved that.  She understood the assignment."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Yes, exactly."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Oh, interesting. Well, I'd like to hear some more examples to fully understand the phrase."
+              },
+              {
+                  "speaker": "Examples",
+                  "gender": "neutral",
+                  "avatar": "assets/avatars/examples.png",
+                  "side": "left",
+                  "role": "note",
+                  "text": "I told my wife I wanted to eat something unusual and special for my birthday, and we had the most amazing meal in the craziest restaurant I've ever been to. She really understood the assignment.\nWe're hoping to get our bathroom redone this year, and we just got the designs through, and the designer really understood the assignment. It looks so amazing and so relaxing. I can't wait to get it done.\nI asked the band to write a catchy, three-minute pop song with an unforgettable chorus, and they totally understood the assignment. I can't get it out of my head!"
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK, I think I've got it now. I asked you to teach us an expression that you might not find in a typical dictionary, and you really understood the assignment."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "That's a great example, Feifei, and thank you! One thing to note is that we usually hear it in the past tense. And that's because it's used to comment on what someone has done after it has happened as a way to compliment or praise them."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Great. And another expression you might hear when someone does really well at something is that they 'go above and beyond'."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Oh yes. 'Go above and beyond' means that a person does more than is required for the task."
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "OK, let's recap. We learnt the expression 'understood the assignment', which we can use to praise someone when they knew exactly what they had to do, and did it well."
+              },
+              {
+                  "speaker": "Georgie",
+                  "gender": "female",
+                  "avatar": "assets/avatars/georgie.png",
+                  "side": "right",
+                  "role": "host",
+                  "text": "Thank you for joining us. Goodbye!"
+              },
+              {
+                  "speaker": "Feifei",
+                  "gender": "female",
+                  "avatar": "assets/avatars/feifei.png",
+                  "side": "left",
+                  "role": "host",
+                  "text": "Bye bye!"
+              }
+          ]
+      }
+  ];
+
+  /* ============================================================
+     LISTENING — espacio de módulo: Dictation y Podcast Practice
+     ============================================================ */
+  (function initListeningModules() {
+    const elView = $("view-listening");
+    const elRail = $("lsRail");
+    const elIndex = $("lsIndex");
+    const elScroller = $("lsScroller");
+    const elList = $("lsList");
+    const elBadge = $("lsProgressBadge");
+    const elName = $("lsModuleName");
+    const elBack = $("lsBack");
+    if (!elView || !elList) return;
+
+    const DONE_KEY = "ls_done";
+    let done = store.get(DONE_KEY, {}) || {};
+    let moduleKey = "dictation";
+    let pos = 0;
+
+    const MODULES = {
+      dictation: {
+        name: "Dictation Practice",
+        pane: "lsPaneDictation",
+        items: () => LISTENING_LESSONS,
+        label: (x) => x.title,
+        open: (i) => setListeningLesson(i)
+      },
+      podcast: {
+        name: "Podcast Practice",
+        pane: "lsPanePodcast",
+        items: () => podcastPracticeData,
+        label: (x) => x.title,
+        open: openPodcast
+      }
+    };
+    const MODULE_BY_NAME = {
+      "Dictation Practice": "dictation",
+      "Podcast Practice": "podcast"
+    };
+
+    /* ---------- índice lateral ---------- */
+    function doneKey(mod, i) { return mod + ":" + i; }
+    function markDone() {
+      const key = doneKey(moduleKey, pos);
+      if (done[key]) return;
+      done[key] = true;
+      store.set(DONE_KEY, done);
+      renderIndex();
+      updateBadge();
+    }
+
+    function updateBadge() {
+      if (!elBadge) return;
+      const items = MODULES[moduleKey].items();
+      let n = 0;
+      items.forEach((_, i) => { if (done[doneKey(moduleKey, i)]) n++; });
+      elBadge.textContent = n + " / " + items.length;
+      elBadge.setAttribute("title", n + " de " + items.length + " practicados en este módulo");
+    }
+
+    function renderIndex() {
+      const mod = MODULES[moduleKey];
+      elList.innerHTML = mod.items().map((it, i) => {
+        const label = numberWord(i + 1);
+        const isSel = i === pos;
+        const isDone = !!done[doneKey(moduleKey, i)];
+        return '<li class="wr-list-item' + (isSel ? " is-selected" : "") + (isDone ? " is-done" : "") +
+          '" role="option" tabindex="0" data-ls-pos="' + i + '" aria-selected="' + (isSel ? "true" : "false") +
+          '" title="' + esc(mod.label(it)) + '" aria-label="' + label + ": " + esc(mod.label(it)) + '">' +
+          '<span class="wr-item-row">' +
+          '<span class="wr-dot" aria-hidden="true"></span>' +
+          '<span class="wr-item-title">' + label + "</span>" +
+          (isDone ? '<span class="wr-item-flag wr-done-flag" title="Practicado">\u2713</span>' : "") +
+          "</span></li>";
+      }).join("");
+      syncFades();
+    }
+
+    function syncFades() {
+      if (!elIndex || !elScroller) return;
+      const top = elScroller.scrollTop;
+      const rest = elScroller.scrollHeight - (top + elScroller.clientHeight);
+      const atEnd = elScroller.scrollHeight <= elScroller.clientHeight + 1;
+      elIndex.style.setProperty("--wrx-fade-top", String(Math.min(top / 28, 1)));
+      elIndex.style.setProperty("--wrx-fade-bottom", atEnd ? "0" : String(Math.min(rest / 28, 1)));
+    }
+
+    /* ---------- paneles colapsables ---------- */
+    function setPanelOpen(panel, open) {
+      if (!panel) return;
+      panel.classList.toggle("is-open", open);
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) toggle.setAttribute("aria-expanded", String(open));
+      if (panel === elIndex) window.setTimeout(syncFades, 340);
+    }
+    function closePanels() { setPanelOpen(elRail, false); setPanelOpen(elIndex, false); }
+
+    [elRail, elIndex].forEach(panel => {
+      if (!panel) return;
+      const toggle = panel.querySelector("[data-wrx-toggle]");
+      if (toggle) {
+        toggle.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const open = !panel.classList.contains("is-open");
+          closePanels();
+          setPanelOpen(panel, open);
+        });
+      }
+      panel.addEventListener("pointerleave", (ev) => {
+        if (ev.pointerType === "touch") return;
+        setPanelOpen(panel, false);
+      });
+    });
+
+    document.addEventListener("pointerdown", (ev) => {
+      if (!elView.classList.contains("is-active")) return;
+      if (ev.target.closest(".wrx-panel")) return;
+      closePanels();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape" || !elView.classList.contains("is-active")) return;
+      closePanels();
+      if (document.activeElement && document.activeElement.closest(".wrx-panel")) document.activeElement.blur();
+    });
+    if (elScroller) elScroller.addEventListener("scroll", syncFades, { passive: true });
+    window.addEventListener("resize", syncFades, { passive: true });
+
+    /* ---------- selección ---------- */
+    elList.addEventListener("click", (ev) => {
+      const li = ev.target.closest(".wr-list-item");
+      if (li) select(Number(li.dataset.lsPos));
+    });
+    elList.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const li = ev.target.closest(".wr-list-item");
+      if (li) { ev.preventDefault(); select(Number(li.dataset.lsPos)); }
+    });
+    if (elBack) elBack.addEventListener("click", () => {
+      stopEverything();
+      closePanels();
+      go("listening-hub");
+    });
+
+    // Salir del podcast corta el audio: no debe seguir sonando en otra vista.
+    function stopPodcast() {
+      const player = $("podAudio");
+      if (!player) return;
+      player.pause();
+      try { player.currentTime = 0; } catch { /* algunos navegadores lo rechazan sin metadata */ }
+      const bar = $("podBar");
+      if (bar) bar.style.width = "0";
+      const time = $("podTime");
+      if (time && Number.isFinite(player.duration)) time.textContent = "0:00 / " + clock(player.duration);
+    }
+
+    function stopEverything() {
+      if (typeof stopListening === "function") stopListening();
+      stopPodcast();
+    }
+
+    // Cualquier cambio de vista (menú, inicio, otro taller) detiene el audio.
+    document.addEventListener("et:viewchange", (ev) => {
+      if (ev.detail !== "view-listening") stopPodcast();
+    });
+    // Red de seguridad por si alguna vista se activa sin pasar por el router.
+    if (window.MutationObserver) {
+      new MutationObserver(() => {
+        if (!elView.classList.contains("is-active")) stopPodcast();
+      }).observe(elView, { attributes: true, attributeFilter: ["class"] });
+    }
+    window.addEventListener("pagehide", stopPodcast);
+
+    function select(i) {
+      const items = MODULES[moduleKey].items();
+      if (!Number.isInteger(i) || i < 0 || i >= items.length) return;
+      stopEverything();
+      pos = i;
+      MODULES[moduleKey].open(i);
+      renderIndex();
+      updateBadge();
+      const node = elList.querySelector(".wr-list-item.is-selected");
+      if (node) node.scrollIntoView({ block: "nearest" });
+      emitRoute();
+    }
+
+    // Corregir cualquiera de las cuatro prácticas cuenta como hecha.
+    ["lClozeCheck", "lSentenceCheck", "lDictationCheck"].forEach(id => {
+      const btn = $(id);
+      if (btn) btn.addEventListener("click", () => { if (moduleKey === "dictation") markDone(); });
+    });
+
+    /* ============================================================
+       PODCAST PRACTICE — reproductor y transcript en burbujas
+       ============================================================ */
+    const audio = $("podAudio");
+
+    // El disco del avatar muestra el nombre completo; se achica la letra
+    // cuando el nombre es largo para que entre sin recortarse.
+    function nameScale(name) {
+      const longest = name.split(/\s+/).reduce((a, w) => Math.max(a, w.length), 0);
+      if (name.length > 20 || longest > 10) return "xs";
+      if (name.length > 12 || longest > 7) return "sm";
+      return "md";
+    }
+
+    function clock(seconds) {
+      if (!Number.isFinite(seconds)) return "0:00";
+      const s = Math.max(0, Math.floor(seconds));
+      return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    }
+
+    function openPodcast(i) {
+      const ep = podcastPracticeData[i];
+      if (!ep) return;
+      $("podTitle").textContent = ep.title;
+      $("podIntro").textContent = ep.intro;
+      $("podNotice").classList.add("hidden");
+      $("podNotice").textContent = "";
+
+      if (audio) {
+        audio.pause();
+        audio.src = ep.audioUrl;
+        audio.currentTime = 0;
+        audio.load();
+      }
+      setPlayIcon(false);
+      paintProgress(0, 0);
+
+      $("podChat").innerHTML = ep.transcript.map((turn, k) =>
+        '<article class="pod-turn pod-turn--' + turn.side + ' pod-turn--' + turn.role +
+        '" data-turn="' + k + '">' +
+        '<span class="pod-ava pod-ava--' + turn.gender + ' pod-ava--' + nameScale(turn.speaker) +
+        '" title="' + esc(turn.speaker) + '">' + esc(turn.speaker) + "</span>" +
+        '<div class="pod-bubble-wrap"><div class="pod-bubble">' +
+        turn.text.split("\n").map(par => "<p>" + esc(par) + "</p>").join("") +
+        "</div></div></article>"
+      ).join("");
+    }
+
+    function setPlayIcon(playing) {
+      const play = document.querySelector(".pod-icon-play");
+      const pause = document.querySelector(".pod-icon-pause");
+      if (play) play.classList.toggle("hidden", playing);
+      if (pause) pause.classList.toggle("hidden", !playing);
+    }
+
+    function paintProgress(current, total) {
+      const pct = total ? (current / total) * 100 : 0;
+      const bar = $("podBar"), track = $("podTrack");
+      if (bar) bar.style.width = pct + "%";
+      if (track) track.setAttribute("aria-valuenow", String(Math.round(pct)));
+      const time = $("podTime");
+      if (time) time.textContent = clock(current) + " / " + clock(total);
+    }
+
+    if ($("podPlay")) $("podPlay").addEventListener("click", () => {
+      if (!audio) return;
+      if (audio.paused) {
+        const attempt = audio.play();
+        if (attempt && attempt.catch) attempt.catch(() => showAudioNotice());
+      } else {
+        audio.pause();
+      }
+    });
+
+    function showAudioNotice() {
+      const ep = podcastPracticeData[pos];
+      const notice = $("podNotice");
+      if (!notice || !ep) return;
+      notice.textContent = "No se pudo reproducir " + ep.audioUrl +
+        ". Verificá que el archivo esté en esa ruta; el transcript funciona igual.";
+      notice.classList.remove("hidden");
+      setPlayIcon(false);
+    }
+
+    if (audio) {
+      audio.addEventListener("play", () => {
+        setPlayIcon(true);
+        $("podNotice").classList.add("hidden");
+      });
+      audio.addEventListener("pause", () => setPlayIcon(false));
+      audio.addEventListener("ended", () => { setPlayIcon(false); markDone(); });
+      audio.addEventListener("error", showAudioNotice);
+      audio.addEventListener("loadedmetadata", () => paintProgress(0, audio.duration));
+      audio.addEventListener("timeupdate", () => paintProgress(audio.currentTime, audio.duration));
+    }
+
+    /* ---------- volumen ---------- */
+    const VOLUME_KEY = "pod_volume";
+    const elVolume = $("podVolume"), elMute = $("podMute");
+    let lastVolume = 1;
+
+    function paintVolume() {
+      if (!audio) return;
+      const muted = audio.muted || audio.volume === 0;
+      const shown = muted ? 0 : Math.round(audio.volume * 100);
+      if (elVolume) {
+        elVolume.value = String(shown);
+        elVolume.style.setProperty("--pod-vol", shown + "%");
+      }
+      if (elMute) {
+        elMute.setAttribute("aria-pressed", String(muted));
+        elMute.setAttribute("aria-label", muted ? "Activar el sonido" : "Silenciar");
+        const on = elMute.querySelector(".pod-icon-vol");
+        const off = elMute.querySelector(".pod-icon-muted");
+        if (on) on.classList.toggle("hidden", muted);
+        if (off) off.classList.toggle("hidden", !muted);
+      }
+    }
+
+    if (audio) {
+      const saved = Number(store.get(VOLUME_KEY, 1));
+      audio.volume = Number.isFinite(saved) ? Math.min(Math.max(saved, 0), 1) : 1;
+      lastVolume = audio.volume || 1;
+      paintVolume();
+    }
+
+    if (elVolume) elVolume.addEventListener("input", () => {
+      if (!audio) return;
+      const value = Number(elVolume.value) / 100;
+      audio.muted = false;
+      audio.volume = value;
+      if (value > 0) lastVolume = value;
+      store.set(VOLUME_KEY, value);
+      paintVolume();
+    });
+
+    if (elMute) elMute.addEventListener("click", () => {
+      if (!audio) return;
+      if (audio.muted || audio.volume === 0) {
+        audio.muted = false;
+        audio.volume = lastVolume || 1;
+      } else {
+        lastVolume = audio.volume;
+        audio.muted = true;
+      }
+      store.set(VOLUME_KEY, audio.muted ? 0 : audio.volume);
+      paintVolume();
+    });
+
+    document.querySelectorAll("[data-pod-speed]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-pod-speed]").forEach(b => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        if (audio) audio.playbackRate = Number(btn.dataset.podSpeed);
+      });
+    });
+
+    if ($("podTrack")) {
+      const seek = (ev) => {
+        if (!audio || !Number.isFinite(audio.duration)) return;
+        const rect = $("podTrack").getBoundingClientRect();
+        if (!rect.width) return;
+        const ratio = Math.min(Math.max((ev.clientX - rect.left) / rect.width, 0), 1);
+        audio.currentTime = ratio * audio.duration;
+      };
+      $("podTrack").addEventListener("click", seek);
+      $("podTrack").addEventListener("keydown", (ev) => {
+        if (!audio || !Number.isFinite(audio.duration)) return;
+        if (ev.key === "ArrowRight") { audio.currentTime = Math.min(audio.currentTime + 5, audio.duration); ev.preventDefault(); }
+        if (ev.key === "ArrowLeft") { audio.currentTime = Math.max(audio.currentTime - 5, 0); ev.preventDefault(); }
+      });
+    }
+
+    /* ---------- apertura de módulo ---------- */
+    function setModule(key) {
+      moduleKey = MODULES[key] ? key : "dictation";
+      if (moduleKey !== "podcast") stopPodcast();
+      elView.setAttribute("data-ls-module", moduleKey);
+      if (elName) elName.textContent = MODULES[moduleKey].name;
+      Object.keys(MODULES).forEach(k => {
+        const pane = $(MODULES[k].pane);
+        if (pane) pane.classList.toggle("hidden", k !== moduleKey);
+      });
+      closePanels();
+      if (elScroller) elScroller.scrollTop = 0;
+    }
+
+    function openModule(name) {
+      const key = MODULE_BY_NAME[name] || "dictation";
+      setModule(key);
+      go("listening");
+      select(key === "dictation" ? Math.min(Math.max(curLessonIndex, 0), LISTENING_LESSONS.length - 1) : 0);
+    }
+
+    function emitRoute() {
+      if (!elView.classList.contains("is-active")) return;
+      const mod = MODULES[moduleKey];
+      const item = mod.items()[pos];
+      setRoute(["listening", routeSlug(mod.name), item ? shortSlug(mod.label(item)) : null]);
+    }
+
+    registerSection("listening", {
+      apply(moduleSlug, exerciseSlug) {
+        const key = Object.keys(MODULES).find(k => routeSlug(MODULES[k].name) === moduleSlug);
+        if (!key) { go("listening-hub"); return; }
+        openModule(MODULES[key].name);
+        if (!exerciseSlug) return;
+        const items = MODULES[key].items();
+        const at = items.findIndex(item => shortSlug(MODULES[key].label(item)) === exerciseSlug);
+        if (at >= 0) select(at);
+      }
+    });
+
+    // El acceso directo del inicio abre Dictation Practice.
+    document.addEventListener("click", (ev) => {
+      if (ev.target.closest('[data-go="listening"]')) openModule("Dictation Practice");
+    });
+
+    window.ETListening = { openModule: openModule };
+
+    // Estado inicial, sin navegar.
+    setModule("dictation");
+    pos = 0;
+    renderIndex();
+    updateBadge();
+  })();
+
+  initSkillHubCards();
+
   renderAccount();
-  go("dashboard");
+  // Carga directa: si la URL trae una ruta, se abre esa pantalla.
+  applyRoute();
 })();

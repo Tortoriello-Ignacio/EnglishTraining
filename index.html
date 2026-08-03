@@ -14,6 +14,24 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- ============ SCROLL FLOAT INTRO ============ -->
+  <section id="scrollFloatIntro" class="scroll-float-intro" aria-label="English Trainer">
+    <div class="scroll-float-stage">
+      <div class="scroll-float-brand">
+        <span class="scroll-float-quill" aria-hidden="true">
+          <svg viewBox="0 0 64 64" class="scroll-float-quill-svg">
+            <rect x="8" y="32" width="22" height="24" rx="4" class="scroll-float-inkpot" />
+            <path d="M12 32v-4h14v4" class="scroll-float-inkpot-top" />
+            <path d="M52 10C40 14 24 26 18 40c-2 5-3 9-3 9s5-2 9-4C38 39 50 22 54 12c.6-1.4-.5-2.6-2-2z" class="scroll-float-feather"/>
+            <path d="M18 40c-2 5-4 12-4 12M22 38l6 6M30 30l7 7M38 24l6 6" class="scroll-float-feather-lines" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
+
+        <h1 id="scrollFloatTitle" class="scroll-float-title" data-text="English Trainer">English Trainer</h1>
+      </div>
+
+    </div>
+  </section>
   <!-- Fondo animado Shape Grid adaptado a HTML/CSS/JavaScript puro -->
   <canvas id="shapeGridBackground" class="shape-grid-background" aria-hidden="true"></canvas>
   <!-- ============ CARD NAV ============ -->
@@ -37,10 +55,14 @@
           <span class="brand-word">English&nbsp;Trainer</span>
         </a>
 
-        <button id="themeToggle" class="card-nav-cta-button" type="button" aria-label="Cambiar tema">
-          <span class="card-nav-cta-label">Tema</span>
-          <span class="tt-track" aria-hidden="true"><span class="tt-thumb"></span></span>
-        </button>
+        <label class="theme-toggle" title="Cambiar tema">
+          <input id="themeToggle" class="theme-toggle__input" type="checkbox" role="switch" aria-label="Modo oscuro" />
+          <span class="theme-toggle__track">
+            <span class="theme-toggle__thumb" aria-hidden="true"></span>
+            <svg class="theme-toggle__icon theme-toggle__icon--sun" aria-label="sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g></svg>
+            <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-label="moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></g></svg>
+          </span>
+        </label>
       </div>
 
       <div id="cardNavContent" class="card-nav-content" aria-hidden="true">
@@ -127,19 +149,19 @@
       </div>
 
       <div class="tile-grid">
-        <button class="tile tile-writing" data-go="writing">
+        <button class="tile tile-writing" data-go="writing-hub">
           <span class="tile-name">Writing</span>
           <span class="tile-desc">Task con corrección de AI Coach</span>
         </button>
-        <button class="tile tile-reading" data-go="reading">
+        <button class="tile tile-reading" data-go="reading-hub">
           <span class="tile-name">Reading</span>
           <span class="tile-desc">TFNG</span>
         </button>
-        <button class="tile tile-speaking" data-go="speaking">
+        <button class="tile tile-speaking" data-go="speaking-hub">
           <span class="tile-name">Speaking</span>
           <span class="tile-desc">Grabá y auto-evaluá</span>
         </button>
-        <button class="tile tile-listening" data-go="listening">
+        <button class="tile tile-listening" data-go="listening-hub">
           <span class="tile-name">Listening</span>
           <span class="tile-desc">Escuchá y respondé</span>
         </button>
@@ -169,17 +191,204 @@
       </div>
     </section>
 
-    <!-- ============ WRITING (módulo interactivo) ============ -->
-    <section id="view-writing" class="view">
-      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
-      <header class="sec-head">
-        <span class="eyebrow">Writing IELTS</span>
-        <h2>Taller de escritura</h2>
-        <p>160 ejercicios originales de nivel B2 alto–C1, organizados en cuatro modalidades. Escribí desde una consigna, respondé después de una lectura, trabajá con material visual u ordená oraciones en inglés a partir del español.</p>
-      </header>
+    <!-- ============ SKILL HUBS · PASO 1 ============ -->
+    <section id="view-writing-hub" class="view skill-hub-view skill-hub-view--writing">
+      <button class="back-link skill-hub-back" data-go="dashboard">← Volver al inicio</button>
+      <div class="hub-carousel" data-hub-carousel aria-roledescription="carrusel"
+           aria-label="Tipos de ejercicios de Writing">
+        <button class="hub-arrow hub-arrow--prev" type="button" data-hub-prev aria-label="Anterior">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+        </button>
 
-      <!-- Selección por modalidad -->
-      <div class="wr-filters" role="region" aria-label="Selección de ejercicios de Writing">
+        <div class="hub-viewport" data-hub-viewport>
+          <div class="hub-track" data-hub-track>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Prompt Writing" aria-label="Abrir Prompt Writing">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20.5 5 16 16.4 4.6a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8 19l-4 1.5Z"/><path d="M14.5 6.5 17.5 9.5"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Prompt Writing</strong>
+                <span>Escribí a partir de una consigna concreta.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Read & Reply" aria-label="Abrir Read & Reply">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5.5h6a3 3 0 0 1 3 3v10a2.4 2.4 0 0 0-2.4-2.4H3Z"/><path d="M21 5.5h-6a3 3 0 0 0-3 3v10a2.4 2.4 0 0 1 2.4-2.4H21Z"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Read & Reply</strong>
+                <span>Leé un texto y redactá una respuesta propia.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Visual Writing" aria-label="Abrir Visual Writing">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.2" y="4.4" width="17.6" height="15.2" rx="2.2"/><path d="M3.2 16.1 8.4 11l4 3.7 3.2-2.8 5.2 4.6"/><circle cx="9" cy="9" r="1.4"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Visual Writing</strong>
+                <span>Interpretá una imagen o gráfico por escrito.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Sentence Builder" aria-label="Abrir Sentence Builder">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.2" y="6" width="7.4" height="5" rx="1.4"/><rect x="13.4" y="6" width="7.4" height="5" rx="1.4"/><rect x="3.2" y="13.6" width="12.6" height="5" rx="1.4"/><path d="M18.6 16.1h2.2"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Sentence Builder</strong>
+                <span>Construí oraciones claras, correctas y naturales.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+          </div>
+        </div>
+
+        <button class="hub-arrow hub-arrow--next" type="button" data-hub-next aria-label="Siguiente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>
+        </button>
+
+        <div class="hub-dots" data-hub-dots role="tablist" aria-label="Ir a un ejercicio"></div>
+      </div>
+      <p class="skill-hub-status" aria-live="polite"></p>
+    </section>
+
+    <section id="view-listening-hub" class="view skill-hub-view skill-hub-view--listening">
+      <button class="back-link skill-hub-back" data-go="dashboard">← Volver al inicio</button>
+      <div class="hub-carousel" data-hub-carousel aria-roledescription="carrusel"
+           aria-label="Tipos de ejercicios de Listening">
+        <button class="hub-arrow hub-arrow--prev" type="button" data-hub-prev aria-label="Anterior">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+        </button>
+
+        <div class="hub-viewport" data-hub-viewport>
+          <div class="hub-track" data-hub-track>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Dictation Practice" aria-label="Abrir Dictation Practice">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.6 5.4h11.2l3.6 3.6v9.6H4.6Z"/><path d="M15.8 5.4v3.6h3.6"/><path d="M8 12.4h7"/><path d="M8 15.6h4.6"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Dictation Practice</strong>
+                <span>Transcribí con precisión lo que escuchás.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Podcast Practice" aria-label="Abrir Podcast Practice">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9.2" y="3" width="5.6" height="9.8" rx="2.8"/><path d="M5.6 11a6.4 6.4 0 0 0 12.8 0"/><path d="M12 17.4V21"/><path d="M8.6 21h6.8"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Podcast Practice</strong>
+                <span>Entrená comprensión con audios más extensos.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+          </div>
+        </div>
+
+        <button class="hub-arrow hub-arrow--next" type="button" data-hub-next aria-label="Siguiente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>
+        </button>
+
+        <div class="hub-dots" data-hub-dots role="tablist" aria-label="Ir a un ejercicio"></div>
+      </div>
+      <p class="skill-hub-status" aria-live="polite"></p>
+    </section>
+
+    <section id="view-reading-hub" class="view skill-hub-view skill-hub-view--reading">
+      <button class="back-link skill-hub-back" data-go="dashboard">← Volver al inicio</button>
+      <div class="hub-carousel" data-hub-carousel aria-roledescription="carrusel"
+           aria-label="Tipos de ejercicios de Reading">
+        <button class="hub-arrow hub-arrow--prev" type="button" data-hub-prev aria-label="Anterior">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+        </button>
+
+        <div class="hub-viewport" data-hub-viewport>
+          <div class="hub-track" data-hub-track>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Academic Passages" aria-label="Abrir Academic Passages">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5.5h6a3 3 0 0 1 3 3v10a2.4 2.4 0 0 0-2.4-2.4H3Z"/><path d="M21 5.5h-6a3 3 0 0 0-3 3v10a2.4 2.4 0 0 1 2.4-2.4H21Z"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Academic Passages</strong>
+                <span>Leé textos académicos y resolvé consignas.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Bite-Sized Reads" aria-label="Abrir Bite-Sized Reads">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.6 5.4h14.8v9.2a2 2 0 0 1-2 2H9.2l-4.6 3.3Z"/><path d="M8.4 9.4h7.2"/><path d="M8.4 12.6h4.6"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Bite-Sized Reads</strong>
+                <span>Practicá con lecturas breves y directas.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Context Clues" aria-label="Abrir Context Clues">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8.6h6.4"/><path d="M13.6 8.6H20"/><path d="M4 15.4h4.2"/><path d="M11.4 15.4H20"/><path d="M12 5.6v6"/><path d="M9.6 12.4v6"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Context Clues</strong>
+                <span>Inferí significados utilizando el contexto.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+          </div>
+        </div>
+
+        <button class="hub-arrow hub-arrow--next" type="button" data-hub-next aria-label="Siguiente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>
+        </button>
+
+        <div class="hub-dots" data-hub-dots role="tablist" aria-label="Ir a un ejercicio"></div>
+      </div>
+      <p class="skill-hub-status" aria-live="polite"></p>
+    </section>
+
+    <section id="view-speaking-hub" class="view skill-hub-view skill-hub-view--speaking">
+      <button class="back-link skill-hub-back" data-go="dashboard">← Volver al inicio</button>
+      <div class="hub-carousel" data-hub-carousel aria-roledescription="carrusel"
+           aria-label="Tipos de ejercicios de Speaking">
+        <button class="hub-arrow hub-arrow--prev" type="button" data-hub-prev aria-label="Anterior">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+        </button>
+
+        <div class="hub-viewport" data-hub-viewport>
+          <div class="hub-track" data-hub-track>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Quick Translate" aria-label="Abrir Quick Translate">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.4 6.6h8.2"/><path d="M7.5 4.6v2"/><path d="M9.8 6.6c-.5 3.2-2.6 5.6-6.4 6.9"/><path d="M5.6 10.2c1 1.9 2.8 3.1 5.3 3.7"/><path d="M12.4 19.4l3.6-8.4 3.6 8.4"/><path d="M13.8 16.4h4.4"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Quick Translate</strong>
+                <span>Traducí ideas y expresalas en voz alta.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Monologue Challenge" aria-label="Abrir Monologue Challenge">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3.2" width="6" height="10.4" rx="3"/><path d="M5.4 11.6a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18.2v2.6"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Monologue Challenge</strong>
+                <span>Desarrollá una respuesta oral sostenida.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Shadowing" aria-label="Abrir Shadowing">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10v4"/><path d="M8 7.2v9.6"/><path d="M12 4.6v14.8"/><path d="M16 8.4v7.2"/><path d="M20 10.8v2.4"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Shadowing</strong>
+                <span>Repetí audios imitando ritmo y pronunciación.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+            <button class="hub-slide" type="button" data-focus-card data-skill-module="Roleplay" aria-label="Abrir Roleplay">
+              <span class="hub-slide__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.6 5.4h10.8v7.2H8l-4.4 3.1Z"/><path d="M9.6 15.4h4.6l4.4 3.1v-3.1h1.8V8.6h-3.6"/></svg></span>
+              <span class="hub-slide__body">
+                <strong>Roleplay</strong>
+                <span>Practicá conversaciones en situaciones reales.</span>
+              </span>
+              <span class="hub-slide__cue">Empezar</span>
+            </button>
+          </div>
+        </div>
+
+        <button class="hub-arrow hub-arrow--next" type="button" data-hub-next aria-label="Siguiente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>
+        </button>
+
+        <div class="hub-dots" data-hub-dots role="tablist" aria-label="Ir a un ejercicio"></div>
+      </div>
+      <p class="skill-hub-status" aria-live="polite"></p>
+    </section>
+
+    <!-- ============ WRITING (módulo interactivo) ============ -->
+    <section id="view-writing" class="view" data-wr-module="all">
+      <!-- Estado de modalidad. Lo fija la tarjeta elegida en el hub de Writing;
+           permanece en el DOM porque el controlador lo usa como fuente de verdad. -->
+      <div class="wr-filters wr-filters--headless" role="region" aria-label="Selección de ejercicios de Writing">
         <div class="wr-filter-field">
           <span class="wr-filter-legend" id="wrModalityLabel">Modalidad</span>
           <div class="wr-modality-bar" role="radiogroup" aria-labelledby="wrModalityLabel">
@@ -201,33 +410,56 @@
           </div>
         </div>
         <div class="wr-filter-actions">
-          <button id="wrRandom" class="btn btn-primary" type="button">🎲 Actividad aleatoria</button>
           <span id="wrCountFilter" class="wr-count-badge">160 actividades</span>
         </div>
       </div>
 
-      <div class="writing-workspace">
-        <!-- Lista de ejercicios -->
-        <aside class="wr-list-pane">
-          <div class="wr-list-head">
-            <strong>Ejercicios</strong>
-            <span id="wrProgressBadge" class="wr-progress-badge">0 / 160 completados</span>
-          </div>
-          <div id="wrList" class="wr-list" role="listbox" aria-label="Lista de ejercicios"></div>
+      <!-- Doble panel colapsable + área de trabajo -->
+      <div class="wrx-shell" id="wrxShell">
+
+        <!-- Panel 1 · módulo activo -->
+        <aside class="wrx-panel wrx-rail" id="wrxRail" aria-label="Módulo activo">
+          <button class="wrx-head wrx-module" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" data-mod="prompt"><path d="M4 20.5 5 16 16.4 4.6a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8 19l-4 1.5Z"/><path d="M14.5 6.5 17.5 9.5"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="read"><path d="M3 5.5h6a3 3 0 0 1 3 3v10a2.4 2.4 0 0 0-2.4-2.4H3Z"/><path d="M21 5.5h-6a3 3 0 0 0-3 3v10a2.4 2.4 0 0 1 2.4-2.4H21Z"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="visual"><rect x="3.2" y="4.4" width="17.6" height="15.2" rx="2.2"/><path d="M3.2 16.1 8.4 11l4 3.7 3.2-2.8 5.2 4.6"/><circle cx="9" cy="9" r="1.4"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="order"><rect x="3.2" y="6" width="7.4" height="5" rx="1.4"/><rect x="13.4" y="6" width="7.4" height="5" rx="1.4"/><rect x="3.2" y="13.6" width="12.6" height="5" rx="1.4"/><path d="M18.6 16.1h2.2"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="all"><path d="M12 4.2 4.4 8 12 11.8 19.6 8 12 4.2Z"/><path d="M4.4 12.4 12 16.2l7.6-3.8"/><path d="M4.4 16.6 12 20.4l7.6-3.8"/></svg>
+            </span>
+            <span class="wrx-label" id="wrxModuleName">Writing</span>
+          </button>
+
+          <button class="wrx-back" type="button" id="wrxBack">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M19 12H5.5"/><path d="M11.5 18 5.5 12l6-6"/></svg>
+            </span>
+            <span class="wrx-label">Cambiar módulo</span>
+          </button>
         </aside>
 
-        <!-- Panel de trabajo del ejercicio activo -->
-        <article class="wr-work-pane">
+        <!-- Panel 2 · índice de ejercicios -->
+        <aside class="wrx-panel wrx-index" id="wrxIndex" aria-label="Ejercicios del módulo">
+          <button class="wrx-head" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M9 6.5h11"/><path d="M9 12h11"/><path d="M9 17.5h11"/><path d="M4.4 6.5h.01"/><path d="M4.4 12h.01"/><path d="M4.4 17.5h.01"/></svg>
+            </span>
+            <span class="wrx-label"><span id="wrProgressBadge" class="wrx-counter">0 / 160</span></span>
+          </button>
+          <div class="wrx-scroller" id="wrxScroller">
+            <div id="wrList" class="wr-list" role="listbox" aria-label="Ejercicios del módulo"></div>
+          </div>
+        </aside>
+
+        <!-- Área de trabajo -->
+        <main class="wrx-work">
           <div id="wrEmpty" class="wr-empty">
-            <p>Elegí un ejercicio de la lista o tocá <strong>“Actividad aleatoria”</strong> para empezar a escribir.</p>
+            <p>Elegí un ejercicio del índice para empezar.</p>
           </div>
 
           <div id="wrActive" class="wr-active hidden">
             <!-- Encabezado del ejercicio -->
             <div class="wr-ex-head">
-              <div class="wr-ex-tags">
-                <span id="wrExModality" class="wr-dot wr-dot-prompt" role="img" aria-label=""></span>
-              </div>
               <h3 id="wrExTitle"></h3>
               <p id="wrExMeta" class="wr-ex-meta"></p>
             </div>
@@ -310,219 +542,489 @@
               </details>
             </div>
           </div>
-        </article>
+        </main>
       </div>
     </section>
 
     <!-- ============ READING ============ -->
-    <section id="view-reading" class="view">
-      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
-      <header class="sec-head">
-        <span class="eyebrow">IELTS Reading</span>
-        <h2>Lectura académica y comprensión</h2>
-        <p>Leé el pasaje y resolvé preguntas de True / False / Not Given y respuestas cortas. Corregí y mirá la explicación.</p>
-      </header>
+    <section id="view-reading" class="view" data-rd-module="academic">
+      <div class="wrx-shell">
 
-      <div class="reading-shell">
-        <aside class="reading-line-sidebar" aria-label="Selección de textos de Reading">
-          <div class="reading-line-sidebar__head">
-            <span>Reading library</span>
-            <strong>Elegí uno de los 20 textos</strong>
-          </div>
-          <nav id="rLineSidebar" class="line-sidebar line-sidebar--markers line-sidebar--scale-tick" aria-label="Textos disponibles">
-            <ul id="rLineSidebarList" class="line-sidebar__list"></ul>
-          </nav>
+        <!-- Panel 1 · módulo activo -->
+        <aside class="wrx-panel wrx-rail" id="rdRail" aria-label="Módulo activo">
+          <button class="wrx-head wrx-module" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" data-mod="academic"><path d="M3 5.5h6a3 3 0 0 1 3 3v10a2.4 2.4 0 0 0-2.4-2.4H3Z"/><path d="M21 5.5h-6a3 3 0 0 0-3 3v10a2.4 2.4 0 0 1 2.4-2.4H21Z"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="bites"><path d="M4.6 5.5h14.8v9.2a2 2 0 0 1-2 2H9.2l-4.6 3.3Z"/><path d="M8.4 9.4h7.2"/><path d="M8.4 12.6h4.6"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="clues"><path d="M4 8.6h6.4"/><path d="M13.6 8.6H20"/><path d="M4 15.4h4.2"/><path d="M11.4 15.4H20"/><path d="M12 5.6v6"/><path d="M9.6 12.4v6"/></svg>
+            </span>
+            <span class="wrx-label" id="rdModuleName">Academic Passages</span>
+          </button>
+
+          <button class="wrx-back" type="button" id="rdBack">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M19 12H5.5"/><path d="M11.5 18 5.5 12l6-6"/></svg>
+            </span>
+            <span class="wrx-label">Cambiar módulo</span>
+          </button>
         </aside>
 
-        <div class="reading-main">
-          <div class="reading-controls" aria-label="Herramientas de lectura">
-            <button id="rPron" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar pronunciación</button>
-            <button id="rTrans" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar traducción</button>
+        <!-- Panel 2 · índice de ejercicios -->
+        <aside class="wrx-panel wrx-index" id="rdIndex" aria-label="Ejercicios del módulo">
+          <button class="wrx-head" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M9 6.5h11"/><path d="M9 12h11"/><path d="M9 17.5h11"/><path d="M4.4 6.5h.01"/><path d="M4.4 12h.01"/><path d="M4.4 17.5h.01"/></svg>
+            </span>
+            <span class="wrx-label"><span id="rdProgressBadge" class="wrx-counter">0 / 20</span></span>
+          </button>
+          <div class="wrx-scroller" id="rdScroller">
+            <div id="rdList" class="wr-list" role="listbox" aria-label="Ejercicios del módulo"></div>
           </div>
+        </aside>
 
-          <div class="reading-layout">
-            <article id="rPassageCard" class="passage-card" tabindex="-1">
-              <h3 id="rTitle">Passage title</h3>
-              <div id="rBody" class="passage-body"></div>
-            </article>
+        <!-- Área de trabajo -->
+        <main class="wrx-work">
+          <!-- ---- Academic Passages ---- -->
+          <div id="rdPaneAcademic" class="rd-pane">
+            <div class="reading-controls" aria-label="Herramientas de lectura">
+              <button id="rPron" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar pronunciación</button>
+              <button id="rTrans" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar traducción</button>
+            </div>
 
-            <article class="questions-card">
-              <div class="q-head">
-                <strong id="rQTitle">Questions</strong>
-                <p id="rInstruction" class="q-instruction"></p>
-              </div>
-              <div id="rQuestions" class="reading-questions"></div>
+            <div class="reading-layout">
+              <article id="rPassageCard" class="passage-card" tabindex="-1">
+                <h3 id="rTitle">Passage title</h3>
+                <div id="rBody" class="passage-body"></div>
+              </article>
 
-              <div id="rChoiceBlock" class="reading-choice-block">
+              <article class="questions-card">
                 <div class="q-head">
-                  <strong>Ejercicio 1 · Elegí la opción correcta</strong>
-                  <p class="q-instruction">Según lo que dice el texto, marcá la oración correcta en cada pregunta.</p>
+                  <strong id="rQTitle">Questions</strong>
+                  <p id="rInstruction" class="q-instruction"></p>
                 </div>
-                <div id="rChoiceQuestions" class="reading-questions"></div>
-              </div>
+                <div id="rQuestions" class="reading-questions"></div>
 
-              <div class="tool-row">
-                <button id="rCheck" class="btn btn-primary" type="button">Corregir reading</button>
-                <button id="rClearAns" class="btn btn-ghost" type="button">Limpiar</button>
-                <span id="rScore" class="score-pill"></span>
-              </div>
-              <details id="rAnswerPanel" class="details-panel">
-                <summary>Respuestas y explicación</summary>
-                <p id="rAnswersHint" class="answers-hint">Pulsá <strong>Corregir reading</strong> para ver acá las respuestas correctas con su explicación.</p>
-                <ol id="rAnswers"></ol>
-              </details>
-            </article>
+                <div id="rChoiceBlock" class="reading-choice-block">
+                  <div class="q-head">
+                    <strong>Ejercicio 1 · Elegí la opción correcta</strong>
+                    <p class="q-instruction">Según lo que dice el texto, marcá la oración correcta en cada pregunta.</p>
+                  </div>
+                  <div id="rChoiceQuestions" class="reading-questions"></div>
+                </div>
+
+                <div class="tool-row">
+                  <button id="rCheck" class="btn btn-primary" type="button">Corregir reading</button>
+                  <button id="rClearAns" class="btn btn-ghost" type="button">Limpiar</button>
+                  <span id="rScore" class="score-pill"></span>
+                </div>
+                <details id="rAnswerPanel" class="details-panel">
+                  <summary>Respuestas y explicación</summary>
+                  <p id="rAnswersHint" class="answers-hint">Pulsá <strong>Corregir reading</strong> para ver acá las respuestas correctas con su explicación.</p>
+                  <ol id="rAnswers"></ol>
+                </details>
+              </article>
+            </div>
           </div>
-        </div>
+
+          <!-- ---- Bite-Sized Reads ---- -->
+          <div id="rdPaneBites" class="rd-pane hidden">
+            <div class="reading-layout">
+              <article class="passage-card">
+                <h3 id="rbTitle"></h3>
+                <div id="rbText" class="passage-body rd-plain"></div>
+              </article>
+
+              <article class="questions-card">
+                <div class="q-head">
+                  <strong>Questions</strong>
+                  <p class="q-instruction">Respondé con tus propias palabras. La corrección busca las ideas clave del texto.</p>
+                </div>
+                <div id="rbQuestions" class="reading-questions"></div>
+                <div class="tool-row">
+                  <button id="rbCheck" class="btn btn-primary" type="button">Corregir respuestas</button>
+                  <button id="rbClear" class="btn btn-ghost" type="button">Limpiar</button>
+                  <span id="rbScore" class="score-pill"></span>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- ---- Context Clues ---- -->
+          <div id="rdPaneClues" class="rd-pane hidden">
+            <div class="reading-layout">
+              <article class="passage-card">
+                <h3 id="rcTitle"></h3>
+                <p id="rcText" class="passage-body rd-cloze"></p>
+              </article>
+
+              <article class="questions-card">
+                <div class="q-head">
+                  <strong>Gaps</strong>
+                  <p class="q-instruction">Elegí la opción que completa cada hueco. El texto se actualiza a medida que elegís.</p>
+                </div>
+                <div id="rcGaps" class="rd-gap-list"></div>
+                <div class="tool-row">
+                  <button id="rcCheck" class="btn btn-primary" type="button">Corregir huecos</button>
+                  <button id="rcClear" class="btn btn-ghost" type="button">Limpiar</button>
+                  <span id="rcScore" class="score-pill"></span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </main>
       </div>
     </section>
 
     <!-- ============ SPEAKING ============ -->
-    <section id="view-speaking" class="view">
-      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
-      <header class="sec-head">
-        <span class="eyebrow">IELTS Speaking</span>
-        <h2>Habla, grabá y escuchate</h2>
-        <p>Practicá las tres partes del Speaking. Escuchá la pregunta del examinador, grabá tu respuesta y volvé a escucharte.</p>
-      </header>
+    <section id="view-speaking" class="view" data-sp-module="translate">
+      <div class="wrx-shell">
 
-      <div class="speaking-controls">
-        <div class="seg" role="tablist" aria-label="Parte del speaking">
-          <button class="seg-btn is-active" data-part="1" role="tab">Part 1 · Intro</button>
-          <button class="seg-btn" data-part="2" role="tab">Part 2 · Cue card</button>
-          <button class="seg-btn" data-part="3" role="tab">Part 3 · Discussion</button>
-        </div>
-        <button id="sNew" class="btn btn-ghost" type="button">Nueva pregunta</button>
-      </div>
+        <!-- Panel 1 · módulo activo -->
+        <aside class="wrx-panel wrx-rail" id="spRail" aria-label="Módulo activo">
+          <button class="wrx-head wrx-module" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" data-mod="translate"><path d="M3.4 6.6h8.2"/><path d="M7.5 4.6v2"/><path d="M9.8 6.6c-.5 3.2-2.6 5.6-6.4 6.9"/><path d="M5.6 10.2c1 1.9 2.8 3.1 5.3 3.7"/><path d="M12.4 19.4l3.6-8.4 3.6 8.4"/><path d="M13.8 16.4h4.4"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="monologue"><rect x="9" y="3.2" width="6" height="10.4" rx="3"/><path d="M5.4 11.6a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18.2v2.6"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="shadowing"><path d="M4 10v4"/><path d="M8 7.2v9.6"/><path d="M12 4.6v14.8"/><path d="M16 8.4v7.2"/><path d="M20 10.8v2.4"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="roleplay"><path d="M3.6 5.4h10.8v7.2H8l-4.4 3.1Z"/><path d="M9.6 15.4h4.6l4.4 3.1v-3.1h1.8V8.6h-3.6"/></svg>
+            </span>
+            <span class="wrx-label" id="spModuleName">Quick Translate</span>
+          </button>
 
-      <div class="speaking-layout">
-        <article class="cue-card">
-          <span class="level-pill" id="sPartLabel">Part 1</span>
-          <p id="sPrompt" class="cue-prompt"></p>
-          <ul id="sBullets" class="cue-bullets"></ul>
-          <div class="examiner-row">
-            <button id="sHear" class="btn btn-ghost" type="button">🔊 Escuchar al examinador</button>
-            <span id="sPrepTimer" class="prep-timer" hidden>Preparación 00:00</span>
-          </div>
-        </article>
+          <button class="wrx-back" type="button" id="spBack">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M19 12H5.5"/><path d="M11.5 18 5.5 12l6-6"/></svg>
+            </span>
+            <span class="wrx-label">Cambiar módulo</span>
+          </button>
+        </aside>
 
-        <article class="record-card">
-          <div class="rec-visual">
-            <span id="recDot" class="rec-dot"></span>
-            <span id="recTime" class="rec-time">00:00</span>
+        <!-- Panel 2 · índice de ejercicios -->
+        <aside class="wrx-panel wrx-index" id="spIndex" aria-label="Ejercicios del módulo">
+          <button class="wrx-head" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M9 6.5h11"/><path d="M9 12h11"/><path d="M9 17.5h11"/><path d="M4.4 6.5h.01"/><path d="M4.4 12h.01"/><path d="M4.4 17.5h.01"/></svg>
+            </span>
+            <span class="wrx-label"><span id="spProgressBadge" class="wrx-counter">0 / 2</span></span>
+          </button>
+          <div class="wrx-scroller" id="spScroller">
+            <div id="spList" class="wr-list" role="listbox" aria-label="Ejercicios del módulo"></div>
           </div>
-          <div class="tool-row rec-actions">
-            <button id="recStart" class="btn btn-primary" type="button">● Grabar</button>
-            <button id="recStop" class="btn btn-ghost" type="button" disabled>■ Detener</button>
+        </aside>
+
+        <!-- Área de trabajo -->
+        <main class="wrx-work">
+          <!-- ---- Quick Translate ---- -->
+          <!-- Sin índice ni contenedores: la oración se escribe sobre el
+               fondo y la traducción ocupa el mismo lugar que el español. -->
+          <div id="spPaneTranslate" class="sp-pane qt-pane">
+            <div class="qt-stage">
+              <p class="qt-line qt-lead" id="qtRowLead">
+                <span id="qtLead" class="qt-text"></span><span class="qt-cursor" aria-hidden="true">|</span>
+              </p>
+
+              <div id="qtOut" class="qt-out" aria-live="polite">
+                <p class="qt-line qt-line--alt" id="qtRowAlt1">
+                  <span class="qt-tag">also</span><span id="qtAlt1" class="qt-text"></span><span class="qt-cursor" aria-hidden="true">|</span>
+                </p>
+                <p class="qt-line qt-line--alt" id="qtRowAlt2">
+                  <span class="qt-tag">also</span><span id="qtAlt2" class="qt-text"></span><span class="qt-cursor" aria-hidden="true">|</span>
+                </p>
+              </div>
+
+              <p id="qtStatus" class="qt-status"></p>
+              <p id="qtNote" class="qt-note"></p>
+            </div>
+
+            <div class="qt-footer">
+              <div class="qt-bar">
+                <button id="qtReveal" class="qt-link" type="button">Revelar ahora</button>
+                <button id="qtHear" class="qt-link" type="button">Pronunciación</button>
+                <span class="qt-bar-sep" aria-hidden="true"></span>
+                <button id="qtNext" class="qt-link qt-next" type="button" aria-label="Otro ejercicio al azar">
+                  <span>Otro ejercicio</span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13.5"/><path d="M12.5 5.5 19 12l-6.5 6.5"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
-          <audio id="recPlayback" controls class="rec-playback" hidden></audio>
-          <p id="recHint" class="rec-hint">Consejo: apuntá a 1–2 min en Part 2. Hablá sin frenar, aunque cometas errores.</p>
-          <div class="band-descriptors">
-            <strong>Te evalúan por:</strong>
-            <span>Fluidez y coherencia · Recursos léxicos · Gramática y precisión · Pronunciación</span>
+
+          <!-- ---- Monologue Challenge ---- -->
+          <div id="spPaneMonologue" class="sp-pane hidden">
+            <div class="sp-split">
+              <div class="sp-split-main">
+                <article class="sp-card sp-card--focus">
+                  <span class="sp-eyebrow">Topic</span>
+                  <p id="mcTopic" class="sp-phrase"></p>
+                  <ol id="mcPoints" class="sp-points"></ol>
+                  <div class="tool-row">
+                    <button id="mcHear" class="btn btn-ghost" type="button">🔊 Escuchar la consigna</button>
+                    <button id="mcPrep" class="btn btn-primary" type="button">Preparación 30 s</button>
+                    <span id="mcPrepTimer" class="sp-timer" hidden>00:30</span>
+                  </div>
+                </article>
+
+                <article class="sp-card">
+                  <div class="sp-rec">
+                    <span id="mcDot" class="sp-rec-dot" aria-hidden="true"></span>
+                    <span id="mcTime" class="sp-rec-time">00:00</span>
+                    <span class="sp-rec-target">objetivo 1:00 – 2:00</span>
+                  </div>
+                  <div class="sp-rec-bar" aria-hidden="true">
+                    <span class="sp-rec-zone"></span>
+                    <span id="mcBar" class="sp-rec-fill"></span>
+                  </div>
+                  <div class="tool-row">
+                    <button id="mcStart" class="btn btn-primary" type="button">● Grabar</button>
+                    <button id="mcStop" class="btn btn-ghost" type="button" disabled>■ Detener</button>
+                    <button id="mcShowSample" class="btn btn-ghost" type="button">Ver respuesta de muestra</button>
+                  </div>
+                  <audio id="mcPlayback" class="sp-audio" controls hidden></audio>
+                  <p id="mcHint" class="sp-note">Hablá sin frenar. Cubrí los tres puntos en orden y cerrá con una conclusión breve.</p>
+                </article>
+
+                <div id="mcSample" class="sp-reveal">
+                  <div class="sp-reveal-inner">
+                    <article class="sp-card">
+                      <span class="sp-eyebrow">Respuesta de muestra</span>
+                      <div class="tool-row">
+                        <button id="mcSampleHear" class="btn btn-ghost" type="button">🔊 Escuchar la muestra</button>
+                      </div>
+                      <p id="mcSampleText" class="sp-transcript"></p>
+                    </article>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="sp-aside" aria-label="Vocabulario útil">
+                <span class="sp-eyebrow">Useful vocabulary</span>
+                <div id="mcVocab" class="sp-vocab"></div>
+              </aside>
+            </div>
           </div>
-        </article>
+
+          <!-- ---- Shadowing ---- -->
+          <div id="spPaneShadowing" class="sp-pane hidden">
+            <article class="sp-card sp-card--focus">
+              <span class="sp-eyebrow">Escuchá y repetí encima</span>
+              <p id="shText" class="sp-shadow-text"></p>
+              <p class="sp-legend">
+                <span><i class="sp-key-stress">a</i> sílaba tónica</span>
+                <span><i class="sp-key-break">|</i> pausa de respiración</span>
+              </p>
+              <div class="tool-row">
+                <button id="shPlay" class="btn btn-primary" type="button">▶ Reproducir</button>
+                <div class="seg sp-speed" role="group" aria-label="Velocidad de reproducción">
+                  <button class="seg-btn" type="button" data-speed="0.8">0.8×</button>
+                  <button class="seg-btn is-active" type="button" data-speed="1">1.0×</button>
+                </div>
+                <span id="shMeta" class="sp-note"></span>
+              </div>
+            </article>
+
+            <article class="sp-card">
+              <div class="sp-rec">
+                <span id="shDot" class="sp-rec-dot" aria-hidden="true"></span>
+                <span id="shTime" class="sp-rec-time">00:00</span>
+              </div>
+              <div class="tool-row">
+                <button id="shStart" class="btn btn-primary" type="button">● Grabar mi intento</button>
+                <button id="shStop" class="btn btn-ghost" type="button" disabled>■ Detener</button>
+                <button id="shCompare" class="btn btn-ghost" type="button" disabled>⇄ Comparar con el original</button>
+              </div>
+              <audio id="shPlayback" class="sp-audio" controls hidden></audio>
+              <p id="shHint" class="sp-note">Al comparar suena primero el original y después tu intento, sin cortes.</p>
+            </article>
+          </div>
+
+          <!-- ---- Roleplay ---- -->
+          <div id="spPaneRoleplay" class="sp-pane hidden">
+            <article class="sp-card sp-card--focus">
+              <span class="sp-eyebrow">Escenario</span>
+              <p id="rpScenario" class="sp-phrase"></p>
+              <p id="rpRole" class="sp-note"></p>
+            </article>
+
+            <div id="rpTurns" class="sp-turns"></div>
+
+            <div class="tool-row">
+              <button id="rpRestart" class="btn btn-ghost" type="button">Reiniciar diálogo</button>
+              <span id="rpProgress" class="sp-note"></span>
+            </div>
+          </div>
+        </main>
       </div>
     </section>
 
     <!-- ============ LISTENING ============ -->
-    <section id="view-listening" class="view">
-      <button class="back-link" data-go="dashboard">← Volver al inicio</button>
-      <header class="sec-head">
-        <span class="eyebrow">Listening Lab</span>
-        <h2>Escuchá, seguí el texto y practicá</h2>
-        <p>Reproducí cada historia, acompañá la lectura y practicá con cloze, oraciones breves y dictado. Las actividades usan textos originales de nivel B2 alto–C1.</p>
-      </header>
+    <section id="view-listening" class="view" data-ls-module="dictation">
+      <div class="wrx-shell">
 
-      <div class="listen-practice-header" role="region" aria-label="Selección de práctica de listening">
-        <div>
-          <span class="listen-practice-kicker">Seleccionar ejercicio</span>
-          <label for="lPracticeSelect">Número de práctica</label>
-        </div>
-        <select id="lPracticeSelect" aria-label="Número de práctica"></select>
-      </div>
+        <!-- Panel 1 · módulo activo -->
+        <aside class="wrx-panel wrx-rail" id="lsRail" aria-label="Módulo activo">
+          <button class="wrx-head wrx-module" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" data-mod="dictation"><path d="M4.6 5.4h11.2l3.6 3.6v9.6H4.6Z"/><path d="M15.8 5.4v3.6h3.6"/><path d="M8 12.4h7"/><path d="M8 15.6h4.6"/></svg>
+              <svg viewBox="0 0 24 24" data-mod="podcast"><rect x="9.2" y="3" width="5.6" height="9.8" rx="2.8"/><path d="M5.6 11a6.4 6.4 0 0 0 12.8 0"/><path d="M12 17.4V21"/><path d="M8.6 21h6.8"/></svg>
+            </span>
+            <span class="wrx-label" id="lsModuleName">Dictation Practice</span>
+          </button>
 
-      <div class="listening-studio">
-        <div class="listen-topbar">
-          <div class="listen-lesson-info">
-            <h3 id="lTitle">Listening lesson</h3>
-            <p id="lLessonMeta" class="listen-lesson-meta"></p>
+          <button class="wrx-back" type="button" id="lsBack">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M19 12H5.5"/><path d="M11.5 18 5.5 12l6-6"/></svg>
+            </span>
+            <span class="wrx-label">Cambiar módulo</span>
+          </button>
+        </aside>
+
+        <!-- Panel 2 · índice de ejercicios -->
+        <aside class="wrx-panel wrx-index" id="lsIndex" aria-label="Ejercicios del módulo">
+          <button class="wrx-head" type="button" data-wrx-toggle aria-expanded="false">
+            <span class="wrx-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M9 6.5h11"/><path d="M9 12h11"/><path d="M9 17.5h11"/><path d="M4.4 6.5h.01"/><path d="M4.4 12h.01"/><path d="M4.4 17.5h.01"/></svg>
+            </span>
+            <span class="wrx-label"><span id="lsProgressBadge" class="wrx-counter">0 / 0</span></span>
+          </button>
+          <div class="wrx-scroller" id="lsScroller">
+            <div id="lsList" class="wr-list" role="listbox" aria-label="Ejercicios del módulo"></div>
+          </div>
+        </aside>
+
+        <!-- Área de trabajo -->
+        <main class="wrx-work">
+          <!-- ---- Dictation Practice (estudio existente) ---- -->
+          <div id="lsPaneDictation" class="ls-pane">
+            <div class="listening-studio">
+              <div class="listen-topbar">
+                <div class="listen-lesson-info">
+                  <h3 id="lTitle">Listening lesson</h3>
+                  <p id="lLessonMeta" class="listen-lesson-meta"></p>
+                </div>
+
+                <div class="listen-player" aria-label="Controles de audio">
+                  <div class="audio-actions listen-main-actions">
+                    <button id="lPlay" class="btn btn-primary" type="button">▶ Reproducir</button>
+                    <button id="lPause" class="btn btn-ghost" type="button">⏸ Pausar</button>
+                    <button id="lStop" class="btn btn-ghost listen-stop" type="button">■</button>
+                  </div>
+                  <div class="listen-progress" aria-hidden="true"><div class="bar-track"><div id="lBar" class="bar-fill"></div></div></div>
+                  <div class="listen-status-row"><strong id="lStatus">Listo</strong><span id="lProgressText">0%</span></div>
+                </div>
+
+                <div class="listen-top-actions">
+                  <button id="lSettingsToggle" class="listen-settings-btn" type="button" aria-expanded="false" aria-controls="lSettingsPanel" title="Configurar voz y velocidad">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94a7.8 7.8 0 0 0 .05-.94 7.8 7.8 0 0 0-.05-.94l2.03-1.58-1.92-3.32-2.39.96a7.4 7.4 0 0 0-1.63-.95L14.87 3h-3.84l-.36 3.17c-.58.24-1.12.56-1.63.95l-2.39-.96-1.92 3.32 2.03 1.58a7.8 7.8 0 0 0-.05.94c0 .32.02.63.05.94l-2.03 1.58 1.92 3.32 2.39-.96c.5.39 1.05.71 1.63.95l.36 3.17h3.84l.36-3.17c.58-.24 1.12-.56 1.63-.95l2.39.96 1.92-3.32-2.03-1.58ZM12.95 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
+                    <span>Audio</span>
+                  </button>
+                  <div id="lSettingsPanel" class="listen-settings-panel hidden" role="dialog" aria-label="Ajustes de audio">
+                    <div class="listen-settings-head"><strong>Ajustes de audio</strong><button id="lSettingsClose" type="button" aria-label="Cerrar ajustes">×</button></div>
+                    <label for="lVoice">Voz</label>
+                    <select id="lVoice"><option value="">Cargando voces…</option></select>
+                    <label class="range-row" for="lWpm"><span>Velocidad</span><em id="lWpmVal">145 WPM</em></label>
+                    <input id="lWpm" type="range" min="90" max="190" step="5" value="145" />
+                    <p class="listen-settings-note">Elegí la voz que te resulte más clara. Si suenan robóticas, mirá el aviso de abajo.</p>
+                    <div id="lVoiceQualityHint" class="listen-quality-hint hidden"></div>
+                  </div>
+                </div>
+              </div>
+
+              <nav class="listen-tabs" role="tablist" aria-label="Tipos de práctica">
+                <button class="listen-tab is-active" type="button" role="tab" aria-selected="true" data-ltab="read">Texto y audio</button>
+                <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="cloze">Cloze</button>
+                <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="sentences">Sentences</button>
+                <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="dictation">Dictation</button>
+              </nav>
+
+              <article class="listen-panel">
+                <section id="lPanelRead" class="listen-tab-panel" data-lpanel="read">
+                  <div class="listen-panel-head"><div><span class="listen-kicker">Read along</span><h4>Seguí el texto mientras escuchás</h4></div></div>
+                  <div id="lReadText" class="listen-passage" aria-live="polite"></div>
+                </section>
+
+                <section id="lPanelCloze" class="listen-tab-panel hidden" data-lpanel="cloze">
+                  <div class="listen-panel-head"><div><span class="listen-kicker">Cloze</span><h4>Completá el texto mientras escuchás</h4></div><span class="listen-limit">1–3 palabras por espacio</span></div>
+                  <p class="q-instruction">Reproducí el audio y escribí las palabras que faltan. Para pedir una pista, seleccioná un espacio: cada toque revela una sola letra de esa respuesta.</p>
+                  <div id="lClozeText" class="listen-passage listen-cloze"></div>
+                  <div class="tool-row">
+                    <button id="lClozeCheck" class="btn btn-primary" type="button">Corregir cloze</button>
+                    <button id="lClozeHint" class="btn btn-ghost" type="button">Pista</button>
+                    <button id="lClozeReset" class="btn btn-ghost" type="button">Reiniciar</button>
+                    <span id="lClozeScore" class="score-pill" aria-live="polite"></span>
+                  </div>
+                </section>
+
+                <section id="lPanelSentences" class="listen-tab-panel hidden" data-lpanel="sentences">
+                  <div class="listen-panel-head"><div><span class="listen-kicker">Sentences</span><h4>Completá con información del audio</h4></div><span class="listen-limit">1–2 palabras</span></div>
+                  <div id="lSentenceQuestions" class="listen-sentence-list"></div>
+                  <div class="tool-row">
+                    <button id="lSentenceCheck" class="btn btn-primary" type="button">Corregir oraciones</button>
+                    <button id="lSentenceReveal" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar respuestas</button>
+                    <button id="lSentenceReset" class="btn btn-ghost" type="button">Limpiar</button>
+                    <span id="lSentenceScore" class="score-pill" aria-live="polite"></span>
+                  </div>
+                </section>
+
+                <section id="lPanelDictation" class="listen-tab-panel hidden" data-lpanel="dictation">
+                  <div class="listen-panel-head"><div><span class="listen-kicker">Dictation</span><h4>Escuchá cada fragmento y escribilo</h4></div></div>
+                  <p class="q-instruction">Cada botón reproduce una oración. Podés escucharla varias veces antes de corregir.</p>
+                  <div id="lDictationList" class="listen-dictation-list"></div>
+                  <div class="tool-row">
+                    <button id="lDictationCheck" class="btn btn-primary" type="button">Corregir dictado</button>
+                    <button id="lDictationReset" class="btn btn-ghost" type="button">Limpiar</button>
+                    <span id="lDictationScore" class="score-pill" aria-live="polite"></span>
+                  </div>
+                </section>
+              </article>
+            </div>
           </div>
 
-          <div class="listen-player" aria-label="Controles de audio">
-            <div class="audio-actions listen-main-actions">
-              <button id="lPlay" class="btn btn-primary" type="button">▶ Reproducir</button>
-              <button id="lPause" class="btn btn-ghost" type="button">⏸ Pausar</button>
-              <button id="lStop" class="btn btn-ghost listen-stop" type="button">■</button>
+          <!-- ---- Podcast Practice ---- -->
+          <div id="lsPanePodcast" class="ls-pane hidden">
+            <header class="pod-head">
+              <span class="pod-eyebrow">Podcast</span>
+              <h3 id="podTitle"></h3>
+              <p id="podIntro" class="pod-intro"></p>
+            </header>
+
+            <div class="pod-player" aria-label="Reproductor del episodio">
+              <audio id="podAudio" preload="metadata"></audio>
+              <button id="podPlay" class="pod-play" type="button" aria-label="Reproducir o pausar">
+                <svg class="pod-icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z"/></svg>
+                <svg class="pod-icon-pause hidden" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.5h3v13h-3zM12.5 5.5h3v13h-3z"/></svg>
+              </button>
+              <div class="pod-track" id="podTrack" role="slider" tabindex="0"
+                   aria-label="Posición del audio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span id="podBuffer" class="pod-buffer"></span>
+                <span id="podBar" class="pod-bar"></span>
+              </div>
+              <span id="podTime" class="pod-time">0:00 / 0:00</span>
+
+              <div class="pod-controls">
+                <div class="pod-volume">
+                  <button id="podMute" class="pod-mute" type="button" aria-label="Silenciar" aria-pressed="false">
+                    <svg class="pod-icon-vol" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.4L12 5.4v13.2L7.4 14.5H4z"/><path d="M15.4 9.2a4 4 0 0 1 0 5.6"/><path d="M17.9 6.6a7.6 7.6 0 0 1 0 10.8"/></svg>
+                    <svg class="pod-icon-muted hidden" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.4L12 5.4v13.2L7.4 14.5H4z"/><path d="m16 9.6 4.8 4.8"/><path d="m20.8 9.6-4.8 4.8"/></svg>
+                  </button>
+                  <input id="podVolume" class="pod-volume-range" type="range" min="0" max="100" step="1" value="100"
+                         aria-label="Volumen" />
+                </div>
+                <div class="seg pod-speed" role="group" aria-label="Velocidad">
+                  <button class="seg-btn" type="button" data-pod-speed="0.75">0.75×</button>
+                  <button class="seg-btn is-active" type="button" data-pod-speed="1">1×</button>
+                  <button class="seg-btn" type="button" data-pod-speed="1.25">1.25×</button>
+                </div>
+              </div>
             </div>
-            <div class="listen-progress" aria-hidden="true"><div class="bar-track"><div id="lBar" class="bar-fill"></div></div></div>
-            <div class="listen-status-row"><strong id="lStatus">Listo</strong><span id="lProgressText">0%</span></div>
+
+            <p id="podNotice" class="pod-notice hidden" role="status"></p>
+
+            <div class="pod-chat-head">
+              <span class="pod-eyebrow">Transcript</span>
+            </div>
+            <div id="podChat" class="pod-chat"></div>
           </div>
-
-          <div class="listen-top-actions">
-            <button id="lSettingsToggle" class="listen-settings-btn" type="button" aria-expanded="false" aria-controls="lSettingsPanel" title="Configurar voz y velocidad">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94a7.8 7.8 0 0 0 .05-.94 7.8 7.8 0 0 0-.05-.94l2.03-1.58-1.92-3.32-2.39.96a7.4 7.4 0 0 0-1.63-.95L14.87 3h-3.84l-.36 3.17c-.58.24-1.12.56-1.63.95l-2.39-.96-1.92 3.32 2.03 1.58a7.8 7.8 0 0 0-.05.94c0 .32.02.63.05.94l-2.03 1.58 1.92 3.32 2.39-.96c.5.39 1.05.71 1.63.95l.36 3.17h3.84l.36-3.17c.58-.24 1.12-.56 1.63-.95l2.39.96 1.92-3.32-2.03-1.58ZM12.95 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
-              <span>Audio</span>
-            </button>
-            <div id="lSettingsPanel" class="listen-settings-panel hidden" role="dialog" aria-label="Ajustes de audio">
-              <div class="listen-settings-head"><strong>Ajustes de audio</strong><button id="lSettingsClose" type="button" aria-label="Cerrar ajustes">×</button></div>
-              <label for="lVoice">Voz</label>
-              <select id="lVoice"><option value="">Cargando voces…</option></select>
-              <label class="range-row" for="lWpm"><span>Velocidad</span><em id="lWpmVal">145 WPM</em></label>
-              <input id="lWpm" type="range" min="90" max="190" step="5" value="145" />
-              <p class="listen-settings-note">Elegí la voz que te resulte más clara. Si suenan robóticas, mirá el aviso de abajo.</p>
-              <div id="lVoiceQualityHint" class="listen-quality-hint hidden"></div>
-            </div>
-          </div>
-        </div>
-
-        <nav class="listen-tabs" role="tablist" aria-label="Tipos de práctica">
-          <button class="listen-tab is-active" type="button" role="tab" aria-selected="true" data-ltab="read">Texto y audio</button>
-          <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="cloze">Cloze</button>
-          <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="sentences">Sentences</button>
-          <button class="listen-tab" type="button" role="tab" aria-selected="false" data-ltab="dictation">Dictation</button>
-        </nav>
-
-        <article class="listen-panel">
-          <section id="lPanelRead" class="listen-tab-panel" data-lpanel="read">
-            <div class="listen-panel-head"><div><span class="listen-kicker">Read along</span><h4>Seguí el texto mientras escuchás</h4></div></div>
-            <div id="lReadText" class="listen-passage" aria-live="polite"></div>
-          </section>
-
-          <section id="lPanelCloze" class="listen-tab-panel hidden" data-lpanel="cloze">
-            <div class="listen-panel-head"><div><span class="listen-kicker">Cloze</span><h4>Completá el texto mientras escuchás</h4></div><span class="listen-limit">1–3 palabras por espacio</span></div>
-            <p class="q-instruction">Reproducí el audio y escribí las palabras que faltan. Para pedir una pista, seleccioná un espacio: cada toque revela una sola letra de esa respuesta.</p>
-            <div id="lClozeText" class="listen-passage listen-cloze"></div>
-            <div class="tool-row">
-              <button id="lClozeCheck" class="btn btn-primary" type="button">Corregir cloze</button>
-              <button id="lClozeHint" class="btn btn-ghost" type="button">Pista</button>
-              <button id="lClozeReset" class="btn btn-ghost" type="button">Reiniciar</button>
-              <span id="lClozeScore" class="score-pill" aria-live="polite"></span>
-            </div>
-          </section>
-
-          <section id="lPanelSentences" class="listen-tab-panel hidden" data-lpanel="sentences">
-            <div class="listen-panel-head"><div><span class="listen-kicker">Sentences</span><h4>Completá con información del audio</h4></div><span class="listen-limit">1–2 palabras</span></div>
-            <div id="lSentenceQuestions" class="listen-sentence-list"></div>
-            <div class="tool-row">
-              <button id="lSentenceCheck" class="btn btn-primary" type="button">Corregir oraciones</button>
-              <button id="lSentenceReveal" class="btn btn-ghost" type="button" aria-pressed="false">Mostrar respuestas</button>
-              <button id="lSentenceReset" class="btn btn-ghost" type="button">Limpiar</button>
-              <span id="lSentenceScore" class="score-pill" aria-live="polite"></span>
-            </div>
-          </section>
-
-          <section id="lPanelDictation" class="listen-tab-panel hidden" data-lpanel="dictation">
-            <div class="listen-panel-head"><div><span class="listen-kicker">Dictation</span><h4>Escuchá cada fragmento y escribilo</h4></div></div>
-            <p class="q-instruction">Cada botón reproduce una oración. Podés escucharla varias veces antes de corregir.</p>
-            <div id="lDictationList" class="listen-dictation-list"></div>
-            <div class="tool-row">
-              <button id="lDictationCheck" class="btn btn-primary" type="button">Corregir dictado</button>
-              <button id="lDictationReset" class="btn btn-ghost" type="button">Limpiar</button>
-              <span id="lDictationScore" class="score-pill" aria-live="polite"></span>
-            </div>
-          </section>
-        </article>
+        </main>
       </div>
     </section>
 
@@ -563,6 +1065,34 @@
                 <h4>Ejemplos</h4>
                 <ul id="tExamples" class="tense-examples"></ul>
               </section>
+            </div>
+          </div>
+        </article>
+
+        <!-- Ficha de preposiciones: comparte lugar con la de tiempos -->
+        <article id="pDetail" class="tense-detail tense-detail--prep hidden">
+          <div class="td-hero">
+            <div class="td-hero-text">
+              <span class="level-pill">Gramática</span>
+              <h3>Preposiciones</h3>
+              <p class="tense-summary">Elegí una preposición para ver su idea central, su uso principal y ejemplos con traducción.</p>
+            </div>
+          </div>
+          <div class="td-body">
+            <div id="pGrid" class="prep-grid" role="tablist" aria-label="Preposiciones"></div>
+
+            <div class="prep-card">
+              <div class="prep-hero">
+                <span id="pWord" class="prep-word"></span>
+                <div class="prep-hero-text">
+                  <span id="pIdea" class="prep-idea"></span>
+                  <p id="pUse" class="prep-use"></p>
+                </div>
+              </div>
+              <div class="prep-body">
+                <h4>Ejemplos</h4>
+                <ul id="pExamples" class="prep-examples"></ul>
+              </div>
             </div>
           </div>
         </article>
